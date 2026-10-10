@@ -28,6 +28,9 @@ check: test leaks manifest ## Alles vor einem Test-Run: Tests, Leak-Check, Paket
 test-run: check ## Sandbox-Test-Run des Pakets agent/ starten und Logs live verfolgen
 	atira test-run ./$(AGENT) --follow
 
+submit: check ## Abgabe des Pakets agent/ starten und Logs live verfolgen
+	atira submit ./$(AGENT) --follow
+
 run-local: ## Lokaler Lauf gegen die Scouting-Sites, ohne Abgabe (vorher: atira models proxy)
 	cd $(AGENT) && eval "$$(atira scout --env)" && \
 	  uv run --no-sync python main.py --dry-run --out ../$(OUT) > ../$(OUT:.json=.log) 2>&1; \
