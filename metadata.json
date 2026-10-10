@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M3EZWE8KE7GAERYR10QQJN",
+  "strategy": "manual-commit",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/eval/extract_replay.py",
+    "dev/tests/test_perturbations.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 19418,
+    "cache_read_tokens": 11220868,
+    "output_tokens": 15409,
+    "api_call_count": 15
+  }
+}
