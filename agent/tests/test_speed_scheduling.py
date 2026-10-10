@@ -9,7 +9,7 @@ import pytest
 from rfq import llm
 from rfq.agent import orchestrator as module
 from rfq.agent.extraction_jobs import ExtractionJobs, Snapshot
-from rfq.agent.explorer import Explorer, Mission
+from rfq.agent.explorer import Collection, Explorer, Mission
 from rfq.agent.orchestrator import Orchestrator
 
 
@@ -214,6 +214,42 @@ def test_calculation_rejects_pending_snapshots(monkeypatch):
         with pytest.raises(RuntimeError, match="pending"):
             o.resolve()
         await o.close()
+    asyncio.run(scenario())
+
+
+def test_unknown_explicit_collection_never_reads_an_unrelated_last_collection():
+    saved = Collection("c1", [("https://fixture.example/list", "unrelated facts")], [])
+    e = Explorer(SimpleNamespace(collections={"c1": saved}), Mission("test", "collect", {}), None)
+    assert e._collection("c1") is saved
+    assert e._collection(None) is saved
+    assert e._collection("j1") is None
+    assert e._collection("c-missing") is None
+
+
+def test_wait_tool_settles_sources_without_claiming_missing_facts_complete(monkeypatch):
+    async def scenario():
+        settled = False
+        async def drain():
+            nonlocal settled
+            settled = True
+        async def observe(): return "selected source"
+        mission = Mission("test", "collect", {}, deadline=time.time() + 60,
+                          progress=lambda: ("[ ] required revision still missing", False))
+        site = SimpleNamespace(observe=observe, site_id="synthetic", url="https://fixture.example/source")
+        e = Explorer(site, mission, None,
+                     await_extractions=drain, extraction_status=lambda: "snapshot requirements failed")
+        result = await e._call("wait_for_extractions", {})
+        assert settled and "Continue with missing facts" in result and "failed" in result
+        assert e.status == "running"
+        async def chat(*args, **kwargs):
+            names = {t["function"]["name"] for t in kwargs["tools"]}
+            assert "wait_for_extractions" in names
+            return {"tool_calls": [("finish", {"summary": "source unavailable", "missing": ["revision"]})]}
+        monkeypatch.setattr(llm, "chat", chat)
+        await e.run()
+        assert e.status == "incomplete"
+        ordinary = Explorer(site, mission, None)
+        assert (await ordinary._call("wait_for_extractions", {})).startswith("ERROR")
     asyncio.run(scenario())
 
 

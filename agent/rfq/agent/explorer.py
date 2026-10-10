@@ -158,6 +158,10 @@ class Explorer:
 
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
         tools = tools or TOOLS
+        if self.await_extractions:
+            tools = tools + [_tool("wait_for_extractions", "Wait for already selected source snapshots to finish, "
+                                  "then see the updated factual checklist. Use when the next navigation depends "
+                                  "on pending facts; do not repeat extraction or declare those facts missing.", {}, [])]
         tag = f"{self.mission.name}@{self.site.site_id}"
         try:
             result = await self._loop(tools, tag)
@@ -192,7 +196,10 @@ class Explorer:
             checklist, complete = self.mission.progress() if self.mission.progress else ("", False)
             jobs = self.extraction_status() if self.extraction_status else ""
             if jobs:
-                checklist += "\nEXTRACTION SNAPSHOTS (facts arrive asynchronously; finish waits for these):\n" + jobs
+                checklist += ("\nEXTRACTION SNAPSHOTS (facts arrive asynchronously; finish waits for these):\n"
+                              "These are saved sources, not collections or browser references. Do not re-extract a "
+                              "pending/running source. Continue independent navigation; if the next action depends "
+                              "on pending facts, call wait_for_extractions before deciding what is missing.\n" + jobs)
             if complete:
                 if self.await_extractions:
                     await self.await_extractions()
@@ -261,6 +268,14 @@ class Explorer:
 
     async def _call(self, name: str, args: dict) -> str:
         try:
+            if name == "wait_for_extractions":
+                if not self.await_extractions:
+                    return "ERROR: no asynchronous extraction jobs in this mission"
+                await self.await_extractions()
+                checklist, complete = self.mission.progress() if self.mission.progress else ("", False)
+                return ("Selected extractions settled. Completion still depends on the facts below.\n"
+                        + checklist + ("\nChecklist complete." if complete else "\nContinue with missing facts.")
+                        + ("\n" + self.extraction_status() if self.extraction_status else ""))
             if name in ACTIONS:
                 return await self.site.act(name, args)
             if name == "read_all_pages":
@@ -303,8 +318,8 @@ class Explorer:
 
     def _collection(self, collection_id) -> Collection | None:
         collections = self.site.collections
-        if collection_id and collection_id in collections:
-            return collections[collection_id]
+        if collection_id:
+            return collections.get(collection_id)
         return list(collections.values())[-1] if collections else None
 
     async def _extract_collection(self, collection: Collection, kind: str) -> str:
@@ -313,7 +328,8 @@ class Explorer:
         if all("NOTHING of kind" in r for r in results):
             return (f"{collection.id}: NONE of its {len(results)} pages contains '{kind}'. This list is not what you "
                     f"need; open the relevant item via one of its links instead of extracting this list again.")
-        return f"{collection.id}: {len(results)} pages extracted as {kind}: " + " | ".join(results)
+        state = "snapshots selected for extraction" if self.await_extractions else "pages extracted"
+        return f"{collection.id}: {len(results)} {state} as {kind}: " + " | ".join(results)
 
     def _read_collection(self, collection_id: str, page: int) -> str:
         collection = self._collection(collection_id)

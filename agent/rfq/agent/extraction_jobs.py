@@ -75,7 +75,8 @@ class ExtractionJobs:
 
     @staticmethod
     def describe(job: Job) -> str:
-        return (f"{job.id} {job.snapshot.kind} {job.status}: {job.snapshot.source}"
+        # Job IDs are internal telemetry, not handles accepted by browser tools.
+        return (f"snapshot {job.snapshot.kind} {job.status}: {job.snapshot.source}"
                 + (f" -> {job.result[:350]}" if job.result else " (snapshot saved; continue independent navigation)"))
 
     def selected(self, owner: str | None = None) -> list[Job]:

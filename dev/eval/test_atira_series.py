@@ -1,7 +1,12 @@
 """A failed or missing run can never disappear from the release gate."""
 import unittest
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+from unittest.mock import Mock, patch
 
-from atira_series import stats
+from atira_series import live_logs, stats
 
 
 class GateTests(unittest.TestCase):
@@ -29,6 +34,27 @@ class GateTests(unittest.TestCase):
         result = stats(rows, 10)
         self.assertIsNone(result['mean_seconds'])
         self.assertFalse(result['release_gate_passed'])
+
+
+class CaptureTests(unittest.TestCase):
+    def test_log_client_closes_on_failure_without_cancelling_platform(self):
+        process = Mock(returncode=-15)
+        process.wait.side_effect = [subprocess.TimeoutExpired('local logs client', 5), None]
+        with tempfile.TemporaryDirectory() as folder, patch('atira_series.subprocess.Popen', return_value=process) as start:
+            with self.assertRaisesRegex(RuntimeError, 'test failure'):
+                with live_logs('run_synthetic', Path(folder)):
+                    raise RuntimeError('test failure')
+            self.assertEqual(start.call_args.args[0], ['atira', 'logs', 'run_synthetic', '--follow', '--json'])
+            process.terminate.assert_called_once()
+            self.assertFalse(json.loads((Path(folder) / 'live_log_capture.json').read_text())['complete'])
+
+    def test_finished_capture_is_reported_separately_from_score(self):
+        process = Mock(returncode=0)
+        with tempfile.TemporaryDirectory() as folder, patch('atira_series.subprocess.Popen', return_value=process):
+            with live_logs('run_synthetic', Path(folder)):
+                pass
+            process.terminate.assert_not_called()
+            self.assertTrue(json.loads((Path(folder) / 'live_log_capture.json').read_text())['complete'])
 
 
 if __name__ == '__main__':

@@ -5,6 +5,7 @@ Never submits/cancels a scored run. An ambiguous upload is recorded and must be
 recovered by label; it is never automatically posted a second time.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -75,6 +76,32 @@ class MCP:
 
 def mcp_text(response):
     return '\n'.join(c.get('text', '') for c in response.get('result', {}).get('content', []) if c.get('type') == 'text')
+
+
+@contextmanager
+def live_logs(run_id, folder):
+    """Preserve the original chunks while running; retrospective queries can be partial.
+
+    Closing this local read-only client never cancels the platform run.
+    """
+    with (folder / 'live_log_chunks.jsonl').open('a') as output, (folder / 'live_logs.stderr').open('a') as errors:
+        process = subprocess.Popen(['atira', 'logs', run_id, '--follow', '--json'], stdout=output, stderr=errors)
+        try:
+            yield
+        finally:
+            ended_naturally = True
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                ended_naturally = False
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            save(folder / 'live_log_capture.json', {'exit_code': process.returncode,
+                 'ended_naturally': ended_naturally, 'complete': ended_naturally and process.returncode == 0})
 
 
 def stats(rows, required_count):
@@ -148,21 +175,22 @@ def main():
                     run_id = intent['run_id'] = match[1]
                     save(intent_file, intent)
             print(json.dumps({'event': 'test_run', 'index': index + 1, 'run_id': run_id, 'label': intent['label']}), flush=True)
-            while True:
-                if manifest(frozen) != frozen_manifest:
-                    raise RuntimeError('frozen package changed during series')
-                try:
-                    completed = subprocess.run(['atira', 'status', run_id, '--json'], capture_output=True, text=True, timeout=25)
-                    view = json.loads(completed.stdout)
-                    if completed.returncode != 0 or view.get('run_id') != run_id:
-                        raise ValueError('status unavailable')
-                    save(folder / 'status.json', view)
-                    print(json.dumps({'event': 'status', 'run_id': run_id, 'phase': view.get('phase'), 'calls': view.get('calls')}), flush=True)
-                    if view.get('phase') == 'done':
-                        break
-                except (subprocess.TimeoutExpired, ValueError):
-                    print(json.dumps({'event': 'status_unavailable', 'run_id': run_id}), flush=True)
-                time.sleep(20)
+            with live_logs(run_id, folder):
+                while True:
+                    if manifest(frozen) != frozen_manifest:
+                        raise RuntimeError('frozen package changed during series')
+                    try:
+                        completed = subprocess.run(['atira', 'status', run_id, '--json'], capture_output=True, text=True, timeout=25)
+                        view = json.loads(completed.stdout)
+                        if completed.returncode != 0 or view.get('run_id') != run_id:
+                            raise ValueError('status unavailable')
+                        save(folder / 'status.json', view)
+                        print(json.dumps({'event': 'status', 'run_id': run_id, 'phase': view.get('phase'), 'calls': view.get('calls')}), flush=True)
+                        if view.get('phase') == 'done':
+                            break
+                    except (subprocess.TimeoutExpired, ValueError):
+                        print(json.dumps({'event': 'status_unavailable', 'run_id': run_id}), flush=True)
+                    time.sleep(20)
             evidence = {}
             for name, extra in [('get_run', {}), ('run_logs', {'limit': 1000, 'stream': 'stdout,stderr'}),
                                 ('run_profile', {'bucket': '30s'}), ('run_llm_calls', {'limit': 1000})]:
