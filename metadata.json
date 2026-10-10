@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KEV0XSWJ2CXGFX7M0EVYWH",
+  "strategy": "manual-commit",
+  "branch": "feat/agent-orchestrator",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 628,
+    "cache_creation_tokens": 601112,
+    "cache_read_tokens": 123045839,
+    "output_tokens": 250220,
+    "api_call_count": 314
+  }
+}
