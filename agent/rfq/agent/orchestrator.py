@@ -20,7 +20,7 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
-from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM
+from .prompts import BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM
 from .submit import submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
@@ -28,6 +28,7 @@ THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
 CHUNK_CHARS, MAX_CHUNKS = 60000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
+BRIEF_CORE = ("tender_reference", "scenario_datetime_utc", "sites")   # what the missions need to start
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -65,6 +66,7 @@ class Orchestrator:
         self.evidence_end = self.end - SUBMIT_RESERVE
         llm.set_run_deadline(self.end)
         self.brief: dict = {}
+        self._brief_full: asyncio.Future | None = None    # the whole brief while it is still being read (split brief)
         self.result: Result | None = None
         self.status: dict[str, str] = {}                  # mission -> last status
         self.done = {name: asyncio.Event() for name in ("tender", "specification", "mail")}
@@ -123,16 +125,49 @@ class Orchestrator:
 
     # ---------------------------------------------------------------- brief
     async def read_brief(self) -> None:
+        """The brief as JSON. With the split brief, a small first call returns what the missions need to start
+        (reference, scenario date, websites) while the whole brief is read in parallel (see full_brief)."""
         brief = self.run["brief"]
-        self.brief = await llm.ask_json(BRIEF_SYSTEM, brief, thinking=False, tag="brief")
-        ref = parse.clean(self.brief.get("tender_reference"))
+        full = asyncio.ensure_future(llm.ask_json(BRIEF_SYSTEM, brief, thinking=False, tag="brief"))
+        core = {}
+        if flags.BRIEF_SPLIT:
+            try:
+                core = await llm.ask_json(BRIEF_CORE_SYSTEM, brief, thinking=False, tag="brief_core")
+            except llm.DeadlineExceeded:
+                core = {}
+        if core.get("tender_reference") and isinstance(core.get("sites"), dict):
+            self.brief = self._checked_reference({k: core.get(k) for k in BRIEF_CORE})
+            self._brief_full = full
+            metrics.mark("brief_core")
+            log("brief_core", data=self.brief)
+            return
+        self.brief = self._checked_reference(await full)
+        metrics.mark("brief_done")
+        log("brief", data=self.brief)
+
+    async def full_brief(self) -> dict:
+        """The whole brief; with the split brief, waits for its second half. The first half's values win."""
+        pending, self._brief_full = self._brief_full, None
+        if pending is not None:
+            try:
+                full = await asyncio.wait_for(pending, timeout=max(5.0, self.evidence_end - time.time()))
+            except (Exception, asyncio.TimeoutError) as error:
+                log("brief_full_failed", error=f"{type(error).__name__}: {error}"[:300])
+                full = {}
+            self.brief = {**(full or {}), **{k: v for k, v in self.brief.items() if v}}
+            metrics.mark("brief_done")
+            log("brief", data=self.brief)
+        return self.brief
+
+    def _checked_reference(self, data: dict) -> dict:
+        brief = self.run["brief"]
+        ref = parse.clean(data.get("tender_reference"))
         if not ref or ref not in brief:   # the reference must be copied verbatim from the brief
             candidates = re.findall(r"\(([A-Z]{1,5}-[\w-]+)\)", brief)
             log("brief_reference_fallback", model=ref, candidates=candidates)
             if candidates:
-                self.brief["tender_reference"] = candidates[0]
-        metrics.mark("brief_done")
-        log("brief", data=self.brief)
+                data["tender_reference"] = candidates[0]
+        return data
 
     def site_for(self, role: str) -> Site:
         site_id = (self.brief.get("sites") or {}).get(role)
@@ -407,9 +442,6 @@ class Orchestrator:
         metrics.mark("evidence_start")
         await self.assign_role_sites()
         ref = self.brief.get("tender_reference")
-        records = self.brief.get("authorized_records") or []
-        topics = "\n".join(f"- {r.get('topic')}: subject keyword '{r.get('subject_keyword')}', sender "
-                           f"'{r.get('sender_localpart')}@<bidder domain>'" for r in records)
         tender = self.mission("tender", f"""Find the tender with the exact reference {ref} and collect:
 1. If documents or the bid area need a registration of interest (e.g. "Teilnahme bekunden" / expression of
    interest), register it. Optionally extract kind 'tender_overview'.
@@ -432,16 +464,6 @@ the revision list.
 3. Open the CURRENT revision and read ALL its requirement pages in one step: read_all_pages(next_ref=<its 'next
    page' link, possibly inside the viewer frame>, kind='requirements').""", ["spec_revisions", "requirements"], 30,
             progress=self.spec_progress)
-        mail = self.mission("mail", f"""In the sales mailbox, collect every message about tender {ref} that is one of:
-- the sales director's discount approval (sender '{self.brief.get('director_localpart')}@<bidder domain>')
-{topics}
-Mail search combines words with AND. Strategy: search the exact reference alone; read the result list completely
-with read_all_pages(next_ref=<'next page' link>, kind='mail_list'); then extract_urls with kind 'mail_message' for
-EVERY listed message whose subject contains the reference (skip signing-TAN messages; look-alike references are fine
-to open, they are filtered later). Then switch to the archive folder (and any other folder) and do the same. If a
-search says there are too many results, add the subject keyword.""",
-            ["mail_list", "mail_message"], 40, progress=self.mail_progress)
-        mail.background_extraction = flags.BACKGROUND_EXTRACTION
 
         async def tracked(name: str, mission: Mission, attempts: int = 2):
             site = self.role_site(name)
@@ -453,12 +475,33 @@ search says there are too many results, add the subject keyword.""",
             finally:
                 self.done[name].set()        # an ended mission (and its recovery) is an event, whatever its outcome
 
+        async def mail_role():
+            await self.full_brief()          # the mail mission needs the authorized senders and topics
+            return await tracked("mail", self.mail_mission())
+
         results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec, attempts=3),
-                                       tracked("mail", mail), self.erp_phase())
+                                       mail_role(), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         metrics.mark("evidence_done")
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    def mail_mission(self) -> Mission:
+        ref = self.brief.get("tender_reference")
+        records = self.brief.get("authorized_records") or []
+        topics = "\n".join(f"- {r.get('topic')}: subject keyword '{r.get('subject_keyword')}', sender "
+                           f"'{r.get('sender_localpart')}@<bidder domain>'" for r in records)
+        mail = self.mission("mail", f"""In the sales mailbox, collect every message about tender {ref} that is one of:
+- the sales director's discount approval (sender '{self.brief.get('director_localpart')}@<bidder domain>')
+{topics}
+Mail search combines words with AND. Strategy: search the exact reference alone; read the result list completely
+with read_all_pages(next_ref=<'next page' link>, kind='mail_list'); then extract_urls with kind 'mail_message' for
+EVERY listed message whose subject contains the reference (skip signing-TAN messages; look-alike references are fine
+to open, they are filtered later). Then switch to the archive folder (and any other folder) and do the same. If a
+search says there are too many results, add the subject keyword.""",
+            ["mail_list", "mail_message"], 40, progress=self.mail_progress)
+        mail.background_extraction = flags.BACKGROUND_EXTRACTION
+        return mail
 
     async def recover_elsewhere(self, role: str, home: Site, mission: Mission) -> None:
         """A mission ended with its checklist incomplete. The information may be on another website: the model picks
@@ -665,6 +708,7 @@ The progress checklist tells you what is still missing per material.""", ["mater
                 await asyncio.wait_for(self.gather_evidence(), timeout=max(30, self.evidence_end - time.time()))
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
+        await self.full_brief()                                 # the rules and the submission need the whole brief
         try:
             result = self.resolve()
             if not replay and result.answer.get("decision") == "no_bid" and time.time() < self.evidence_end - 30:
