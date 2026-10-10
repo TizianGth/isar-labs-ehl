@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="de-DE"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1"><title>Angebotsabgabe – Vergabeportal</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#eceff1;color:#243342;font:15px Arial,sans-serif}
+      header{background:#264b6b;color:white;padding:18px 28px;border-bottom:5px solid #c2ab70}
+      main{max-width:1100px;margin:22px auto;padding:24px;background:white;border:1px solid #b4bdc5}
+      h1{font-size:24px}h2{font-size:19px}a{color:#164f80}nav{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0}
+      label{display:block;margin:12px 0}input,select,textarea,button{font:inherit;padding:8px;border:1px solid #8595a3}
+      input,textarea{max-width:100%}button,.button{background:#e3e9ed;color:#173d5a;cursor:pointer;display:inline-block}
+      table{width:100%;border-collapse:collapse;margin:18px 0}td,th{padding:12px;text-align:left;border:1px solid #c0cad1}
+      th{background:#e4eaf0}.notice{padding:16px;background:#fff4d6;border:1px solid #b89c57;margin:16px 0}
+      .tabs a{padding:10px;background:#e3e9ed}.tabs [aria-current="page"]{background:#264b6b;color:white}
+      iframe{width:100%;height:330px;border:1px solid #b4bdc5}footer{font-size:12px;color:#5e6f7d;margin-top:24px}
+    </style></head><body><header>Vergabeportal</header><main><h1>Angebotsabgabe</h1><style>
+      .tender-data{margin-top:38px}.tender-data details{margin:18px 0;border:1px solid #aab;padding:12px}
+      .tender-data summary{cursor:pointer}.tender-data iframe{height:300px}
+      .tender-data #results td{min-width:180px}.tender-data #results td:nth-child(2){min-width:350px}
+    </style>
+    <section id="tender-chrome" aria-label="Portal-Werkzeugleiste">
+    <div style="display:flex;gap:8px;align-items:center;background:#e5e5e5;padding:8px;border:1px solid #999"><a href="/" aria-label="Zurück">←</a><span role="img" aria-label="Verbindung gesichert">🔒</span><input readonly="" aria-label="Adresse" value="Vergabeportal / Verfahrensakte" style="flex:1;min-width:0"><button type="button" data-reload="" aria-label="Neu laden">↻</button></div>
+    <div data-download="" role="region" aria-label="Downloads" style="position:fixed;bottom:0;left:0;right:0;z-index:8;padding:10px;background:#eee;border-top:1px solid #888">↓ Sitzungsprotokoll (lokal) <a href="/">Öffnen</a> <button type="button" data-close="" aria-label="Downloadleiste schließen">×</button></div></section>
+    <script>(()=>{const root=document.getElementById("tender-chrome");const data=null;root.querySelector('[data-reload]').addEventListener('click',()=>location.reload());root.querySelector('[data-close]').addEventListener('click',()=>{root.querySelector('[data-download]').hidden=true});})();</script>
+    <aside id="tender-banner" aria-label="Aktueller Hinweis" style="padding:28px;background:#fff0bc;border:1px solid #9a7c2b">Portalmitteilung: Die Vergabestelle übernimmt keine Prüfung Ihrer Eingaben.</aside>
+    <script>(()=>{const root=document.getElementById("tender-banner");const data={"delay":650};setTimeout(()=>{root.hidden=false},data.delay);})();</script>
+    <div class="tender-data"><style>
+    .configurator label{display:block;margin:22px 0}.configurator select{max-width:520px;width:100%}
+    .configurator button{margin:14px 18px 14px 0}.configurator{max-width:760px}
+    .configurator table{font-size:13px}.configurator [role=alert]{border:2px solid #a00;padding:18px;white-space:pre-line}
+    </style><a href="/tenders/VG-2027-7093">Zur Bekanntmachung</a><h2>Position 01.04</h2>
+    
+    <p>Schritt 3 · Änderungen werden erst mit „Weiter“ gespeichert. Zurück verwirft nachfolgende Schritte.</p>
+    <form method="post" action="/tenders/VG-2027-7093/submission"><input type="hidden" name="csrf" value="d1f454da-d21b-4e66-b23e-0d7f904212c6"><div class="configurator">
+      <input type="hidden" name="revision" value="2">
+      <style>#tender-fields{height:210px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #aaa;padding:12px}#tender-fields::-webkit-scrollbar{width:4px}#tender-fields::-webkit-scrollbar-thumb{background:#9aa2aa}</style>
+    <div id="tender-fields" role="region" aria-label="Position 01.04" tabindex="0"><p>Hydraulikzylinder Verriegelung</p>
+
+    <label>Bohrung (mm)<select name="bore">
+        <option value="">Bitte wählen</option><option value="10">10</option><option value="12">12</option><option value="125">125</option><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="20">20</option><option value="22">22</option><option value="25">25</option><option value="28">28</option><option value="40">40</option><option value="50">50</option><option value="63">63</option><option value="64">64</option><option value="8">8</option><option value="80">80</option><option value="81">81</option></select></label><label>Hub (mm)<select name="stroke" disabled="">
+        <option value="">Bitte wählen</option></select></label><label>Befestigung<select name="mounting" disabled="">
+        <option value="">Bitte wählen</option></select></label><label>Zertifizierung<select name="certification" disabled="">
+        <option value="">Bitte wählen</option></select></label>
+    <button name="action" value="configure" type="submit">Auswahl übernehmen</button>
+    <label>Katalognummer<select name="material" disabled="">
+      <option value="">Bitte wählen</option>
+    </select></label>
+    <label>Menge (Stk) <input name="quantity" value="" autocomplete="off"></label><label>Einzelpreis netto (EUR) <input name="price" value="" autocomplete="off"></label>
+    <details id="calculation-details"><summary>Preisaufbau / Kalkulationsnachweis</summary><fieldset><legend>Kalkulationsnachweis (separat bewertet; leer lassen möglich)</legend><label>Basispreis je Stück vor Rabatt (EUR) <input name="base_price" value="" autocomplete="off"></label><label>Zuschläge je Stück (EUR) <input name="surcharge" value="" autocomplete="off"></label><label>Verpackung je Stück (EUR) <input name="packaging" value="" autocomplete="off"></label><label>Projektbonus für gesamte Position (EUR) <input name="rebate" value="" autocomplete="off"></label><p>Verpackung und Projektbonus separat ausweisen; nicht in Zuschläge einrechnen. Auch anteilige Rüstpoolkosten gehören zu den Zuschlägen.</p><p>Zuschläge = Materialzuschlag + anteilige Rüstkosten, auf Cent gerundet. Endpreis separat aus ungerundeten Bestandteilen berechnen.</p></fieldset></details><script>(()=>{const root=document.getElementById("calculation-details");const data="calculation:rfq-public-1";try{if(sessionStorage.getItem(data)==='open')root.open=true}catch{}root.addEventListener('toggle',()=>{try{sessionStorage.setItem(data,root.open?'open':'closed')}catch{}})})();</script>
+    <label>Lieferzeit<select name="lead"><option value="">Bitte wählen</option>
+      <option value="1">1 Wochen</option><option value="2">2 Wochen</option><option value="3">3 Wochen</option><option value="4">4 Wochen</option><option value="5">5 Wochen</option><option value="6">6 Wochen</option><option value="7">7 Wochen</option><option value="8">8 Wochen</option><option value="9">9 Wochen</option><option value="10">10 Wochen</option><option value="11">11 Wochen</option><option value="12">12 Wochen</option><option value="13">13 Wochen</option><option value="14">14 Wochen</option><option value="15">15 Wochen</option><option value="16">16 Wochen</option><option value="17">17 Wochen</option><option value="18">18 Wochen</option><option value="19">19 Wochen</option><option value="20">20 Wochen</option><option value="21">21 Wochen</option><option value="22">22 Wochen</option><option value="23">23 Wochen</option><option value="24">24 Wochen</option><option value="25">25 Wochen</option><option value="26">26 Wochen</option><option value="27">27 Wochen</option><option value="28">28 Wochen</option><option value="29">29 Wochen</option><option value="30">30 Wochen</option><option value="31">31 Wochen</option><option value="32">32 Wochen</option><option value="33">33 Wochen</option><option value="34">34 Wochen</option><option value="35">35 Wochen</option><option value="36">36 Wochen</option><option value="37">37 Wochen</option><option value="38">38 Wochen</option><option value="39">39 Wochen</option><option value="40">40 Wochen</option><option value="41">41 Wochen</option><option value="42">42 Wochen</option><option value="43">43 Wochen</option><option value="44">44 Wochen</option><option value="45">45 Wochen</option><option value="46">46 Wochen</option><option value="47">47 Wochen</option><option value="48">48 Wochen</option><option value="49">49 Wochen</option><option value="50">50 Wochen</option><option value="51">51 Wochen</option><option value="52">52 Wochen</option>
+    </select></label>
+<p><button name="action" value="skip" type="submit">Position auslassen (Teilpunkte)</button> Diese Position wird nicht übermittelt und erhält keine Positionspunkte. Andere Positionen können vollständig bewertet werden.</p>
+    <button name="action" value="add" type="submit">Position hinzufügen</button>
+    </div>
+      <button name="action" value="next" type="submit">Weiter</button>
+      <button name="action" value="back" type="submit">Zurück</button>
+    </div></form>
+    <script>document.querySelector('form[action$="/submission"]').addEventListener('submit',function(event){
+      if(event.submitter && event.submitter.value==='submit'){
+        if(!window.confirm('Angebot verbindlich abgeben? Diese Abgabe beendet den Lauf.')){event.preventDefault();return;}
+        this.elements.confirm_token.value=event.submitter.dataset.confirmToken;
+      }
+    });</script></div>
+    <dialog id="tender-survey" aria-label="Kurze Umfrage" style="width:520px;max-width:90vw;padding:42px;position:fixed;border:1px solid #777;">
+    <style>#tender-survey::backdrop{background:rgba(20,30,40,.8)}#tender-survey button[data-close]{position:absolute;left:73%;top:20%;width:14px;height:14px;padding:0;font:10px Arial;line-height:12px;z-index:1}</style>
+    <h2>Kurze Umfrage</h2><p>Wie zufrieden sind Sie mit unserem Portal?</p><a href="/portal-survey">Akzeptieren und fortfahren</a>
+    <button type="button" data-close="" aria-label="Schließen">×</button></dialog>
+    <script>(()=>{const root=document.getElementById("tender-survey");const data={"show":true,"delay":1100,"repeat":5,"navigation":4,"key":"overlay:4028228049:tender-survey"};root.addEventListener('cancel',event=>event.preventDefault());document.addEventListener('keydown',event=>{if(root.open&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation()}},true);root.querySelector('[data-close]').addEventListener('click',()=>root.close());if(data.show)setTimeout(()=>{if(data.key){try{const previous=JSON.parse(sessionStorage.getItem(data.key)||'null');if(previous&&(!data.repeat||data.navigation-previous.navigation<data.repeat))return;sessionStorage.setItem(data.key,JSON.stringify({navigation:data.navigation}))}catch{}}if(!root.open)root.showModal()},data.delay);})();</script>
+    <footer>Demonstrationssystem · Alle Angaben sind fiktiv · Zeitzone: Europe/Athens</footer>
+    </main></body></html>

@@ -1,0 +1,64 @@
+{
+  "tender_reference": "VG-2027-7093",
+  "decision": "bid",
+  "currency": "EUR",
+  "discount_percent": 5.0,
+  "positions": [
+    {
+      "position": "01.01",
+      "material_number": "HZ-1609",
+      "quantity": 25,
+      "unit_price": 2614.68,
+      "lead_time_weeks": 2,
+      "base_unit_price": 2743.58,
+      "surcharge_per_unit": 6.69,
+      "packaging_per_unit": 1.59,
+      "rebate_total": 0.0
+    },
+    {
+      "position": "01.02",
+      "material_number": "HZ-2170",
+      "quantity": 29,
+      "unit_price": 680.37,
+      "lead_time_weeks": 3,
+      "base_unit_price": 705.15,
+      "surcharge_per_unit": 5.91,
+      "packaging_per_unit": 4.57,
+      "rebate_total": 0.0
+    },
+    {
+      "position": "01.03",
+      "material_number": "HZ-2170",
+      "quantity": 16,
+      "unit_price": 734.49,
+      "lead_time_weeks": 11,
+      "base_unit_price": 753.23,
+      "surcharge_per_unit": 12.57,
+      "packaging_per_unit": 4.97,
+      "rebate_total": 580.41
+    },
+    {
+      "position": "01.04",
+      "material_number": "HZ-3916",
+      "quantity": 21,
+      "unit_price": 1906.85,
+      "lead_time_weeks": 3,
+      "base_unit_price": 2107.18,
+      "surcharge_per_unit": 5.25,
+      "packaging_per_unit": 1.26,
+      "rebate_total": 2131.11
+    },
+    {
+      "position": "01.05",
+      "material_number": "HZ-6932",
+      "quantity": 130,
+      "unit_price": 1692.74,
+      "lead_time_weeks": 3,
+      "base_unit_price": 1866.15,
+      "surcharge_per_unit": 8.06,
+      "packaging_per_unit": 1.94,
+      "rebate_total": 11683.58
+    }
+  ],
+  "total_net": 356949.62
+}

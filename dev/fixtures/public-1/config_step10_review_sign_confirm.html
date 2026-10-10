@@ -1,0 +1,62 @@
+<!DOCTYPE html><html lang="de-DE"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1"><title>Angebotsabgabe – Vergabeportal</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#eceff1;color:#243342;font:15px Arial,sans-serif}
+      header{background:#264b6b;color:white;padding:18px 28px;border-bottom:5px solid #c2ab70}
+      main{max-width:1100px;margin:22px auto;padding:24px;background:white;border:1px solid #b4bdc5}
+      h1{font-size:24px}h2{font-size:19px}a{color:#164f80}nav{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0}
+      label{display:block;margin:12px 0}input,select,textarea,button{font:inherit;padding:8px;border:1px solid #8595a3}
+      input,textarea{max-width:100%}button,.button{background:#e3e9ed;color:#173d5a;cursor:pointer;display:inline-block}
+      table{width:100%;border-collapse:collapse;margin:18px 0}td,th{padding:12px;text-align:left;border:1px solid #c0cad1}
+      th{background:#e4eaf0}.notice{padding:16px;background:#fff4d6;border:1px solid #b89c57;margin:16px 0}
+      .tabs a{padding:10px;background:#e3e9ed}.tabs [aria-current="page"]{background:#264b6b;color:white}
+      iframe{width:100%;height:330px;border:1px solid #b4bdc5}footer{font-size:12px;color:#5e6f7d;margin-top:24px}
+    </style></head><body><header>Vergabeportal</header><main><h1>Angebotsabgabe</h1><style>
+      .tender-data{margin-top:38px}.tender-data details{margin:18px 0;border:1px solid #aab;padding:12px}
+      .tender-data summary{cursor:pointer}.tender-data iframe{height:300px}
+      .tender-data #results td{min-width:180px}.tender-data #results td:nth-child(2){min-width:350px}
+    </style>
+    <section id="tender-chrome" aria-label="Portal-Werkzeugleiste">
+    <div style="display:flex;gap:8px;align-items:center;background:#e5e5e5;padding:8px;border:1px solid #999"><a href="/" aria-label="Zurück">←</a><span role="img" aria-label="Verbindung gesichert">🔒</span><input readonly="" aria-label="Adresse" value="Vergabeportal / Verfahrensakte" style="flex:1;min-width:0"><button type="button" data-reload="" aria-label="Neu laden">↻</button></div>
+    <div data-download="" role="region" aria-label="Downloads" style="position:fixed;bottom:0;left:0;right:0;z-index:8;padding:10px;background:#eee;border-top:1px solid #888">↓ Sitzungsprotokoll (lokal) <a href="/">Öffnen</a> <button type="button" data-close="" aria-label="Downloadleiste schließen">×</button></div></section>
+    <script>(()=>{const root=document.getElementById("tender-chrome");const data=null;root.querySelector('[data-reload]').addEventListener('click',()=>location.reload());root.querySelector('[data-close]').addEventListener('click',()=>{root.querySelector('[data-download]').hidden=true});})();</script>
+    <aside id="tender-banner" aria-label="Aktueller Hinweis" style="padding:28px;background:#fff0bc;border:1px solid #9a7c2b">Portalmitteilung: Die Vergabestelle übernimmt keine Prüfung Ihrer Eingaben.</aside>
+    <script>(()=>{const root=document.getElementById("tender-banner");const data={"delay":650};setTimeout(()=>{root.hidden=false},data.delay);})();</script>
+    <div class="tender-data"><style>
+    .configurator label{display:block;margin:22px 0}.configurator select{max-width:520px;width:100%}
+    .configurator button{margin:14px 18px 14px 0}.configurator{max-width:760px}
+    .configurator table{font-size:13px}.configurator [role=alert]{border:2px solid #a00;padding:18px;white-space:pre-line}
+    </style><a href="/tenders/VG-2027-7093">Zur Bekanntmachung</a><h2>Prüfen und signieren</h2>
+    <div id="tender-review-checklist" role="list" aria-label="Werte" style="display:flex;flex-direction:column">
+    <div role="listitem" aria-posinset="2" aria-setsize="3" style="order:1">Prüfpunkt 2: Positionen und Nettosumme</div><div role="listitem" aria-posinset="3" aria-setsize="3" style="order:2">Prüfpunkt 3: Signatur</div><div role="listitem" aria-posinset="1" aria-setsize="3" style="order:0">Prüfpunkt 1: Angebotsart</div></div>
+    <p>Schritt 10 · Änderungen werden erst mit „Weiter“ gespeichert. Zurück verwirft nachfolgende Schritte.</p>
+    <form method="post" action="/tenders/VG-2027-7093/submission"><input type="hidden" name="csrf" value="d1f454da-d21b-4e66-b23e-0d7f904212c6"><div class="configurator">
+      <input type="hidden" name="revision" value="13">
+      <style>#tender-fields{height:210px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #aaa;padding:12px}#tender-fields::-webkit-scrollbar{width:4px}#tender-fields::-webkit-scrollbar-thumb{background:#9aa2aa}</style>
+    <div id="tender-fields" role="region" aria-label="Prüfen und signieren" tabindex="0"><dl><dt>Bieter</dt><dd>Linden Hydraulik und Komponenten GmbH</dd><dt>USt-IdNr.</dt><dd>DE811234567</dd>
+    <dt>Kontakt-E-Mail</dt><dd>vertrieb@linden-hydraulik.example</dd><dt>Aktenzeichen</dt><dd>VG-2027-7093</dd>
+    <dt>Angebotsart</dt><dd>Hauptangebot</dd>
+    <dt>Rabatt</dt><dd>5 %</dd><dt>Nettosumme</dt><dd>25.925,76 EUR</dd></dl>
+    <p>Ausgelassene Positionen: 01.01, 01.02, 01.03, 01.05</p>
+    <table><thead><tr><th>Position</th><th>Katalognummer</th><th>Menge</th><th>Einzelpreis netto</th><th>Lieferzeit</th><th>Basispreis</th><th>Zuschläge je Stück</th><th>Verpackung je Stück</th><th>Projektbonus Position</th></tr></thead>
+    <tbody><tr><td>01.04</td><td>HZ-3916</td><td>21</td><td>1.234,56 EUR</td><td>3 Wochen</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody></table><button name="action" value="tan" type="submit">TAN anfordern</button>
+              
+              <label>Signatur-TAN <input name="tan" value="" autocomplete="off"></label>
+              <input type="hidden" name="confirm_token" value="">
+              <button name="action" value="submit" type="submit" data-confirm-token="E8E20D83">Angebot verbindlich abgeben</button></div>
+      
+      <button name="action" value="back" type="submit">Zurück</button>
+    </div></form>
+    <script>document.querySelector('form[action$="/submission"]').addEventListener('submit',function(event){
+      if(event.submitter && event.submitter.value==='submit'){
+        if(!window.confirm('Angebot verbindlich abgeben? Diese Abgabe beendet den Lauf.')){event.preventDefault();return;}
+        this.elements.confirm_token.value=event.submitter.dataset.confirmToken;
+      }
+    });</script></div>
+    <dialog id="tender-survey" aria-label="Kurze Umfrage" style="width:520px;max-width:90vw;padding:42px;position:fixed;border:1px solid #777;">
+    <style>#tender-survey::backdrop{background:rgba(20,30,40,.8)}#tender-survey button[data-close]{position:absolute;left:88%;top:36%;width:14px;height:14px;padding:0;font:10px Arial;line-height:12px;z-index:1}</style>
+    <h2>Kurze Umfrage</h2><p>Wie zufrieden sind Sie mit unserem Portal?</p><a href="/portal-survey">Akzeptieren und fortfahren</a>
+    <button type="button" data-close="" aria-label="Schließen">×</button></dialog>
+    <script>(()=>{const root=document.getElementById("tender-survey");const data={"show":true,"delay":1100,"repeat":5,"navigation":15,"key":"overlay:4028228049:tender-survey"};root.addEventListener('cancel',event=>event.preventDefault());document.addEventListener('keydown',event=>{if(root.open&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation()}},true);root.querySelector('[data-close]').addEventListener('click',()=>root.close());if(data.show)setTimeout(()=>{if(data.key){try{const previous=JSON.parse(sessionStorage.getItem(data.key)||'null');if(previous&&(!data.repeat||data.navigation-previous.navigation<data.repeat))return;sessionStorage.setItem(data.key,JSON.stringify({navigation:data.navigation}))}catch{}}if(!root.open)root.showModal()},data.delay);})();</script>
+    <footer>Demonstrationssystem · Alle Angaben sind fiktiv · Zeitzone: Europe/Athens</footer>
+    </main></body></html>

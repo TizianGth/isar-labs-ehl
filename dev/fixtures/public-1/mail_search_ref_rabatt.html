@@ -1,0 +1,114 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Posteingang – Werkpost</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#f3f5f4;color:#253c37;font:14px Arial,sans-serif}
+      a{color:#175e50}button,input{font:inherit;padding:9px 12px;border:1px solid #b6c4bf;border-radius:4px}
+      button{background:#fff;color:#254f43;cursor:pointer}input{min-width:0;background:#fff}
+      header{height:70px;background:#244c40;color:#fff;display:flex;align-items:center;justify-content:space-between;
+        padding:0 24px;gap:24px}header strong{font-size:22px;letter-spacing:1px}header span{font-size:13px}
+      header form{margin:0}.workspace{display:grid;grid-template-columns:205px minmax(320px,390px) minmax(0,1fr);
+        min-height:calc(100vh - 103px)}aside{padding:25px 14px;background:#e8eeeb;border-right:1px solid #c9d3ce}
+      aside h2{font-size:11px;letter-spacing:1px;color:#60776b;margin:0 12px 14px;text-transform:uppercase}
+      aside a{display:flex;justify-content:space-between;gap:8px;padding:13px 12px;margin:4px 0;
+        text-decoration:none;border-radius:4px}aside a[aria-current=page]{background:#cbdcd3;font-weight:bold}
+      aside nav{display:block}.identity{padding:20px 12px;font-size:12px;overflow-wrap:anywhere;color:#60776b}
+      .message-list{padding:22px 16px;background:#fff;border-right:1px solid #c9d3ce;min-width:0}
+      h1{font-size:21px;margin:0 0 18px}.search{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+      .search label{width:100%;font-size:12px;color:#60776b}.search input[type=search]{flex:1;width:180px}
+      table{width:100%;border-collapse:collapse;table-layout:fixed}
+      th{font-size:11px;text-align:left;color:#60776b;padding:8px 5px;border-bottom:1px solid #c9d3ce}
+      th:last-child{width:105px}td{padding:13px 5px;border-bottom:1px solid #e2e8e4;vertical-align:top;overflow-wrap:anywhere}
+      td:last-child{font-size:11px;color:#60776b;line-height:1.6}td a{display:block;line-height:1.4;text-decoration:none}
+      td a:hover{text-decoration:underline}.sender{display:block;font-size:11px;color:#60776b;margin-top:6px}
+      tr[aria-selected=true]{background:#edf5f0}nav{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px}
+      .reading-pane{padding:22px;min-width:0}.reading-pane h2{font-size:12px;color:#60776b;text-transform:uppercase;
+        letter-spacing:1px;margin:0 0 15px}iframe{width:100%;height:calc(100vh - 173px);min-height:350px;
+        border:1px solid #c9d3ce;background:#fff;border-radius:4px}.empty{padding:30px;background:#fff;
+        border:1px solid #c9d3ce;color:#60776b;line-height:1.6}footer{height:33px;padding:9px 24px;font-size:11px;
+        color:#60776b;border-top:1px solid #c9d3ce}
+      @media(max-width:900px){.workspace{grid-template-columns:155px minmax(250px,1fr)}
+        .reading-pane{grid-column:1 / -1}iframe{height:440px}header span{display:none}}
+    </style><style>fieldset{min-width:0;border:1px solid #b6c4bf}summary{cursor:pointer;padding:12px}
+      #mail-folders ul a{display:block}#mail-folders button{width:100%}.message-list .sender{font-size:10px}
+      #mail-list-scroll{height:360px}.reading-pane iframe{height:480px}
+    </style></head><body>
+    <section id="mail-chrome" aria-label="Portal-Werkzeugleiste">
+    <div style="display:flex;gap:8px;align-items:center;background:#e5e5e5;padding:8px;border:1px solid #999"><a href="/tools" aria-label="Zurück">←</a><span role="img" aria-label="Verbindung gesichert">🔒</span><input readonly aria-label="Adresse" value="Werkpost / Postfach" style="flex:1;min-width:0"><button type="button" data-reload aria-label="Neu laden">↻</button></div>
+    <div data-download role="region" aria-label="Downloads" style="position:fixed;bottom:0;left:0;right:0;z-index:8;padding:10px;background:#eee;border-top:1px solid #888">↓ Postfach-Export · nicht erstellt <a href="/tools">Öffnen</a> <button type="button" data-close aria-label="Downloadleiste schließen">×</button></div></section>
+    <script>(()=>{const root=document.getElementById("mail-chrome");const data=null;root.querySelector('[data-reload]').addEventListener('click',()=>location.reload());root.querySelector('[data-close]').addEventListener('click',()=>{root.querySelector('[data-download]').hidden=true});})();</script>
+    <aside id="mail-banner" hidden aria-label="Aktueller Hinweis" style="padding:28px;background:#fff0bc;border:1px solid #9a7c2b">Werkpost: Die neue Oberfläche wird schrittweise eingeführt.</aside>
+    <script>(()=>{const root=document.getElementById("mail-banner");const data={"delay":800};setTimeout(()=>{root.hidden=false},data.delay);})();</script>
+    <dialog id="mail-maintenance" aria-label="Postfachhinweis" style="width:520px;max-width:90vw;padding:42px;position:fixed;border:1px solid #777;margin:auto auto 18px;bottom:0;top:auto">
+    <style>#mail-maintenance::backdrop{background:rgba(20,30,40,.8)}#mail-maintenance button[data-close]{position:absolute;left:70%;top:52%;width:14px;height:14px;padding:0;font:10px Arial;line-height:12px;z-index:1}</style>
+    <h2>Postfachhinweis</h2><p>Der Lesebereich zeigt die ausgewählte Nachricht. Ältere Freigaben bleiben im Archiv verfügbar.</p><a href="/tools">Akzeptieren und fortfahren</a>
+    <button type="button" data-close aria-label="Schließen">×</button></dialog>
+    <script>(()=>{const root=document.getElementById("mail-maintenance");const data={"show":true,"delay":900,"repeat":5,"navigation":4,"key":"overlay:4028228049:mail-maintenance"};root.addEventListener('cancel',event=>event.preventDefault());document.addEventListener('keydown',event=>{if(root.open&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation()}},true);root.querySelector('[data-close]').addEventListener('click',()=>root.close());if(data.show)setTimeout(()=>{if(data.key){try{const previous=JSON.parse(sessionStorage.getItem(data.key)||'null');if(previous&&(!data.repeat||data.navigation-previous.navigation<data.repeat))return;sessionStorage.setItem(data.key,JSON.stringify({navigation:data.navigation}))}catch{}}if(!root.open)root.showModal()},data.delay);})();</script>
+    <header><strong>Werkpost</strong><span>Linden Hydraulik und Komponenten GmbH · Vertrieb</span>
+      <form method="post" action="/logout"><input type="hidden" name="csrf" value="bf11a511-8a1d-43d2-8787-f99a98d40977"><button type="submit">Abmelden</button></form></header>
+    <main class="workspace">
+      <aside><h2>Ordner</h2><nav id="mail-folders" aria-label="Postfachordner" style="position:relative;display:inline-block">
+    <style>#mail-folders ul{display:none;position:absolute;top:100%;left:0;z-index:5;background:white;border:1px solid #aaa;min-width:200px;margin:0;padding:12px;list-style:none}#mail-folders:hover ul,#mail-folders:focus-within ul{display:block}#mail-folders li{padding:8px}</style>
+    <button type="button" aria-label="Postfachordner">Postfachordner ▾</button><ul><li><a href="/?folder=inbox&amp;q=VG-2027-7093+Rabatt">Posteingang (25)</a></li><li><a href="/?folder=archive&amp;q=VG-2027-7093+Rabatt">Archiv (13)</a></li></ul></nav><p class="identity">Angemeldet als<br>vertrieb@linden-hydraulik.example</p></aside>
+      <section class="message-list" aria-label="Nachrichtenliste"><h1>Posteingang</h1>
+        <form class="search" method="get" action="/">
+          <input type="hidden" name="folder" value="inbox">
+          <label for="mail-search"><style>#mail-filter-label::before{content:attr(data-label)}</style><span id="mail-filter-label" role="img" data-label="Nachrichten durchsuchen" aria-label="Nachrichten durchsuchen"></span></label>
+          <input id="mail-search" type="search" name="q" value="VG-2027-7093 Rabatt" placeholder="Suchbegriff">
+          <button type="submit">Suchen</button>
+        </form>
+        <p role="status"> Archivsuche: mehrere Suchwörter werden UND-verknüpft. Vergabereferenz mit Betreff/Stichwort kombinieren, Lieferzusagen zusätzlich mit Artikelnummer. Maximal 20 Treffer. Neue Signatur-TANs erscheinen auch ohne Suche.</p><p>6 Nachrichten</p>
+        <section id="mail-list-gate" aria-label="Zugangsprüfung">
+    <label>Zum Entsperren ganz nach rechts ziehen <input type="range" min="0" max="100" value="0" step="1" aria-label="Zum Entsperren ziehen" style="width:280px;max-width:100%"></label>
+    <label><input type="checkbox"> Ich bin kein Roboter</label><p role="status">Gesperrt</p>
+    <fieldset disabled inert><legend>Geschützter Bereich</legend><style>#mail-list-scroll{height:210px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #aaa;padding:12px}#mail-list-scroll::-webkit-scrollbar{width:4px}#mail-list-scroll::-webkit-scrollbar-thumb{background:#9aa2aa}</style>
+    <div id="mail-list-scroll" role="region" aria-label="Nachrichtenliste blättern" tabindex="0"><table><thead><tr><th>Nachricht</th><th>Eingang</th></tr></thead>
+    <tbody id="messages"><tr aria-selected="true">
+            <td><a href="/?folder=inbox&amp;q=VG-2027-7093+Rabatt&amp;page=1&amp;message=conditional-7571"><span role="img" aria-label="Rabattfreigabe VG-2027-7093">R​a​b​a​t​t​f​r​e​i​g​a​b​e​ ​V​G​-​2​0​2​7​-​7​0​9​3</span></a>
+              <span class="sender">leitung@linden-hydraulik.example</span></td><td><time datetime="2027-01-24T16:00:00Z">24.01.2027, 17:00</time></td></tr><tr aria-selected="false">
+            <td><a href="/?folder=inbox&amp;q=VG-2027-7093+Rabatt&amp;page=1&amp;message=MSG-9897"><span role="img" aria-label="Rabattfreigabe VG-2027-7093-A">R​a​b​a​t​t​f​r​e​i​g​a​b​e​ ​V​G​-​2​0​2​7​-​7​0​9​3​-​A</span></a>
+              <span class="sender">leitung@linden-hydraulik.example</span></td><td><time datetime="2027-01-24T08:15:00Z">24.01.2027, 09:15</time></td></tr><tr aria-selected="false">
+            <td><a href="/?folder=inbox&amp;q=VG-2027-7093+Rabatt&amp;page=1&amp;message=MSG-4276"><span role="img" aria-label="Angebotsprüfung VG-2027-7093">A​n​g​e​b​o​t​s​p​r​ü​f​u​n​g​ ​V​G​-​2​0​2​7​-​7​0​9​3</span></a>
+              <span class="sender">leitung@linden-hydraulik.example</span></td><td><time datetime="2027-01-23T09:05:00Z">23.01.2027, 10:05</time></td></tr></tbody></table>
+    <p>Seite 1 von 2</p>
+    <nav>
+    <a href="/?folder=inbox&amp;q=VG-2027-7093+Rabatt&amp;page=2&amp;message=conditional-7571">Nächste Seite</a>
+      <button type="button" data-url="/?folder=inbox&amp;q=VG-2027-7093+Rabatt&amp;page=2&amp;message=conditional-7571" data-target="messages" data-load-failed="Laden fehlgeschlagen. Bitte erneut versuchen." data-connection-failed="Verbindung unterbrochen. Bitte erneut versuchen." onclick="loadRows(this)">Weitere laden</button></nav>
+    <p id="load-status" role="status"></p><script>
+      async function loadRows(button){
+        button.disabled=true;
+        try{
+          const response=await fetch(button.dataset.url,{headers:{'X-Sites-Fragment':'rows'}});
+          if(response.redirected){window.top.location.href=response.url;return;}
+          if(!response.ok){document.getElementById('load-status').textContent=button.dataset.loadFailed;return;}
+          const parsed=new DOMParser().parseFromString(await response.text(),'text/html');
+          const login=parsed.querySelector('a[data-sites-login]');
+          if(login){window.top.location.href=login.href;return;}
+          if(!parsed.getElementById(button.dataset.target)){location.href=button.dataset.url;return;}
+          document.getElementById(button.dataset.target).append(...parsed.getElementById(button.dataset.target).children);
+          const next=parsed.querySelector('button[data-url]');
+          if(next)button.dataset.url=next.dataset.url;else button.remove();
+        }catch{document.getElementById('load-status').textContent=button.dataset.connectionFailed;}
+        finally{button.disabled=false;}
+      }
+    </script></div></fieldset></section>
+    <script>(()=>{const root=document.getElementById("mail-list-gate");const data=null;const slider=root.querySelector('[type=range]'),checkbox=root.querySelector('[type=checkbox]'),fieldset=root.querySelector('fieldset'),status=root.querySelector('[role=status]');const update=()=>{const unlocked=Number(slider.value)===100&&checkbox.checked;fieldset.disabled=!unlocked;fieldset.inert=!unlocked;status.textContent=unlocked?'Entsperrt':'Gesperrt'};slider.addEventListener('input',update);checkbox.addEventListener('change',update);})();</script>
+        
+      </section>
+      <section class="reading-pane" aria-label="Lesebereich"><h2>Lesebereich</h2>
+        <section id="mail-reader-gate" aria-label="Zugangsprüfung">
+    <label>Zum Entsperren ganz nach rechts ziehen <input type="range" min="0" max="100" value="0" step="1" aria-label="Zum Entsperren ziehen" style="width:280px;max-width:100%"></label>
+    <label><input type="checkbox"> Ich bin kein Roboter</label><p role="status">Gesperrt</p>
+    <fieldset disabled inert><legend>Geschützter Bereich</legend>
+              <div id="mail-open-original" role="group" aria-label="Original öffnen">
+    <style>#mail-open-original a,#mail-open-original button{display:inline-block;background:#e3e9ed;color:#173d5a;border:1px solid #8595a3;font:15px Arial;padding:8px;text-decoration:none;margin:3px}</style>
+    <a href="/tools">Original öffnen</a><button type="button" data-unavailable>Original öffnen</button><a href="/messages/conditional-7571">Original öffnen</a>
+    <p role="status" aria-live="polite"></p></div>
+    <script>(()=>{const root=document.getElementById("mail-open-original");const data=null;root.querySelector('[data-unavailable]').addEventListener('click',()=>{root.querySelector('[role=status]').textContent='Funktion nicht verfügbar'});})();</script>
+              <details id="mail-reader-content"><summary>Lesebereich öffnen</summary>
+                <iframe src="/messages/conditional-7571" title="Nachricht: Rabattfreigabe VG-2027-7093" srcdoc="" loading="lazy"></iframe>
+              </details><script>(()=>{const detail=document.getElementById('mail-reader-content');detail.addEventListener('toggle',()=>{if(detail.open)detail.querySelector('iframe').removeAttribute('srcdoc')})})();</script></fieldset></section>
+    <script>(()=>{const root=document.getElementById("mail-reader-gate");const data=null;const slider=root.querySelector('[type=range]'),checkbox=root.querySelector('[type=checkbox]'),fieldset=root.querySelector('fieldset'),status=root.querySelector('[role=status]');const update=()=>{const unlocked=Number(slider.value)===100&&checkbox.checked;fieldset.disabled=!unlocked;fieldset.inert=!unlocked;status.textContent=unlocked?'Entsperrt':'Gesperrt'};slider.addEventListener('input',update);checkbox.addEventListener('change',update);})();</script>
+      </section>
+    </main><footer>Demonstrationssystem · Alle Angaben sind fiktiv · Zeitzone: Europe/Berlin</footer>
+    </body></html>

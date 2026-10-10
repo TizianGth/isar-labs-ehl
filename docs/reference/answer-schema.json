@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "tender_reference": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "bid",
+        "no_bid"
+      ]
+    },
+    "currency": {
+      "type": "string",
+      "const": "EUR"
+    },
+    "discount_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "positions": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "material_number": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unit_price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "lead_time_weeks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "base_unit_price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "surcharge_per_unit": {
+            "type": "number",
+            "minimum": 0
+          },
+          "packaging_per_unit": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rebate_total": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "position",
+          "material_number",
+          "quantity",
+          "unit_price",
+          "lead_time_weeks"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total_net": {
+      "type": "number",
+      "minimum": 0
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "tender_reference",
+    "decision",
+    "currency",
+    "discount_percent",
+    "positions",
+    "total_net"
+  ],
+  "additionalProperties": false
+}
