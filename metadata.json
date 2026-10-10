@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KPR2XHY1XJFAK8D3FAKEH5",
+  "strategy": "manual-commit",
+  "branch": "release/best-6m22",
+  "checkpoints_count": 16,
+  "files_touched": [
+    "agent/pyproject.toml",
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/rfq/browser/documents.py",
+    "agent/rfq/browser/observe.js",
+    "agent/rfq/browser/site.py",
+    "agent/rfq/rules/parse.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_browser_tools.py",
+    "agent/tests/test_documents.py",
+    "agent/tests/test_evidence_gaps.py",
+    "agent/tests/test_observe.py",
+    "agent/tests/test_redispatch.py",
+    "agent/tests/test_rules.py",
+    "agent/uv.lock",
+    "dev/check_no_leaks.py",
+    "dev/eval/score.py",
+    "dev/oracle/compute_public1.py",
+    "dev/oracle/public-1.json",
+    "dev/tests/test_observe_fixtures.py",
+    "dev/tests/test_score.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 418,
+    "cache_creation_tokens": 1277238,
+    "cache_read_tokens": 82720099,
+    "output_tokens": 210866,
+    "api_call_count": 207,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 113566,
+      "cache_read_tokens": 349797,
+      "output_tokens": 36435,
+      "api_call_count": 12
+    }
+  }
+}
