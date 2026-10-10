@@ -13,16 +13,11 @@ Alles hier darf Werte aus dem öffentlichen Szenario public-1 enthalten. Nichts 
 | `runs/LOG.md` | Protokoll aller Test-Runs (Commit, Punkte, Zeit, Kosten, Auffälligkeiten). |
 | `tests/` | Fixture-/Perturbations-Tests (`uv run pytest dev/tests`). |
 
-## Oracle-Status (bitte nach jedem Test-Run aktualisieren)
+## Oracle-Status
 
-| Feld/Annahme | Status |
-| --- | --- |
-| Mengen (inkl. Rückzug, Satz→Stück) | unverifiziert |
-| Materialien | unverifiziert |
-| Basispreise (Preiseinheit 100, FX, r2 auch bei EUR) | unverifiziert |
-| Zuschlag = Zuschlagsmasse × Index + (Rüst + Pool)/q | unverifiziert |
-| Verpackung, Bonus, Endpreis, Lieferzeit | unverifiziert |
-| Rabatt 5 % (bedingt, Schwelle erfüllt) | unverifiziert |
+**Bestätigt durch die Plattform:** Test-Run `run_ed06b2d2e8a71fac` (Commit `cbf0f2e`) mit dieser Antwort → Quality 100,
+eligible. Alle Annahmen (Mengen, Materialien, Basispreise inkl. FX/Preiseinheit, Zuschlag = Zuschlagsmasse × Index +
+(Rüst + Pool)/q, Verpackung, Bonus, Endpreis, Lieferzeit, Rabatt) gelten damit für public-1 als verifiziert.
 
 ## Lokales Setup für die Scout-Tools
 
