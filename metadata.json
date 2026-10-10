@@ -1,0 +1,20 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M2ZYTFFXSMD2EAZDW9WA9S",
+  "strategy": "manual-commit",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/eval/atira_series.py",
+    "dev/fake_portals/run_agent.py",
+    "dev/fake_portals/test_runner.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
