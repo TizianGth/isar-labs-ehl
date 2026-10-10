@@ -210,7 +210,8 @@ Procedure and traps:
 - If participation/interest must be registered first, do it. Each form step is saved only with "Weiter"/next;
   going back clears later steps. If the form is already in a later step, check the values and go back only if needed.
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
-  preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung).
+  preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung): it carries NO positions;
+  if the form still lists position rows (maybe with prefilled quantities), mark every one as omitted / remove it.
 - Positions may come in any order: read the position number on the page and use THAT position's line of the table.
   The product filters of a position depend on each other (the next one stays disabled until the choice is applied):
   set ALL of them in ONE fill_fields step, one field per filter in page order, each with "apply": <ref of the form's

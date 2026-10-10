@@ -157,3 +157,15 @@ def test_a_withdrawal_dated_after_the_scenario_has_no_effect_yet():
     result = build(CTX, bb)
     assert result.answer["positions"][0]["quantity"] == 10          # #5 stays valid; #12 stays withdrawn (by #13)
     assert any("no effect" in line for line in result.trace)
+
+
+def test_qa_numbers_in_any_form_are_the_same_answer():
+    """Fake portal 'modern/locale-boundary': entries came as 'Answer #3', the withdrawal named '3'."""
+    from rfq.rules.parse import qa_number
+    assert {qa_number(x) for x in ("Answer #3", "Frage Nr. 3", "Q&A 3", "#3", "3", "Nr.3")} == {"3"}
+    assert qa_number("Q-12") == "Q-12" and qa_number("8152") == "8152"
+    bb = _evidence()
+    for e in bb["clarifications"][0]["data"]["entries"]:
+        e["number"] = f"Answer #{e['number']}"                     # the withdrawal fact still says "12"
+    result = build(CTX, bb)
+    assert result.answer["positions"][0]["quantity"] == 10             # #12 (99) is withdrawn by #13

@@ -207,7 +207,7 @@ class Orchestrator:
     def tender_progress(self) -> tuple[str, bool]:
         positions = self.positions()
         qa = self.bb.get("clarifications")
-        entries = {parse.norm_id(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}
+        entries = {parse.qa_number(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}
         collected = any(i.get("via") == "collection" for i in qa)
         unread, total = self.qa_pages_unread()
         lines = [
@@ -466,7 +466,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         unread, total = self.qa_pages_unread()
         return {
             "positions": [p.get("position") for p in self.positions()],
-            "qa": sorted({parse.clean(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}),
+            "qa": sorted({parse.qa_number(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}),
             "qa_pages": f"{total - len(unread)}/{total}" if total else None,
             "qa_facts": {t: sum(1 for f in facts if f.get("type") == t) for t in sorted({f.get("type") for f in facts})},
             "amendments": [[f.get("revision"), f.get("requirement"), f.get("attribute"), f.get("value")]

@@ -16,6 +16,13 @@ def mail_address(sender) -> str:
     return sender.split("<")[-1].rstrip(">").strip() if "<" in sender else sender
 
 
+def qa_number(raw) -> str:
+    """'Answer #3', 'Frage Nr. 3', 'Q&A 3', '#3' and '3' are the same bidder answer; 'Q-12' stays 'Q-12'."""
+    tokens = [re.sub(r"^(?:nr|no|n°)\.?", "", t.strip("#:.()[]"), flags=re.I) for t in re.split(r"[\s#]+", clean(raw))
+              if any(c.isdigit() for c in t)]
+    return norm_id(tokens[-1]) if tokens else norm_id(raw)
+
+
 def norm_id(text) -> str:
     """Identifier for comparisons: no zero-width chars, no spaces, upper case."""
     return re.sub(r"\s+", "", clean(text)).upper()
