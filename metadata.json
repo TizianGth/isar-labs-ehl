@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K9ZNEDDPAZ3JA36BX6J5KB",
+  "strategy": "manual-commit",
+  "branch": "feat/agent-orchestrator",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent.json",
+    "agent.py",
+    "agent/agent.json",
+    "agent/main.py",
+    "agent/pyproject.toml",
+    "agent/rfq/contract.py",
+    "agent/rfq/llm/client.py",
+    "agent/uv.lock",
+    "browsers.py",
+    "models.py",
+    "pyproject.toml",
+    "run.py",
+    "tests/test_kit.py",
+    "uv.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 152426,
+    "cache_read_tokens": 23171,
+    "output_tokens": 858,
+    "api_call_count": 1
+  }
+}
