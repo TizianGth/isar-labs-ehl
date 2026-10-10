@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M44DRX2424RHPTZ4CB5CAG",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T23:59:51.352305325Z",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/tests/test_speed_scheduling.py",
+    "dev/eval/replay_fake_portals.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T23:59:51.332529149Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 910,
+    "human_modified": 39,
+    "human_removed": 0,
+    "total_committed": 910,
+    "total_lines_changed": 949,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
