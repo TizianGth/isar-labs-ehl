@@ -130,6 +130,27 @@ def child_environment(contract, args):
     return env
 
 
+def package_feature_flags(source):
+    """Honor only declared experiment flags, not arbitrary commands from a package.
+
+    The harness calls Python directly; Atira executes agent.json. Recording and
+    applying these flags makes the two runs compare the same behavior.
+    """
+    config_file = source / 'agent.json'
+    config = json.loads(config_file.read_text()) if config_file.exists() else {}
+    command = config.get('run', [])
+    flags = {}
+    allowed = {'RFQ_ASYNC_EXTRACT', 'RFQ_FORM_PLANS', 'RFQ_CLEF_NAV', 'RFQ_LLM_EXTRACT_PARALLEL'}
+    if command and command[0] == 'env':
+        for part in command[1:]:
+            if '=' not in part:
+                break
+            key, value = part.split('=', 1)
+            if key in allowed:
+                flags[key] = value
+    return flags
+
+
 async def execute(args, cluster, folder):
     frozen = folder / 'agent-snapshot'
     provenance = snapshot_agent(args.agent, frozen)
@@ -140,7 +161,8 @@ async def execute(args, cluster, folder):
                                                  'profile_scanned.py', 'profile_busy_office.py', 'extra_cases.py')
                                     if (HERE / name).is_file()}
     provenance['settings'] = {'budget': args.budget, 'submit_reserve': args.submit_reserve,
-                              'parallel': args.parallel, 'model_base': args.model_base}
+                              'parallel': args.parallel, 'model_base': args.model_base,
+                              'feature_flags': package_feature_flags(frozen)}
     contract = make_contract(cluster, args.budget)
     (folder / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
     (folder / 'contract.json').write_text(json.dumps(contract, indent=2) + '\n')
@@ -149,8 +171,12 @@ async def execute(args, cluster, folder):
     timeout = False
     logpath = folder / 'agent.log'
     with logpath.open('w') as logfile:
+        environment = child_environment(contract, args)
+        for key in ('RFQ_ASYNC_EXTRACT', 'RFQ_FORM_PLANS', 'RFQ_CLEF_NAV', 'RFQ_LLM_EXTRACT_PARALLEL'):
+            environment.pop(key, None)
+        environment.update(package_feature_flags(frozen))
         process = await asyncio.create_subprocess_exec(str(args.python), 'main.py', '--out', str(output),
-            cwd=frozen, env=child_environment(contract, args), stdout=logfile, stderr=asyncio.subprocess.STDOUT,
+            cwd=frozen, env=environment, stdout=logfile, stderr=asyncio.subprocess.STDOUT,
             start_new_session=True)
         try:
             code = await asyncio.wait_for(process.wait(), timeout=args.budget + 90)

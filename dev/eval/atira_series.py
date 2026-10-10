@@ -61,7 +61,8 @@ class MCP:
                 return value
 
     def call(self, name, args):
-        return self._request('tools/call', {'name': name, 'arguments': args})
+        return self._request('tools/call', {'name': name, 'arguments': args},
+                             timeout=50 if name == 'test_run' else 25)
 
     def close(self):
         self.process.terminate()  # local readonly MCP client, NEVER platform run
@@ -186,6 +187,13 @@ def main():
                    'cost_usd': cost, 'cost_time_usd_seconds': cost * seconds if seconds is not None else None,
                    'calls': view.get('calls'), 'breakdown': score.get('breakdown'), 'error': view.get('error'),
                    'quality_ok': score.get('quality') == 100 and score.get('eligible') is True and (receipt or platform_accepted)}
+            package = re.search(r'\bpackage ([a-f0-9]{12,64})\b', evidence.get('get_run', ''))
+            row['platform_package_sha256_prefix'] = package[1] if package else None
+            previous = {r.get('platform_package_sha256_prefix') for r in state['results']
+                        if r.get('platform_package_sha256_prefix')}
+            if package and previous and package[1] not in previous:
+                row['quality_ok'] = False
+                row['package_mismatch'] = True
             state['results'].append(row)
             state['summary'] = stats(state['results'], args.count)
             save(state_file, state)

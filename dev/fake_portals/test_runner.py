@@ -9,11 +9,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from run_agent import child_environment, execute, make_contract, snapshot_agent
+from run_agent import child_environment, execute, make_contract, package_feature_flags, snapshot_agent
 from variant_server import PortalCluster
 
 
 class RunnerTests(unittest.TestCase):
+    def test_declared_flags_are_applied_without_executing_package_commands(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertEqual(package_feature_flags(root), {})
+            (root / 'agent.json').write_text(json.dumps({'run': ['env', 'RFQ_ASYNC_EXTRACT=1',
+                'UNRELATED_SECRET=not-for-harness', 'uv', 'run', 'python', 'main.py']}))
+            self.assertEqual(package_feature_flags(root), {'RFQ_ASYNC_EXTRACT': '1'})
     def test_contract_maps_shuffled_sites_without_expected_answers(self):
         case = json.loads((Path(__file__).parent / 'cases.json').read_text())['baseline']
         cluster = SimpleNamespace(case=case, profile='modern', origins={
