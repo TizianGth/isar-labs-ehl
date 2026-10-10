@@ -200,4 +200,28 @@ def test_site_memory_shares_page_types_not_values():
     memory = o.site_memory(site)
     assert "/cond?material=*&view=scales" in memory and "M-1" not in memory
     assert "/empty" not in memory and "other.test" not in memory and "/lv" not in memory
-    assert "/slow?id=*" in memory
+    assert "/slow" not in memory          # one page that hung must not ban its whole page type
+
+
+def test_a_cancelled_extraction_does_not_cancel_the_one_waiting_for_it(monkeypatch):
+    from rfq import llm as llm_module
+    calls = []
+
+    async def fake_ask_json(system, user, **kwargs):
+        calls.append(1)
+        await asyncio.sleep(0.3)
+        return {"positions": [{"position": "1"}]}
+
+    monkeypatch.setattr(llm_module, "ask_json", fake_ask_json)
+
+    async def scenario():
+        o = _orchestrator()
+        page = "URL: x\nPos 1"
+        first = asyncio.create_task(o.extract("positions", page, "u1"))
+        await asyncio.sleep(0.05)
+        second = asyncio.create_task(o.extract("positions", page, "u2"))
+        await asyncio.sleep(0.05)
+        first.cancel()                                  # e.g. its mission ended
+        return await second
+    result = asyncio.run(scenario())
+    assert "1" in result and len(calls) == 2           # the waiter extracted the page itself

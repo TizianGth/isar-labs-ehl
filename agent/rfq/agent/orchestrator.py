@@ -27,7 +27,7 @@ from .submit import submit_bid
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
-CHUNK_CHARS, MAX_CHUNKS = 45000, 4                                    # long selected documents: up to ~180k chars
+CHUNK_CHARS, MAX_CHUNKS = 60000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -81,23 +81,22 @@ class Orchestrator:
         key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
         if key in self._cache:
             return "already extracted earlier: " + self._cache[key]
-        if key in self._inflight:                    # the same page is being extracted right now: share the result
-            return "already extracted earlier: " + await asyncio.shield(self._inflight[key])
+        if key in self._inflight:                    # the same page is being extracted right now: share its result
+            shared = await asyncio.shield(self._inflight[key])
+            if shared is not None:
+                return "already extracted earlier: " + shared
         future = asyncio.get_running_loop().create_future()
         self._inflight[key] = future
         try:
             summary = await self._extract_new(kind, spec, text, url, via)
-            if not summary.startswith("extraction returned nothing"):
-                self._cache[key] = summary            # empty/failed results are not cached as facts
-            future.set_result(summary)
+            if summary.startswith("extraction returned nothing"):
+                return summary
+            self._cache[key] = summary               # empty/failed results are not cached as facts
             return summary
-        except BaseException as error:
-            future.set_exception(error) if not isinstance(error, asyncio.CancelledError) else future.cancel()
-            raise
-        finally:
-            self._inflight.pop(key, None)
-            if future.done() and not future.cancelled():
-                future.exception()                    # mark retrieved: no "never retrieved" warnings
+        finally:   # waiters get the summary, or None (failed/cancelled here): then they extract themselves
+            if self._inflight.get(key) is future:
+                del self._inflight[key]
+            future.set_result(self._cache.get(key))
 
     async def _extract_new(self, kind: str, spec: dict, text: str, url: str, via: str) -> str:
         # Long documents are read in parts (not silently cut): each part is extracted, list fields are merged.
@@ -147,7 +146,7 @@ class Orchestrator:
 
     def site_memory(self, site) -> str:
         """What this run has learned about a website (no fixed knowledge): the kinds of pages where facts of each kind
-        were found, and addresses that never loaded. Shared by all missions on that site, at no model cost."""
+        were found. Shared by all missions on that site, at no model cost."""
         origin = urlparse(site.url).netloc
         found: dict[str, set[str]] = {}
         for kind, items in self.bb.items.items():
@@ -156,9 +155,6 @@ class Orchestrator:
                 if url.netloc == origin and not _empty(kind, item["data"]):
                     found.setdefault(kind, set()).add(_page_pattern(url))
         lines = [f"- {kind}: {', '.join(sorted(patterns)[:6])}" for kind, patterns in sorted(found.items())]
-        hung = [url for url, times in getattr(site, "hung", {}).items() if times]
-        if hung:
-            lines.append("- did not load (avoid, use another route): " + ", ".join(_page_pattern(urlparse(u)) for u in hung[:5]))
         return ("LEARNED IN THIS RUN ABOUT THIS WEBSITE (page types where facts were found; '*' = any value):\n"
                 + "\n".join(lines)) if lines else ""
 

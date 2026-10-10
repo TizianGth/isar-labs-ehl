@@ -18,8 +18,16 @@ from .log import log
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
 _slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "10")))
-usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0}
+usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
+# Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
+# would have answered is probably stuck in a queue, so an identical twin is sent and the first answer wins.
+# Measured over 3,000+ calls of our runs: tool calls p50 2.2 s / p99 9.7 s, JSON extractions p50 7.9 s / p99 30 s;
+# a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s).
+HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
+MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
+_hedging = 0
+_recent: dict[bool, list[float]] = {True: [], False: []}
 
 
 class DeadlineExceeded(RuntimeError):
@@ -68,7 +76,9 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             raise DeadlineExceeded(tag)
         try:
             try:
-                response = await client().chat.completions.create(**kwargs, timeout=max(2.0, min(per_call, end - time.time())))
+                requested = time.monotonic()
+                response = await _first_answer(kwargs, per_call, end, None if thinking else _hedge_after(bool(tools)), tag)
+                _recent[bool(tools)][:] = _recent[bool(tools)][-29:] + [time.monotonic() - requested]
             finally:
                 slots.release()
         except Exception as error:
@@ -98,6 +108,52 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
         return {"content": message.content or "", "tool_calls": calls}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
+
+
+def _hedge_after(tools: bool) -> float:
+    recent = sorted(_recent[tools])
+    typical = recent[len(recent) // 2] if len(recent) >= 5 else 0.0
+    return max(HEDGE_AFTER[tools], 3 * typical)
+
+
+async def _request(kwargs: dict, timeout: float):
+    return await client().chat.completions.create(**kwargs, timeout=timeout)
+
+
+async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: float | None, tag: str):
+    """The first successful answer of the request or, when it stays silent for `hedge_after` seconds, of its twin.
+    The other request is cancelled. Errors are raised only when every request failed."""
+    global _hedging
+    if hedge_after is not None and hedge_after >= per_call - 5:
+        hedge_after = None                          # the request's own timeout comes first
+    tasks = [asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time()))))]
+    twin = False
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=hedge_after)
+        if hedge_after is not None and not done and _hedging < MAX_HEDGES and end - time.time() > 10:
+            _hedging += 1
+            twin = True
+            usage["hedges"] += 1
+            log("llm_hedge", tag=tag, after=round(hedge_after, 1))
+            tasks.append(asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time())))))
+        pending, error = set(tasks), None
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                if task.exception() is None:
+                    if twin:
+                        log("llm_hedge_won", tag=tag, by="twin" if task is tasks[-1] else "first")
+                    return task.result()
+                error = task.exception()
+        raise error
+    finally:
+        if twin:
+            _hedging -= 1
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+            elif not task.cancelled():
+                task.exception()   # a failed loser: retrieved, no warning
 
 
 async def ask_json(system: str, user: str | list, *, thinking: bool = False, tag: str = "",
