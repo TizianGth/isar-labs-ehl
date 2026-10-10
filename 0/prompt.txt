@@ -1,0 +1,11 @@
+Habe "isar-labs-ehl/agent$ atira test-run ." ausgeführt und es ist nach 18 minuten gefailed... mit "Failed: Run exited with code 0 without submitting an answer." Wieso? https://ehl-challenge.atira.ai/runs/run_f33ba429c19874f5 Hab ich was falsch gemacht oder ist dein Ding broken? Können wir außerdem Inspiration von Deepseek AI Papers wie von 4.1-Flash, falls das passt.
+
+---
+
+<task-notification>
+<task-id>b74nu4cll</task-id>
+<tool-use-id>toolu_01Bvxpg8Fs8AWPXBYrmjDfCa</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/b74nu4cll.output</output-file>
+<status>failed</status>
+<summary>Background command "Fetch status, logs and package of the failed run" failed with exit code 143</summary>
+</task-notification>
