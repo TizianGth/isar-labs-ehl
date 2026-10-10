@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4K145PPE3RND4TPV4CSKEV3",
+  "session_id": "487b6f88-e751-4f13-a1b7-e0350cf91f82",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T13:48:05.352132947Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/.gitignore",
+    "docs/07-workstreams.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f81a0c1fa225",
+  "checkpoint_transcript_start": 1565,
+  "transcript_lines_at_start": 1565,
+  "compact_transcript_start": 213,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 5716,
+    "cache_read_tokens": 5374803,
+    "output_tokens": 3041,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T13:48:04.780944419Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "total_lines_changed": 0,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 8,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "agent/.gitignore": 4,
+        "docs/07-workstreams.md": 4
+      }
+    }
+  ]
+}

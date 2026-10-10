@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bx6ugi6wo</task-id>
+<tool-use-id>toolu_015to169LoamSKQA2J14i9fQ</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/bx6ugi6wo.output</output-file>
+<status>failed</status>
+<summary>Background command "Launch sandbox test run and stream logs" failed with exit code 7</summary>
+</task-notification>
