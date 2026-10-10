@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>bz6ts631u</task-id>
+<tool-use-id>toolu_017txCYnyzaVa4hXZPJe6NMq</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/bz6ts631u.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll the restarted sandbox run until finished" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8xekhi6r</task-id>
+<tool-use-id>toolu_012VEQ92ZPH2ezViNjheDaxG</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/b8xekhi6r.output</output-file>
+<status>completed</status>
+<summary>Background command "Keep polling the restarted run" completed (exit code 0)</summary>
+</task-notification>
