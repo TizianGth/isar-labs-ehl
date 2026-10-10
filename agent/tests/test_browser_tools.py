@@ -293,9 +293,11 @@ def test_vision_targets_the_document_and_never_looks_twice(monkeypatch):
             explorer = Explorer(site, Mission("t", "goal", {}, deadline=10**10), None)
             first = await explorer._inspect_visual("Welcher Preis steht im Dokument?", _ref(observation, "Preise"))
             again = await explorer._inspect_visual("Und nochmal?", _ref(observation, "Preise"))
+            untargeted = await explorer._inspect_visual("Und ohne Ziel?", None)    # same picture: not looked at again
             await browser.close()
-            return observation, first, again, explorer.visual_used
-    observation, first, again, used = asyncio.run(scenario())
+            return observation, first, again, explorer.visual_used, untargeted
+    observation, first, again, used, untargeted = asyncio.run(scenario())
+    assert untargeted.startswith("ERROR: this screenshot is identical")
     assert re.search(r"\[\w+\] canvas without text: needs screenshot \(600x400 px\)", observation)
     assert not re.search(r"\[\w+\] image without text", observation)       # a 16 px icon is no document
     assert "largest picture" in first and "12,50" in first

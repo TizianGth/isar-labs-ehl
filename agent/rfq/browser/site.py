@@ -656,6 +656,15 @@ class Site:
                     return await el.screenshot(type="jpeg", quality=70, timeout=8000), f"element {ref}"
             except (PlaywrightError, ValueError):
                 pass
+        else:   # no target named: a page showing a document as a picture is asked about that picture
+            for frame in self.page.frames:
+                try:
+                    picture = await self._largest_picture(frame)
+                    if picture is not None:
+                        return (await picture.screenshot(type="jpeg", quality=70, timeout=8000),
+                                "the largest picture of the page (whole picture, also the part outside the window)")
+                except PlaywrightError:
+                    continue
         return await self.page.screenshot(type="jpeg", quality=60), "the visible part of the page"
 
     async def _largest_picture(self, frame):
