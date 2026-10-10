@@ -58,6 +58,28 @@ class RunnerTests(unittest.TestCase):
 
 
 class RunnerCancellationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_proxy_failure_is_reported_even_with_zero_process_exit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'source'
+            (source / 'rfq').mkdir(parents=True)
+            (source / 'main.py').write_text(
+                'import json\nprint(json.dumps({"event":"llm_error","t":1,"tag":"submit@test",'
+                '"error":"InternalServerError: simulated proxy 502"}))\n')
+            folder = root / 'run'; folder.mkdir()
+            args = SimpleNamespace(agent=source, python=Path(sys.executable), budget=480,
+                submit_reserve=180, parallel=2, model_base='http://127.0.0.1:8765/qwen/v1',
+                model_key='local', visible=False, browsers_path=None, case='baseline')
+            with PortalCluster('baseline', 'classic') as cluster:
+                code = await execute(args, cluster, folder)
+            report = json.loads((folder / 'report.json').read_text())
+            self.assertEqual(code, 1)
+            self.assertEqual(report['exit_code'], 0)
+            self.assertEqual(report['submission_score']['quality'], 0)
+            self.assertIsNone(report['portal_receipt'])
+            self.assertEqual(report['model_error_count'], 1)
+            self.assertEqual(report['model_errors'][0]['error_type'], 'InternalServerError')
+
     async def test_cancel_stops_the_real_agent_process(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

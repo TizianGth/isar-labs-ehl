@@ -43,6 +43,7 @@ async def run(args):
         result = {'profile': profile, 'case': case, 'quality': score['quality'],
                   'perfect': score['perfect'], 'receipt': report['portal_receipt'],
                   'seconds': report['runtime_seconds'], 'timed_out': report['timed_out'],
+                  'model_error_count': report.get('model_error_count', 0),
                   'report': str(folder / 'report.json'),
                   'failed_fields': [r['field'] for r in score['checks'] if not r.get('ok')]}
         summary['results'].append(result)

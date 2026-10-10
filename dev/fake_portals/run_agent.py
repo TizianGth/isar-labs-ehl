@@ -175,11 +175,16 @@ async def execute(args, cluster, folder):
     if output.exists():
         try: agent_output = json.loads(output.read_text())
         except ValueError: pass
-    usage, errors = {}, []
+    usage, errors, model_errors = {}, [], []
     for line in logpath.read_text(errors='replace').splitlines():
         try: event = json.loads(line)
         except ValueError: continue
         if event.get('event') == 'usage': usage = event
+        if event.get('event') == 'llm_error':
+            # A zero process exit and empty fatal-error list do not establish a
+            # healthy run: upstream model/proxy errors can prevent the receipt.
+            model_errors.append({'t': event.get('t'), 'tag': event.get('tag'),
+                                 'error_type': str(event.get('error', '')).split(':', 1)[0]})
         if event.get('event') in ('fatal', 'submit_error', 'resolve_error', 'mission_crashed', 'watchdog_timeout'):
             errors.append(event)
     report = {'case': args.case, 'profile': args.profile, 'agent_commit': provenance['commit'],
@@ -187,6 +192,7 @@ async def execute(args, cluster, folder):
               'submission_score': evaluate_state(state, args.case),
               'calculation_score': evaluate_answer(agent_output.get('answer'), args.case),
               'sdk_usage_not_platform_billing': usage, 'errors': errors,
+              'model_error_count': len(model_errors), 'model_errors': model_errors,
               'portal_receipt': state.get('receipt'), 'tan_requests': state.get('tan_requests'),
               'files': {'log': str(logpath), 'report': str(folder / 'report.json'), 'portal_state': str(folder / 'portal-state.json')}}
     (folder / 'report.json').write_text(json.dumps(report, indent=2, default=str) + '\n')

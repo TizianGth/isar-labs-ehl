@@ -47,6 +47,8 @@ Andere laufende Team-Tests können dennoch die gemeinsame Proxy-Latenz beeinflus
 Berichte, Logs und unveränderte Runtime-Snapshots landen unter
 `dev/runs/fake-portals/` (Git ignoriert sie). Jeder Lauf zeichnet Hashes,
 Commit, Dirty-Status, tatsächliche Formulareingaben und Abgabebeleg auf.
+Proxy-/Modellfehler stehen zusätzlich in `model_error_count`/`model_errors`,
+auch wenn der Agent mit Exitcode 0 endet und keine Abgabe erreicht.
 Die Matrix verwendet in allen Fällen denselben Snapshot, selbst wenn der
 ursprüngliche Checkout zwischenzeitlich geändert wird.
 
