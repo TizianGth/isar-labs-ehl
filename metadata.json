@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M2W33VNQABZJ05VRHJ360W",
+  "strategy": "manual-commit",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/main.py",
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/extraction_jobs.py",
+    "agent/rfq/agent/form_plans.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/rfq/agent/review.py",
+    "agent/rfq/agent/submit.py",
+    "agent/rfq/browser/site.py",
+    "agent/rfq/clef.py",
+    "agent/rfq/llm.py",
+    "agent/rfq/log.py",
+    "agent/rfq/rules/parse.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_clef_explorer.py",
+    "agent/tests/test_clef_navigation.py",
+    "agent/tests/test_review.py",
+    "agent/tests/test_rules.py",
+    "agent/tests/test_speed_forms.py",
+    "agent/tests/test_speed_llm_slots.py",
+    "agent/tests/test_speed_logging.py",
+    "agent/tests/test_speed_quality_rules.py",
+    "agent/tests/test_speed_scheduling.py",
+    "agent/tests/test_submit.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}
