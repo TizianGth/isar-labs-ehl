@@ -80,6 +80,45 @@ Ziel des Branches: weniger Ausfälle und Köder-Fehler auf fremden (privaten) Da
 Verifikation: 53 Tests grün, Leak-Check ok; Sandbox-Test-Run `run_56b54d30340a6231` (Commit 6692197) **100 · eligible**,
 11:05 min, $0,113, 10 Hedges; Replay der Evidenz von Lauf 10–12 durch die Regeln liefert identische Antworten.
 
+## Generalisierung auf Codex' Fake-Portalen (Stand 10.10., abends)
+
+Testumgebung: `~/Documents/Codex/2026-10-10/s/outputs/fake-portals` (6 Oberflächen × 5 Geschäftsfälle, lokaler Qwen,
+Feldvergleich von **tatsächlicher Portal-Abgabe** und **berechneter Antwort**). Eigene Entwicklungsmetrik, kein Atira-Score.
+
+| Codex-Befund | Bestätigt | Umsetzung | Test |
+| --- | --- | --- | --- |
+| Weiter-Link mitten in Tabellenzeile → Q&A ab Seite 3 fehlt | ja | `_next_link` sucht jeden Link einer Zeile | `test_next_page_link_inside_a_table_row` |
+| Zukünftige Rücknahme ändert heutige Menge | ja | Rücknahmen nur aus Q&A ≤ Stichtag | `test_a_withdrawal_dated_after_the_scenario_has_no_effect_yet`, Codex-Repro Exit 0 |
+| TAN nicht an Ausschreibung gebunden | ja | `pick_tan`: eigene Referenz, nie fremde TAN | `test_tan_of_another_tender_never_signs_our_bid` |
+| Review-Sperre nach 2 Versuchen/unter Zeitdruck freigegeben | ja | falsche Referenz bis zur letzten Minute gesperrt, sonst 3 Korrekturrunden | `test_submit.py` |
+| Popup-Zuordnung fehlt (fremde Tabs geschlossen) | ja | nur Popups des handelnden Tabs | `test_a_click_folds_only_its_own_popup` (scheitert mit altem Code) |
+| Bild-Fallback trifft Tab-Button statt Dokument | ja | Bilder/Canvas mit Ref+Größe, kleine Controls → größtes Bild, ohne Ref → Dokumentbild, Wiederholung ohne Modell-Call | `test_vision_*`, `test_a_labelled_scan_*` |
+| Material-Dropdown ohne Rücklesen | ja | `select` liest den gespeicherten Wert zurück | — |
+| href→goto statt echtem Klick | Code ja, Fehler nein | nicht geändert: workbench (dynamische Navigation) 100/100 | — |
+
+Zusätzlich in den Läufen gefunden und behoben: Q&A-Nummern „Answer #3“ ≠ „3“ (`parse.qa_number`), `no_bid` mit
+vorausgefüllten Positionszeilen, TAN-Abruf aus veraltetem Postfach-Cache und `get_tan`/`wait_for` als „Schleife“ blockiert.
+
+| Profil / Fall | vorher | nachher |
+| --- | --- | --- |
+| classic / baseline | 100 | 100 / 100 |
+| legacy / future-withdrawal | 73,75 | **100** |
+| workbench / baseline | – | **100** |
+| scanned / baseline | 26,4 (15) | **100** |
+| busy-office / shared-stock | – | **100** |
+| modern / locale-boundary | 67,1 | **100** |
+| scanned / future-withdrawal | 47,5 (beschriftetes Scan-Canvas) | **100** |
+| legacy / blocked | 80 (leere Positionen), 0 (TAN aus Cache) | Berechnung 100; Abgabe durch Modell-Proxy-Ausfall (502) nicht prüfbar |
+
+Weitere Fixes aus den Läufen (Unit-getestet, noch ohne End-to-End-Beleg): TAN-Postfach frisch statt aus dem Cache,
+`get_tan`/`wait_for` nicht als Schleife sperren; beschriftete Scans („Scanned document attachment“) bekommen Refs;
+**neue Sitzung**, wenn eine Site für unsere Sitzung hängt (Sandbox 6289/4cb6: nach einem hängenden Request lud keine
+Sitzungsseite mehr, die Startseite schon) – Cookies löschen, neu einloggen, max. 2× je Site; **Modell-Ausfälle**
+(5xx/429/Timeout) werden bis zur Deadline wiederholt statt nach 6 Versuchen aufzugeben.
+
+Schneller abgeben: abhängige Auswahlfelder in **einem** `fill_fields`-Schritt (`apply` je Feld, Formular wird neu
+beobachtet, Feld-Identität geprüft); Sandbox-Lauf c149 brauchte 7 Modellschritte je Position.
+
 ## So testet man schnell
 
 ```bash
