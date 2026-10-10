@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>bhrq298ef</task-id>
+<tool-use-id>toolu_015qVjSf4mG6sc7La7cwj2eZ</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/bhrq298ef.output</output-file>
+<status>failed</status>
+<summary>Background command "Run sandbox test run for commit 7ce4c30" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bechzju75</task-id>
+<summary>Monitor event: "run7 milestones and errors"</summary>
+<event>[Monitor expired after 20m with 1 event delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bechzju75</task-id>
+<summary>Monitor event: "run7 milestones and errors"</summary>
+<event>{"t": 390.53, "event": "submit_phase_done", "seconds": 146.4, "state": "prepared", "receipt": null, "mission_status": "</event>
+</task-notification>
