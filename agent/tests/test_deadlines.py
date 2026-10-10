@@ -278,3 +278,36 @@ def test_no_bid_is_checked_again_with_fresh_qa_before_it_is_accepted(monkeypatch
     assert checked.answer["decision"] == "bid" and missions == [("recheck", 1)]
     assert site.fresh and site.collections == {} and o._cache == {"materialsdef": "keep"}
     assert o.evidence_digest()["amendments"] == [["R1", "A-1", "stroke", "480"]]
+
+
+def test_waiting_for_outside_changes_is_not_a_loop(monkeypatch):
+    """Fake portal legacy/blocked: get_tan was blocked as 'the same action without progress' for three minutes.
+    Waiting (wait_for, get_tan) on an unchanged page is legitimate; clicking the same thing again is not."""
+    from types import SimpleNamespace
+    from rfq import llm as llm_module
+    from rfq.agent import explorer as ex
+    assert "get_tan" in ex.OUTSIDE_STATE
+
+    def run(tool: str, args: dict) -> list:
+        acted = []
+
+        async def act(name, arguments):
+            acted.append(name)
+            return "done"
+
+        async def observe(limit=None):
+            return "URL: x\nthe same page"
+
+        site = SimpleNamespace(act=act, observe=observe, site_id="s", url="http://x", page=SimpleNamespace(url="http://x"))
+        replies = iter([{"content": "", "tool_calls": [(tool, args)]}] * 4 + [{"content": "", "tool_calls": [("finish", {"summary": "ok"})]}])
+
+        async def chat(messages, **kwargs):
+            return next(replies)
+
+        monkeypatch.setattr(llm_module, "chat", chat)
+        explorer = ex.Explorer(site, ex.Mission("t", "goal", {}, deadline=10**10), None)
+        asyncio.run(explorer.run())
+        return acted
+
+    assert run("wait_for", {"condition": "change"}) == ["wait_for"] * 4
+    assert run("click", {"ref": "e1"}) == ["click"] * 2          # the third identical click is a loop

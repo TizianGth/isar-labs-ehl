@@ -205,8 +205,9 @@ def test_decisive_steps_get_a_fresh_start_on_a_site():
     site = Site("mail", BASE, {"username": "u", "password": "p"}, None)
     site.hung[BASE] = 2
     site._recoveries = 8
+    site.collections["c1"] = object()          # an inbox list collected before the TAN mail arrived
     site.fresh_start()
-    assert site.hung == {} and site._recoveries == 0
+    assert site.hung == {} and site._recoveries == 0 and site.collections == {}
 
 
 def test_next_page_link_inside_a_table_row():

@@ -179,7 +179,7 @@ class Explorer:
                 self.status = "finished" if not self.missing else "incomplete"
                 log("mission_finish", mission=tag, step=step + 1, summary=self.summary[:500], missing=self.missing)
                 return self
-            if repeats[signature] > 2:
+            if repeats[signature] > 2 and name not in OUTSIDE_STATE:
                 blocked += 1
                 if blocked >= self.mission.max_blocked:
                     log("mission_loop_abort", mission=tag, step=step + 1)
@@ -413,6 +413,8 @@ def _next_link(text: str, label: str) -> str | None:
                 return match.group(2)
     return None
 
+
+OUTSIDE_STATE = {"wait_for", "get_tan"}   # their result changes without the page changing: asking again is no loop
 
 _LINK = re.compile(r'\[\w+\] link "(.*?)" -> (\S+)(?: \([^)]*\))*')
 
