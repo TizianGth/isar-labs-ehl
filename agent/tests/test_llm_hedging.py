@@ -99,3 +99,40 @@ def test_thinking_calls_are_not_hedged(monkeypatch, fast_hedge):
     started, _ = _install(monkeypatch, ("answer", 0.3))
     asyncio.run(llm.chat([], thinking=True, deadline=time.time() + 60))
     assert started == [0]
+
+
+def test_a_short_model_outage_is_waited_out(monkeypatch, fast_hedge):
+    """Fake portal legacy/blocked: the model proxy answered 502 for a while and the submission gave up after six
+    attempts with minutes left. Service errors are retried while the deadline allows; refused requests are not."""
+    class Unavailable(Exception):
+        status_code = 502
+
+    class Refused(Exception):
+        status_code = 400
+
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(1)
+        if len(calls) <= 8:
+            raise Unavailable("Cannot reach the platform")
+        return _response('{"ok": true}')
+
+    async def no_wait(seconds):
+        return None
+
+    monkeypatch.setattr(llm, "client", lambda: _client(create))
+    monkeypatch.setattr(llm.asyncio, "sleep", no_wait)
+    reply = asyncio.run(llm.chat([], deadline=time.time() + 120))
+    assert reply["content"] == '{"ok": true}' and len(calls) == 9
+
+    refused = []
+
+    async def create_refused(**kwargs):
+        refused.append(1)
+        raise Refused("context too long")
+
+    monkeypatch.setattr(llm, "client", lambda: _client(create_refused))
+    with pytest.raises(llm.DeadlineExceeded):
+        asyncio.run(llm.chat([], deadline=time.time() + 120))
+    assert len(refused) == 2

@@ -27,6 +27,7 @@ _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
 MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
 _hedging = 0
+MAX_ATTEMPTS = 60   # a model outage of a few minutes must not end a mission: 5xx, 429, timeouts are retried (≤ 8 s apart)
 QUIET_CALLS = bool(os.environ.get("CHALLENGE_RUN_TOKEN"))   # in a run the platform keeps only the end of the log
 _recent: dict[bool, list[float]] = {True: [], False: []}
 
@@ -63,7 +64,7 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
     end = min(deadline or float("inf"), _run_deadline)
     per_call = timeout or (60 if tools else 150)   # a hung call must not eat minutes
     delay = 1.0
-    for attempt in range(6):
+    for attempt in range(MAX_ATTEMPTS):     # transient failures are retried while the deadline allows
         left = end - time.time()
         if left < 3:
             log("llm_deadline", tag=tag, attempt=attempt)
@@ -84,9 +85,12 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
                 slots.release()
         except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
-            if getattr(error, "status_code", None) in (401, 403):
+            status = getattr(error, "status_code", None)
+            if status in (401, 403):
                 # the run token is revoked once the answer is accepted (or the key is wrong): retrying cannot help
-                raise DeadlineExceeded(f"{tag}: access refused ({error.status_code})")
+                raise DeadlineExceeded(f"{tag}: access refused ({status})")
+            if status in (400, 404, 413, 422) and attempt >= 1:   # the request itself is refused, not the service
+                raise DeadlineExceeded(f"{tag}: request refused ({status})")
             await asyncio.sleep(max(0.0, min(delay, end - time.time() - 3)))
             delay = min(delay * 2, 8)
             continue
