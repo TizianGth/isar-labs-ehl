@@ -1,0 +1,41 @@
+<task-notification>
+<task-id>b8rpxgj30</task-id>
+<summary>Monitor event: "sandbox2 test run milestones"</summary>
+<event>[Monitor expired after 30m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
+
+---
+
+<pasted_content id="7f18">
+
+      Räume das Repo isar-labs-ehl auf. Ziel: Im Repo bleibt nur unser Agent, sauber strukturiert. Der Agent in agent/
+      hat im Atira-Test-Run Quality 100 geholt (run_ed06b2d2e8a71fac, Commit cbf0f2e). Daran darf sich NICHTS ändern.
+
+      Lies zuerst AGENTS.md. Kein `atira submit`, keine Änderungen an Dateien in agent/.
+
+      1. Vorher sichern
+         - git pull --rebase origin main; Remote muss https://github.com/TizianGth/isar-labs-ehl.git sein.
+         - Backup von Tizians Prototyp, damit nichts verloren geht:
+           git branch archive/tizian-prototype HEAD && git push origin archive/tizian-prototype
+         - Ist-Zustand des Pakets festhalten:
+           git ls-files agent | xargs sha256sum > /tmp/agent_before.sha
+           atira test-run ./agent --dry-run > /tmp/manifest_before.txt
+
+      2. Tizians Root-Prototyp (Starter-Kit) entfernen
+         - Zeige zuerst mit `git show --stat b9547bd` und `git ls-files` (nur Root-Ebene), was dazugehört.
+         - Per `git rm` entfernen: agent.json, agent.py, browsers.py, models.py, run.py, research.py, evidence.py,
+           pyproject.toml, uv.lock, tests/, smoke/ (alles im ROOT, nicht in agent/).
+         - ehl-challenge-reference.md: Ist es inhaltlich schon durch docs/reference/ abgedeckt, löschen; sonst nach
+           docs/reference/ verschieben.
+         - NICHT anfassen: agent/, dev/, docs/, AGENTS.md, CLAUDE.md, LICENSE, .gitignore, .agents/, .claude/, .codex/, .entire/.
+
+      3. Schöne Struktur
+         Ziel:
+           agent/     Paket für Atira (unverändert)
+           dev/       Oracle, Fixtures, Scorer, Leak-Check, Run-Log (wird nie hochgeladen)
+           docs/      Doku
+           Makefile   Befehle aus dem Root
+           README.md  Überblick + Befehle
+</pasted_content id="7f18">
+
+ Will dann am ende einfach mit atira test-run . einen run mit 100/100 starten können. Falls du irgendwelche Bugs oder optimierungen findest die nichts kaputt machen, implementier sie gerne.
