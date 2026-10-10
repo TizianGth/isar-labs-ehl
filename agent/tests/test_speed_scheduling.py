@@ -141,6 +141,32 @@ def test_failed_and_cancelled_jobs_are_retryable():
     asyncio.run(scenario())
 
 
+def test_snapshot_status_preserves_unresolved_sources_and_omits_superseded_failures():
+    async def scenario():
+        attempts = 0
+        async def extract(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise ValueError("read failed")
+            return "many completed facts that must not be repeated on every model round"
+        jobs = ExtractionJobs(extract)
+        snapshot = Snapshot("requirements", "selected document", "https://fixture.example/selected", "page")
+        jobs.enqueue("spec", snapshot)
+        assert "queued" in jobs.status("spec") and "j1" not in jobs.status("spec")
+        await jobs.drain(time.time() + 1)
+        assert "failed" in jobs.status("spec")
+        jobs.enqueue("spec", snapshot)
+        assert "failed" not in jobs.status("spec") and "queued" in jobs.status("spec")
+        await jobs.drain(time.time() + 1)
+        status = jobs.status("spec")
+        assert "1 selected snapshots completed" in status
+        assert "many completed facts" not in status and "failed" not in status
+        assert jobs.status("unrelated mission") == ""
+        assert jobs.jobs[-1].result.startswith("many completed facts")
+    asyncio.run(scenario())
+
+
 def test_cancel_before_execution_is_not_left_queued():
     async def scenario():
         async def extract(*args, **kwargs):

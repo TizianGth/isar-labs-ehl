@@ -86,7 +86,17 @@ class ExtractionJobs:
         return any(j.task is not None and not j.task.done() for j in self.selected(owner))
 
     def status(self, owner: str) -> str:
-        return "\n".join(self.describe(j) for j in self.selected(owner)[-12:])
+        # Completed facts already appear in the mission checklist and site memory.
+        # Repeating their source summaries on every navigation round adds tokens
+        # and can suggest redoing work. Keep unresolved current attempts explicit.
+        current = [j for j in self.selected(owner) if self.by_key.get(j.snapshot.key) is j]
+        unresolved = [j for j in current if j.status != "complete"]
+        completed = len(current) - len(unresolved)
+        lines = [f"{completed} selected snapshots completed; use the factual checklist for remaining requirements."]
+        lines.extend(self.describe(j) for j in unresolved[:12])
+        if len(unresolved) > 12:
+            lines.append(f"{len(unresolved) - 12} more unresolved snapshots; wait_for_extractions settles all selected sources.")
+        return "\n".join(lines) if current else ""
 
     async def drain(self, deadline: float, owner: str | None = None) -> None:
         """Settle every selected job before a finish/calculation; deadline cancellation is explicit."""
