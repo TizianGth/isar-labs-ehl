@@ -1,0 +1,35 @@
+Start scouting and report the most important findings
+
+---
+
+resume
+
+---
+
+claude mcp add atira -- atira mcp
+
+---
+
+start the atira models proxy models and setup their env
+
+---
+
+<task-notification>
+<task-id>bnymmzewa</task-id>
+<tool-use-id>toolu_01VokvhCEtpxJfNhdGqe2rpL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents/02596839-4bdf-4819-8d2c-ecca6b108990/tasks/bnymmzewa.output</output-file>
+<status>failed</status>
+<summary>Background command "Write scouting env file and dry-run the package" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+Go into detail about how the archtiecture should look like. Consider the models and browser tools we have available to us
+
+---
+
+using the scout dump, create tools the agents can use to circumvent the differnet traps on the sites
+
+---
+
+switch to a new feature branch and make a tools folder
