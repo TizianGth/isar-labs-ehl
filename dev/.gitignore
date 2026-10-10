@@ -3,3 +3,4 @@ scout/out/
 runs/*.json
 !runs/LOG.md
 dev/.venv/
+scratch/

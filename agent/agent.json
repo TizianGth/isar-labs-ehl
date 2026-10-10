@@ -1,0 +1,6 @@
+{
+  "setup": ["uv", "sync", "--no-dev"],
+  "run": ["uv", "run", "--no-sync", "python", "main.py"],
+  "browsers": 4,
+  "models": ["qwen"]
+}

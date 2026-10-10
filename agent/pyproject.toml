@@ -1,0 +1,17 @@
+[project]
+name = "isar-labs-rfq-agent"
+version = "0.1.0"
+description = "isar-labs agent for the Atira EHL challenge: from RFQ to a signed bid"
+requires-python = ">=3.12"
+# pinned, so the sandbox run step gets exactly the versions we tested with
+dependencies = ["openai==2.54.0", "playwright==1.63.0"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

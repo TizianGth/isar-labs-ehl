@@ -19,9 +19,12 @@ needles.add(f"{ora['total_net']:.2f}")
 # identifiers seen on public-1 (keys, revisions, groups, logins, company data from the brief are allowed at runtime only)
 needles |= set(re.findall(r"\b(?:VP|TZ|K|RP|PB|MET|FX|ER|GR|R|LH-VG)-\d{3,4}\b",
                           (ROOT / "docs/03-site-recon.md").read_text() + (ROOT / "dev/oracle/compute_public1.py").read_text()))
-needles |= {"u_9c3cb06a5d21b197", "kyora.run", "Linden Hydraulik", "DE811234567", "Buchenstadt", "linden-hydraulik"}
+needles |= {"238,098", "2.743,58", "30,851", "13.25", "517.25", "1.0873", "64431", "PRD-635338",
+            "u_9c3cb06a5d21b197", "kyora.run", "Linden Hydraulik", "DE811234567", "Buchenstadt", "linden-hydraulik"}
 hits = []
 for f in pkg.rglob("*"):
+    if ".venv" in f.parts or "__pycache__" in f.parts:
+        continue
     if f.is_file() and f.suffix in {".py", ".md", ".json", ".toml", ".js", ".txt", ".yaml", ".yml"} and f.name != "uv.lock":
         text = f.read_text(errors="ignore")
         hits += [f"{f.relative_to(ROOT)}: {n}" for n in needles if n in text]
