@@ -53,3 +53,7 @@ Review: pending.
 <status>completed</status>
 <summary>Background command "Wait for test run 2 to finish" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete.
