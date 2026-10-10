@@ -1,0 +1,193 @@
+<pasted_content id="756e">
+Du arbeitest als Claude Opus 5 mit maximalem Reasoning-Aufwand in diesem Repository. Deine Aufgabe ist, unseren aktuellen Ansatz zur Lösung der Atira EHL Challenge „From RFQ to bid“ grundsätzlich zu prüfen, alternative Ansätze gegeneinander abzuwägen und daraus eine konkrete Optimierungsroadmap abzuleiten.
+
+Die Roadmap muss so präzise sein, dass ein schwächeres Opus-Modell sie anschließend ohne eigene Architekturentscheidungen implementieren kann.
+
+Dies ist eine Analyse- und Planungaufgabe. Implementiere noch keine Änderungen am Agenten. Du darfst Analyseartefakte und die Roadmap unter docs/ erstellen. Keine Plattform-Submission und kein Cancel ausführen.
+
+## Ziel und Prioritäten
+
+Optimiere die tatsächlich gemessene Laufzeit und die simulierten Kosten des gesamten Agenten, nicht nur einzelne Modellaufrufe.
+
+Die Prioritäten sind:
+1. Eligible und rechtzeitig ein korrekt signiertes Angebot abgeben.
+2. Hohe Antwortqualität und Robustheit auf dem privaten Datensatz.
+3. Kosten × Laufzeit reduzieren.
+4. Komplexität und Wartungsaufwand begrenzen.
+
+Qualität und Eligibility sind Voraussetzungen, die nicht durch einen gewichteten Effizienzscore kompensiert werden dürfen. Public-Performance allein ist kein ausreichender Erfolgsnachweis.
+
+## 1. Den tatsächlichen Ist-Zustand verstehen
+
+Lies AGENTS.md vollständig und beachte die Rangfolge der Vorgaben. Untersuche anschließend den aktuellen Branch, den tatsächlichen Code, die Challenge-Regeln, relevante Tests und vorhandene Run-Logs.
+
+Relevante Einstiegspunkte:
+- agent/agent.json und agent/main.py
+- agent/rfq/contract.py und agent/rfq/llm.py
+- agent/rfq/agent/: Orchestrierung, Explorer, Prompts, Extraktion, Review und Submission
+- agent/rfq/browser/
+- agent/rfq/rules/
+- agent/tests/ beziehungsweise vorhandene Tests
+- dev/runs/, Evaluationswerkzeuge und Leak-Check
+- docs/01-challenge.md
+- docs/02-architecture.md
+- docs/04-business-rules.md
+- docs/05-browser-playbook.md
+- docs/06-testing.md
+- docs/08-pitfalls.md
+- docs/10-risks-error-handling.md
+- docs/11-mvp-status.md
+- docs/reference/
+
+Prüfe Dateipfade am aktuellen Repository; vertraue nicht blind auf diesen Index. Unterscheide implementiertes Verhalten, geplante Architektur und veraltete Dokumentation.
+
+Erstelle ein belastbares Bild:
+- Welche Phasen und Abhängigkeiten bestimmen die Gesamtlaufzeit?
+- Wo entstehen Modellkosten und Kontextwachstum?
+- Wie viele Entscheidungen und Extraktionen sind tatsächlich notwendig?
+- Wo wiederholt der Agent Arbeit?
+- Welche Zeit geht für Browseraktionen, Modellantworten, Slot-Wartezeiten, Retries, Hedges und Recovery verloren?
+- Welche bestehenden Optimierungen funktionieren bereits?
+- Welche Korrektheits- und Generalisierungsprobleme sind bekannt?
+
+Zitiere Code mit Datei und Zeile sowie Messwerte mit konkreten Run-Artefakten. Kennzeichne fehlende Messdaten ausdrücklich.
+
+## 2. Den Lösungsansatz grundsätzlich hinterfragen
+
+Beschränke dich nicht auf kleinere Verbesserungen am bestehenden Tool-Loop. Prüfe, ob dessen Aufteilung, Informationsfluss und Entscheidungsgranularität überhaupt sinnvoll sind.
+
+Vergleiche mindestens:
+- Den bestehenden Ansatz als unveränderte Baseline.
+- Gezielte Optimierung der aktuellen Architektur.
+- Trennung von Planung, Navigation, Evidenzextraktion und Verifikation.
+- Hierarchische Agenten mit klar begrenzten Aufgaben.
+- Weniger, größere Modellentscheidungen statt vieler kleiner Schritte.
+- Modellgewählte, begrenzte Aktionspakete mit Prüfung und Abbruch bei Zustandsänderungen.
+- Bedarfsgesteuerte Evidenzbeschaffung statt vorsorglicher Vollständigkeit.
+- Inkrementelle Extraktion gegenüber gebündelter Extraktion ausgewählter Dokumente.
+- Kompakte Zustandsrepräsentationen, selektive Historie und wiederverwendbare Site-Memory.
+- Andere Aufgabenverteilung zwischen Code und Modell innerhalb der Fair-Play-Regeln.
+- Unterschiedliche Modellstrategien: Qwen-only, Clef für begrenzte Entscheidungen, gemischte Modelle sowie adaptive Eskalation.
+- Andere Parallelisierung und Scheduling-Strategien.
+- Eine vereinfachte und beschleunigte Submission.
+- Weitere Ansätze, die sich aus deiner Analyse ergeben.
+
+Bewerte auch Kombinationen dieser Ansätze. Erläutere ihre Wechselwirkungen: Einsparungen sind nicht automatisch addierbar, und die Beseitigung eines Engpasses kann einen anderen zum kritischen Pfad machen.
+
+Für jeden Ansatz:
+- Welches konkrete Problem löst er?
+- Welche Arbeit oder Modellaufrufe entfallen?
+- Welche neue Arbeit entsteht?
+- Wie verändern sich Kosten, Laufzeit, Fehlerrisiko und Recovery?
+- Wie robust ist er bei unbekannten Layouts und anders verteilten Informationen?
+- Welche Voraussetzungen braucht er?
+- Wie hoch sind Implementierungs- und Validierungsaufwand?
+- Welche Fair-Play-Grenzen sind relevant?
+- Warum ist er besser oder schlechter als die Alternativen?
+
+Keine festen Navigationspfade, Szenariowerte oder ungerichteten Crawler. Navigation und Dokumentauswahl müssen weiterhin vom Modell entschieden werden. Rechnen und deterministische Validierung bleiben im Code.
+
+## 3. Optimierungspotenzial quantifizieren
+
+Nutze vorhandene Logs für eine Phasen- und Kostenanalyse. Unterscheide:
+- End-to-End-Laufzeit und aufsummierte Arbeitszeit paralleler Aufgaben.
+- Kritischen Pfad und nicht kritische Arbeit.
+- Gecachte und ungecachte Tokens.
+- Erfolgreiche Requests, Wiederholungen und gegebenenfalls abgerechnete Hedges.
+- Normale Läufe und Ausreißer.
+- Lokale Scouting-Messungen und Sandbox-Ergebnisse.
+
+Verifiziere aktuelle Modellfähigkeiten, Preise und Plattformbedingungen anhand autoritativer Quellen, soweit nötig und zugänglich. Verwende keine erfundenen Latenz- oder Genauigkeitswerte.
+
+Für die wichtigsten Ansätze:
+- Schätze Gesamtkosten, Gesamtlaufzeit und Kosten × Laufzeit.
+- Zeige Annahmen und Unsicherheiten.
+- Verwende plausible optimistische, mittlere und pessimistische Szenarien.
+- Berechne Break-even-Bedingungen für zusätzliche Router, Verifier, Fallbacks oder Parallelrequests.
+- Benenne Messungen, die eine Entscheidung ändern könnten.
+
+Prüfe insbesondere, ob ein kleineres Modell tatsächlich einen größeren Modellaufruf ersetzt oder lediglich davor beziehungsweise danach einen zusätzlichen Aufruf erzeugt.
+
+## 4. Eine klare Strategie auswählen
+
+Liefere keine ungewichtete Ideensammlung. Empfiehl eine konkrete Zielarchitektur und begründe sie gegenüber den stärksten Alternativen.
+
+Unterscheide:
+- Sofort sinnvolle Änderungen mit geringem Risiko.
+- Änderungen, die erst nach einem kleinen Experiment entschieden werden sollten.
+- Größere Architekturänderungen mit ausreichendem erwarteten Nutzen.
+- Ansätze, die wir bewusst nicht verfolgen sollten.
+
+Beziehe die verfügbare Engineering-Zeit ein. Ein kleiner, belegbarer Gewinn kann wertvoller sein als ein umfangreicher Umbau mit unklarer Wirkung.
+
+## 5. Eine ausführbare Roadmap schreiben
+
+Erstelle:
+- docs/12-optimization-analysis.md
+- docs/13-optimization-roadmap.md
+
+Die Analyse enthält Ist-Zustand, Evidenz, Alternativenvergleich, quantitative Abschätzungen und Architekturentscheidung.
+
+Die Roadmap ist ein eigenständiges Übergabedokument für ein schwächeres Opus-Modell. Sie darf nicht voraussetzen, dass dieses Modell den Chat oder die gesamte Analyse gelesen hat.
+
+Ordne die Arbeit in kleine, sequenzierbare und unabhängig überprüfbare Schritte. Gib jedem Schritt eine stabile ID und beschreibe:
+
+1. Konkretes Ziel und erwartete Verhaltensänderung.
+2. Voraussetzungen und Abhängigkeiten.
+3. Betroffene Dateien, Funktionen und Schnittstellen.
+4. Präzise Implementierungsanweisung einschließlich Pseudocode, wo nötig.
+5. Datenstrukturen, Eingaben, Ausgaben und Zustandsübergänge.
+6. Fehlerbehandlung, Timeouts, Cancellation und Fallbacks.
+7. Unverzichtbare Korrektheits- und Fair-Play-Invarianten.
+8. Feature-Flag oder andere Möglichkeit zum kontrollierten Vergleich und Rollback.
+9. Benötigte Logs und Metriken, ohne Secrets zu erfassen.
+10. Geeignete Tests und konkrete Akzeptanzkriterien.
+11. Erwarteter Nutzen, Aufwand und Unsicherheit.
+12. Klare Abbruch- oder Rollback-Kriterien.
+
+Triff notwendige Architekturentscheidungen selbst. Vermeide Anweisungen wie „Caching verbessern“, „Navigation optimieren“ oder „geeignete Schwelle wählen“, ohne genau zu beschreiben, was das Implementierungsmodell tun soll.
+
+Wo eine Entscheidung von fehlenden Messdaten abhängt, definiere zuerst ein Experiment mit festem Entscheidungsablauf. Erfinde keine endgültigen Schwellenwerte ohne Grundlage.
+
+Füge der Roadmap einen direkt kopierbaren Startprompt für das Implementierungsmodell hinzu. Dieser soll das Modell anweisen, die Schritte in Reihenfolge umzusetzen, passende Prüfungen auszuführen und bei nicht erfüllten Akzeptanzkriterien den festgelegten Fallback zu nutzen.
+
+## 6. Validierungsstrategie festlegen
+
+Definiere einen realistischen Vergleich mit der Baseline:
+- Gepaarte Läufe mit dokumentierten Einstellungen und ausreichend Wiederholungen.
+- Synthetische Tests und Perturbationen für unbekannte Layouts, andere Locale und verschobene Informationen.
+- Offline-Replay nur dort, wo es die zu prüfende Eigenschaft tatsächlich abbildet.
+- End-to-End-Tests für Navigation, Scheduling und Submission.
+- Eligibility, Feldqualität, erfolgreiche Signierung, Gesamtkosten, Laufzeitverteilung, Fallbackrate und Kosten × Laufzeit.
+- Kontrolle von Cache-, Warm-up- und Zustandsunterschieden.
+- Leak-Check und relevante bestehende Tests.
+
+Nutze vorhandene Daten zuerst. Neue kostenpflichtige Läufe nur durchführen, wenn sie ausdrücklich autorisiert sind; ansonsten genaue Befehle und Messpläne dokumentieren. Plattform-submit und cancel bleiben ohne ausdrückliche menschliche Freigabe verboten.
+
+## Abschluss
+
+Prüfe vor Abschluss, ob die Roadmap tatsächlich von einem schwächeren Modell ohne offene Architekturfragen umgesetzt werden kann und ob jede wesentliche Empfehlung durch Evidenz oder ein klar definiertes Experiment gestützt ist.
+
+Antworte abschließend mit:
+- Den wichtigsten Befunden.
+- Der empfohlenen Strategie.
+- Den ersten drei Umsetzungsschritten.
+- Dem erwarteten Verbesserungskorridor mit klaren Unsicherheiten.
+- Links zu den beiden erstellten Dokumenten.
+
+Bleibe kritisch gegenüber dem bestehenden Ansatz und deinen eigenen Vorschlägen. Wenn ein größerer Umbau keinen belastbaren Vorteil bietet, empfehle ausdrücklich die gezielte Optimierung der bestehenden Architektur.
+</pasted_content id="756e">
+
+---
+
+fange an die roadmap umzusetzen
+
+---
+
+<task-notification>
+<task-id>bx1ekujpe</task-id>
+<tool-use-id>toolu_01BGFBQWyfuE5XqaJwMWz332</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bx1ekujpe.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll three test runs until all end" completed (exit code 0)</summary>
+</task-notification>
