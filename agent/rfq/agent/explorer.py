@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 from urllib.parse import urljoin
 
-from .. import llm
+from .. import llm, metrics
 from ..browser import documents
 from ..browser.site import Site
 from ..log import log
@@ -120,9 +120,14 @@ class Explorer:
     last_result: str = ""
     pending: dict[str, asyncio.Task] = field(default_factory=dict)   # background extractions: label -> task
 
+    @property
+    def tag(self) -> str:
+        return f"{self.mission.name}@{self.site.site_id}"
+
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
         tools = tools or TOOLS
-        tag = f"{self.mission.name}@{self.site.site_id}"
+        tag = self.tag
+        metrics.mission(tag)
         try:
             return await self._loop(tools, tag)
         except llm.DeadlineExceeded:
@@ -140,6 +145,7 @@ class Explorer:
             if self.pending:
                 await self._drain(min(10.0, self.mission.deadline - time.time()))
                 self._stop_background(tag)
+            metrics.ended(tag, self.status)
 
     def _stop_background(self, tag: str) -> None:
         self._collect()
@@ -180,9 +186,11 @@ class Explorer:
                 last += "\n\nRESULTS OF BACKGROUND EXTRACTIONS (finished since):\n" + "\n".join(arrived)[:3000]
             if self.pending:
                 last += "\n\nSTILL EXTRACTING IN THE BACKGROUND (do not request again):\n" + "\n".join(self.pending)
+            history = "\n".join(self.history[-20:]) or "-"
+            metrics.prompt(tag, intro=intro, history=history, last=last, checklist=checklist, observation=observation)
             messages = [{"role": "system", "content": EXPLORER_SYSTEM},
                         {"role": "user", "content": intro},
-                        {"role": "user", "content": "STEPS SO FAR:\n" + ("\n".join(self.history[-20:]) or "-") + last
+                        {"role": "user", "content": "STEPS SO FAR:\n" + history + last
                          + (f"\n\nPROGRESS CHECKLIST (computed from what was extracted so far):\n{checklist}" if checklist else "")
                          + (f"\n\nHINTS:\n{hints}" if hints else "")
                          + f"\n\nStep {step + 1}/{self.mission.max_steps}, ~{int(remaining)} s left."
@@ -211,6 +219,7 @@ class Explorer:
                 return self
             if repeats[signature] > 2:
                 blocked += 1
+                metrics.add("blocked_repeats")
                 if blocked >= self.mission.max_blocked:
                     log("mission_loop_abort", mission=tag, step=step + 1)
                     self.status, self.missing = "incomplete", self.missing + ["aborted: repeated the same action"]
@@ -220,6 +229,7 @@ class Explorer:
             else:
                 result = await self._call(name, args)
             log("action", mission=tag, step=step + 1, tool=name, args=args, result=result[:300])
+            metrics.step(tag, name)
             # older steps stay short in the prompt (tokens); the latest result is shown in full once
             self.history.append(f"{step + 1}. {name} {json.dumps(args, ensure_ascii=False)[:160]} -> {result[:260]}")
             self.last_result = result
@@ -273,6 +283,7 @@ class Explorer:
             return await work
         label = f"[x{len(self.history) + 1}] {label}"
         self.pending[label] = asyncio.ensure_future(work)
+        metrics.mission(self.tag)["background"] += 1
         return (f"extraction started in the background: {label}. Its result and the updated checklist arrive in a "
                 f"later step; continue with the next page meanwhile (do not request it again).")
 

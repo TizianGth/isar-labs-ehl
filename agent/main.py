@@ -14,7 +14,7 @@ import time
 
 from playwright.async_api import async_playwright
 
-from rfq import contract
+from rfq import contract, llm, metrics
 from rfq.agent.orchestrator import Orchestrator
 from rfq.browser.site import Site
 from rfq.log import log
@@ -52,6 +52,15 @@ async def open_sites(playwright, access: list[dict]) -> tuple[dict[str, Site], l
 STARTED = time.time()
 
 
+def summarize() -> None:
+    """Where the time went, in a few lines at the very end (the platform keeps only the end of the log)."""
+    try:
+        for line in metrics.summary_lines(usage=llm.usage):
+            log("run_summary", **line)
+    except Exception as error:      # never let the summary break the exit
+        log("run_summary_failed", error=f"{type(error).__name__}: {error}"[:300])
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
@@ -76,6 +85,7 @@ async def main() -> int:
         except asyncio.TimeoutError:
             log("watchdog_timeout")
             result = orchestrator.result
+        summarize()
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
@@ -94,6 +104,7 @@ if __name__ == "__main__":
         code = asyncio.run(main())
     except Exception as error:   # last resort: log and exit cleanly
         log("fatal", error=f"{type(error).__name__}: {error}"[:1000])
+        summarize()
         code = 1
     log("exit", code=code, seconds=round(time.time() - started, 1))
     sys.exit(code)

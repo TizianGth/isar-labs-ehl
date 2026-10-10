@@ -13,6 +13,7 @@ import time
 
 from openai import AsyncOpenAI
 
+from . import metrics
 from .log import log
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
@@ -70,11 +71,16 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             raise DeadlineExceeded(tag)
         started = time.monotonic()
         slots = _slots
+        lane = "nav" if tools else "json"
         try:
             await asyncio.wait_for(slots.acquire(), timeout=left - 2)
         except asyncio.TimeoutError:
             log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
             raise DeadlineExceeded(tag)
+        waited = time.monotonic() - started
+        metrics.add(f"slot_wait_s:{lane}", waited)
+        if waited > 1:
+            metrics.add(f"slot_waits_over_1s:{lane}")
         try:
             try:
                 requested = time.monotonic()
@@ -91,6 +97,8 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             delay = min(delay * 2, 8)
             continue
         seconds = time.monotonic() - started
+        metrics.add(f"calls:{lane}")
+        metrics.add(f"call_s:{lane}", seconds - waited)
         message = response.choices[0].message
         tokens = response.usage
         cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0 if tokens else 0
@@ -145,6 +153,8 @@ async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: 
                 if task.exception() is None:
                     if twin:
                         log("llm_hedge_won", tag=tag, by="twin" if task is tasks[-1] else "first")
+                        if task is tasks[-1]:
+                            metrics.add("hedge_won_by_twin")
                     return task.result()
                 error = task.exception()
         raise error

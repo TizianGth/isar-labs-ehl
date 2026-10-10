@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import BrowserContext, Error as PlaywrightError, Frame, Page
 
+from .. import metrics
 from ..log import log
 
 OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
@@ -134,6 +135,7 @@ class Site:
             log("tab_recovery_limit", site=self.site_id, reason=reason)
             return
         self._recoveries += 1
+        metrics.add("tab_recoveries")
         url = self.last_good_url or self.url
         log("tab_recovered", site=self.site_id, reason=reason, url=_short(url))
         await self._fresh_page()
@@ -175,6 +177,7 @@ class Site:
                 await asyncio.sleep(0.5)
         if not arrived:      # no guards on a page that never arrived: they would only wait for timeouts
             self.hung[key] = self.hung.get(key, 0) + 1
+            metrics.add("goto_failed")
             log("goto_failed", site=self.site_id, url=_short(url), times=self.hung[key])
             return False
         await self.settle()
@@ -233,7 +236,9 @@ class Site:
                 continue
             closed = await self._run_guards_everywhere("close_overlays")
             unlocked = await self._run_guards_everywhere("unlock_gates")
-            if closed or unlocked:
+            if closed or unlocked:     # counted, not logged line by line: routine gates would fill the kept log
+                metrics.add(f"guards:{self.site_id}")
+            if closed:
                 log("guard_overlays", site=self.site_id, closed=closed, unlocked=unlocked)
             return
 
@@ -635,6 +640,7 @@ class Site:
             return "ERROR: only URLs of this website can be read"
         helper = Site(self.site_id, self.url, self.credentials, self.context)
         helper.logins, helper.seen_urls, helper.hung = self.logins, self.seen_urls, self.hung
+        started = asyncio.get_running_loop().time()
         helper.page = await self.context.new_page()
         helper._wire(helper.page)
         try:
@@ -646,6 +652,13 @@ class Site:
             return await helper.full_text(follow_iframes)
         finally:
             await _close_quietly(helper.page)       # closing a hung tab can hang too: bounded
+            metrics.add("read_url_n")
+            metrics.add("read_url_s", asyncio.get_running_loop().time() - started)
+
+    async def close(self) -> None:
+        """Close this tab (a tab opened for one mission)."""
+        if self.page is not None:
+            await _close_quietly(self.page)
 
     async def screenshot(self, ref: str | None = None) -> bytes:
         """JPEG of an element (if it has a size) or of the viewport."""

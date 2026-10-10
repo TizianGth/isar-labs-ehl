@@ -14,7 +14,7 @@ import re
 import time
 from urllib.parse import parse_qsl, urlparse
 
-from .. import llm
+from .. import llm, metrics
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
@@ -117,6 +117,8 @@ class Orchestrator:
         if not data:
             return "extraction returned nothing"
         self.bb.add(kind, data, url, via)
+        metrics.mark(f"first:{kind}")
+        metrics.add(f"extractions:{kind}")
         log("extracted", kind=kind, url=url[:160], via=via, parts=len(parts), data=data)
         note = f" (very long document: {skipped} middle parts were not read)" if skipped else ""
         return _summary(kind, data) + note
@@ -131,6 +133,7 @@ class Orchestrator:
             log("brief_reference_fallback", model=ref, candidates=candidates)
             if candidates:
                 self.brief["tender_reference"] = candidates[0]
+        metrics.mark("brief_done")
         log("brief", data=self.brief)
 
     def site_for(self, role: str) -> Site:
@@ -376,6 +379,7 @@ class Orchestrator:
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
+        metrics.mark("evidence_start")
         ref = self.brief.get("tender_reference")
         records = self.brief.get("authorized_records") or []
         topics = "\n".join(f"- {r.get('topic')}: subject keyword '{r.get('subject_keyword')}', sender "
@@ -423,6 +427,7 @@ search says there are too many results, add the subject keyword.""",
                                        tracked("specification", self.site_for("specification"), spec, attempts=3),
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
+        metrics.mark("evidence_done")
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
 
@@ -431,6 +436,7 @@ search says there are too many results, add the subject keyword.""",
         corrected stroke) is enough to cause it. Before accepting it, one short mission reads every Q&A page again,
         fresh (no cached pages or extractions), and the rules run once more."""
         reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line]
+        metrics.mark("no_bid_recheck")
         log("no_bid_recheck", reasons=reasons[:12])
         site = self.site_for("tender")
         site.fresh_start()
@@ -505,6 +511,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                         mission = self.erp_mission(group, reqs)
                         own_tab = bool(started)
                         started[group] = asyncio.create_task(on_new_tab(mission) if own_tab else on_base(mission))
+                        metrics.mark(f"erp_start:{group}")
                         log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=own_tab)
                 if spec_ended and tender_ended and all(t.done() for t in started.values()):
                     break
@@ -565,8 +572,9 @@ The progress checklist tells you what is still missing per material.""", ["mater
                       director_localpart=brief.get("director_localpart"), authorized=authorized,
                       searched_groups=set(self.erp_complete))
         result = build(ctx, self.bb.items)
-        for line in result.trace:
-            log("trace", line=line)
+        metrics.mark("resolved")
+        for lines in _line_chunks(result.trace, 3400):      # few log lines: the platform keeps only the last 256
+            log("trace", lines=lines)
         log("answer", answer=result.answer, skipped=result.skipped)
         return result
 
@@ -605,6 +613,21 @@ def _page_pattern(url) -> str:
     """'/vk13?material=X-1&view=scales' -> '/vk13?material=*&view=scales': keeps the page type, hides record values."""
     query = "&".join(f"{k}={v if v.isalpha() and len(v) <= 16 else '*'}" for k, v in parse_qsl(url.query, keep_blank_values=True))
     return url.path + (f"?{query}" if query else "")
+
+
+def _line_chunks(lines: list[str], size: int) -> list[list[str]]:
+    """Consecutive groups of lines whose JSON stays below `size` characters (long single lines are cut)."""
+    groups, current, length = [], [], 0
+    for line in lines:
+        line = line[:size // 2]
+        if current and length + len(line) + 4 > size:
+            groups.append(current)
+            current, length = [], 0
+        current.append(line)
+        length += len(line) + 4
+    if current:
+        groups.append(current)
+    return groups
 
 
 def _chunks(text: str, size: int) -> list[str]:

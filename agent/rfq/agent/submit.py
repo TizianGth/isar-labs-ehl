@@ -10,7 +10,7 @@ import re
 import time
 from decimal import Decimal
 
-from .. import llm
+from .. import llm, metrics
 from ..log import log
 from .explorer import TOOLS, Explorer, Mission, _tool
 from .prompts import EXTRACT_SYSTEM, KINDS
@@ -88,6 +88,7 @@ class SubmitExplorer(Explorer):
 
     async def _get_tan(self) -> str:
         orch = self.orchestrator
+        metrics.mark("tan_requested")
         # The page that requested the TAN is the review page: read it while the TAN arrives (off the critical path).
         # submit_bid uses this reading only if the page is unchanged apart from the TAN typed into it.
         if self.review_prefetch is not None and not self.review_prefetch[1].done():
@@ -117,6 +118,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             return "ERROR: no TAN message found yet; wait a moment and call get_tan again"
         best = max(tans, key=lambda m: int(re.sub(r"\D", "", str((m.get("data") or {}).get("request_number") or 0)) or 0))
         self.tan = str(best["data"]["tan"]).strip()
+        metrics.mark("tan_received")
         log("tan", tan_found=True)
         return f"TAN: {self.tan} (valid for a few minutes; type it into the TAN field now, then submit_bid)"
 
@@ -143,6 +145,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             log("dry_run_stop", review=review, page=page_text[:2000])
             return "DRY RUN: everything is ready; not submitted. Call finish."
         self.site.accept_next_dialog = True
+        metrics.mark("submit_click")
         try:
             result = await self.site.act("click", {"ref": ref})
         finally:
@@ -156,6 +159,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         outcome = await self._outcome()
         if outcome.get("confirmed"):
             self.state, self.receipt, self.stop = "confirmed", outcome.get("receipt"), True
+            metrics.mark("submit_confirmed")
             log("submitted", state=self.state, receipt=self.receipt)
             return f"CONFIRMED: the website confirmed the bid (receipt {self.receipt}). Call finish."
         if outcome.get("errors"):
@@ -213,6 +217,7 @@ def _unchanged(before: str, after: str, tan: str | None) -> bool:
 
 
 async def submit_bid(orch, result) -> None:
+    metrics.mark("submit_start")
     orch.result = result
     brief = orch.brief
     answer = result.answer
