@@ -4,3 +4,4 @@ runs/*.json
 !runs/LOG.md
 dev/.venv/
 scratch/
+variants/
