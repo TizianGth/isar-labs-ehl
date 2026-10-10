@@ -1,0 +1,47 @@
+https://ehl-challenge.atira.ai/docs/run-contract.md summarize this file for me
+
+---
+
+run a testrun
+
+---
+
+https://ehl-challenge.atira.ai/docs/ get all the md documentations files from here and summarize them
+
+---
+
+run a local test
+
+---
+
+<task-notification>
+<task-id>bd6s83x1i</task-id>
+<tool-use-id>toolu_013ESFePQ2Lh7hQVJFSt6ZeC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bd6s83x1i.output</output-file>
+<status>failed</status>
+<summary>Background command "Run the local hosted-model proxy" failed with exit code 6</summary>
+</task-notification>
+
+---
+
+add atira to the path
+
+---
+
+explain how the agent interats with the site.
+
+---
+
+summarize the docs foloder
+
+---
+
+explain the tools that were just built in agent/rfq/tools
+
+---
+
+Yes. also, are the qwen and claf modles used in the tools? I think using clef would make sense in site navigation or when th tool calls can't find the right information. Also, if these tools are made exactly fo these sites we run the risk of overfitting, as the submission is scored on a different scenario
+
+---
+
+yes build the clef fallback
