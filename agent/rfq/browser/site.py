@@ -8,6 +8,7 @@ import asyncio
 import html
 import inspect
 import re
+import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -45,6 +46,7 @@ class Site:
         self._frames: dict[int, Frame] = {}     # frame index of the last observation -> frame (refs stay valid)
         self.last_good_url: str | None = None   # last address that was observed successfully
         self.hung: dict[str, int] = {}          # address -> navigations that never arrived (do not insist)
+        self.health = {"fails": 0, "resets": 0, "at": 0.0}   # navigation failures in a row, session resets (shared)
         self._recoveries = 0
         self.lock = asyncio.Lock()   # one action at a time per site page
 
@@ -161,8 +163,36 @@ class Site:
         if not arrived:      # no guards on a page that never arrived: they would only wait for timeouts
             self.hung[key] = self.hung.get(key, 0) + 1
             log("goto_failed", site=self.site_id, url=_short(url), times=self.hung[key])
+            self.health["fails"] += 1
+            if frame is None and await self._new_session(url):
+                return await self.goto(url)
             return False
+        self.health["fails"] = 0
         await self.settle()
+        return True
+
+    async def _new_session(self, url: str) -> bool:
+        """Pages of a website that keep hanging for our session load again in a new one: often one request that
+        never ends holds the session on the server, and every later request of that session waits behind it.
+        The site's cookies are dropped and the login guard signs in again. At most twice per run and site, once a
+        minute, after two failed navigations in a row."""
+        state = self.health
+        if state["fails"] < 2 or state["resets"] >= 2 or time.time() - state["at"] < 60:
+            return False
+        state.update(resets=state["resets"] + 1, fails=0, at=time.time())
+        log("session_reset", site=self.site_id, after=_short(url), reset=state["resets"])
+        self.hung.clear()
+        try:
+            await asyncio.wait_for(self.context.clear_cookies(), timeout=10)
+        except Exception as error:
+            log("session_reset_failed", site=self.site_id, error=str(error)[:200])
+            return False
+        await self._fresh_page()             # the old tab and its pending requests go away
+        try:
+            await self.page.goto(self.url, wait_until="commit")
+        except PlaywrightError as error:
+            log("goto_error", site=self.site_id, url=_short(self.url), error=str(error)[:200])
+        await self.settle(recover=False)     # the login guard signs in
         return True
 
     async def _readable(self, target) -> bool:
@@ -606,8 +636,8 @@ class Site:
     async def spawn(self) -> "Site":
         """Another tab of this website in the same browser context (shares the login session)."""
         twin = Site(self.site_id, self.url, self.credentials, self.context)
-        twin.seen_urls, twin.collections, twin.visual_notes, twin.hung = (
-            self.seen_urls, self.collections, self.visual_notes, self.hung)
+        twin.seen_urls, twin.collections, twin.visual_notes, twin.hung, twin.health = (
+            self.seen_urls, self.collections, self.visual_notes, self.hung, self.health)
         twin.page = await self.context.new_page()
         twin._wire(twin.page)
         await twin.goto(self.url)
@@ -628,7 +658,7 @@ class Site:
         if urlparse(url).netloc != self.origin:
             return "ERROR: only URLs of this website can be read"
         helper = Site(self.site_id, self.url, self.credentials, self.context)
-        helper.logins, helper.seen_urls, helper.hung = self.logins, self.seen_urls, self.hung
+        helper.logins, helper.seen_urls, helper.hung, helper.health = self.logins, self.seen_urls, self.hung, self.health
         helper.page = await self.context.new_page()
         helper._wire(helper.page)
         try:

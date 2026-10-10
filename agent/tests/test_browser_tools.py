@@ -409,3 +409,50 @@ def test_a_labelled_scan_is_still_a_picture_to_read(monkeypatch):
     assert "[canvas: Scanned document attachment]" in observation
     assert re.search(r"\[\w+\] canvas \(500x300 px\)", observation) and "inspect_visual" in _hints(observation, True)
     assert "largest picture" in seen and "9,50" in seen
+
+
+LOGIN_FORM = ("<html><body><form action='/login' method='get'><input name='user'><input type='password' name='pw'>"
+              "<button type='submit'>Anmelden</button></form></body></html>")
+
+
+def test_a_session_that_hangs_is_replaced(monkeypatch):
+    """Sandbox runs 6289/4cb6: after one request that never ended, every page of the site hung for our session
+    (fresh tabs too) while the start page loaded. A new session (cookies dropped, login again) loads them."""
+    import rfq.browser.site as site_module
+    monkeypatch.setattr(site_module, "NAVIGATION_TIMEOUT_MS", 1500)
+    monkeypatch.setattr(site_module, "LOADED_TIMEOUT_MS", 1500)
+    locked, sessions = set(), []
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                url, cookie = route.request.url, route.request.headers.get("cookie", "")
+                found = re.search(r"sid=(\w+)", cookie)
+                sid = found.group(1) if found else None
+                if "/login" in url:                      # the login form sends here: a new session
+                    sessions.append(f"s{len(sessions) + 1}")
+                    await route.fulfill(status=200, content_type="text/html", headers={"Set-Cookie": f"sid={sessions[-1]}; Path=/"},
+                                        body="<html><body><p>Willkommen im Portal, Sie sind angemeldet.</p></body></html>")
+                elif sid is None:
+                    await route.fulfill(status=200, content_type="text/html", body=LOGIN_FORM)
+                elif sid in locked:
+                    return                               # this session is never answered again
+                elif url.endswith("/trap"):
+                    locked.add(sid)                      # a request that never ends, holding the session
+                else:
+                    await route.fulfill(status=200, content_type="text/html",
+                                        body="<html><body><p>Inhalt der Seite mit genug Text zum Lesen.</p></body></html>")
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("locky", BASE + "/", {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=60)
+            trapped = await site.goto(BASE + "/trap")
+            loaded = await site.goto(BASE + "/page")
+            text = await site.observe()
+            await browser.close()
+            return trapped, loaded, list(sessions), text
+    trapped, loaded, sessions_made, text = asyncio.run(scenario())
+    assert not trapped and loaded and sessions_made == ["s1", "s2"] and "Inhalt der Seite" in text
