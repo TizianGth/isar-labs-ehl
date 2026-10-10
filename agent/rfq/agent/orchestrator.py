@@ -127,6 +127,13 @@ class Orchestrator:
         data = _merge_parts(kind, [r for r in results if r])
         if not data:
             return "extraction returned nothing"
+        if kind == "requirements":
+            # Old saved evidence used null for an explicit absence. New model
+            # responses must prove that absence with the requested known flag;
+            # an omitted flag must not accidentally activate legacy compatibility.
+            for requirement in data.get("requirements") or []:
+                if "certification_known" not in requirement and not parse.clean(requirement.get("certification")):
+                    requirement["certification_known"] = False
         self.bb.add(kind, data, url, via)
         log("extracted", kind=kind, url=url[:160], via=via, parts=len(parts), data=data)
         note = f" (very long document: {skipped} middle parts were not read)" if skipped else ""

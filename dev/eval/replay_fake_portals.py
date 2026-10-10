@@ -63,7 +63,10 @@ def main() -> int:
     print(f"{'run':48} {'recorded':>8} {'now':>8}  fields still wrong")
     for name, before, after, wrong in rows:
         print(f"{name:48} {before!s:>8} {after!s:>8}  {', '.join(wrong[:8])}")
+    oracle_hashes = {name: hashlib.sha256((args.portals / name).read_bytes()).hexdigest()
+                     for name in ("scoring.py", "extra_cases.py") if (args.portals / name).is_file()}
     report = {"kind": "fixed recorded evidence, synthetic developer score; not browser or private quality",
+              "oracle_files_sha256": oracle_hashes,
               "runs": details, "regressions": [r for r in details if not r.get("replay_ok")],
               "all_passed": bool(details) and all(r.get("replay_ok") for r in details)}
     if args.out:

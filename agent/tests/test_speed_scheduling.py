@@ -113,6 +113,26 @@ def test_snapshot_immutability_dedup_and_source_identity():
     asyncio.run(scenario())
 
 
+def test_new_requirement_null_needs_explicit_absence_proof(monkeypatch):
+    async def scenario():
+        o = orch(monkeypatch)
+        replies = iter([
+            {"revision": "SYN-REV", "requirements": [{"ref": "SYN-REQ", "certification": None}]},
+            {"revision": "SYN-REV", "requirements": [{"ref": "SYN-REQ", "certification": None, "certification_known": True}]},
+            {"revision": "SYN-REV", "requirements": [{"ref": "SYN-REQ", "certification": "none"}]},
+        ])
+        async def fake(*args, **kwargs): return next(replies)
+        monkeypatch.setattr(llm, "ask_json", fake)
+        for page in ("unknown", "explicit absence", "literal none"):
+            await o.extract("requirements", page, "https://fixture.example/" + page.replace(" ", "-"))
+        records = [i["data"]["requirements"][0] for i in o.bb.get("requirements")]
+        assert records[0]["certification_known"] is False
+        assert not module.parse.certification_known(records[0], requirement=True)
+        assert module.parse.certification_known(records[1], requirement=True)
+        assert module.parse.certification_known(records[2], requirement=True)
+    asyncio.run(scenario())
+
+
 def test_failed_and_cancelled_jobs_are_retryable():
     async def scenario():
         calls = 0
@@ -276,6 +296,25 @@ def test_wait_tool_settles_sources_without_claiming_missing_facts_complete(monke
         assert e.status == "incomplete"
         ordinary = Explorer(site, mission, None)
         assert (await ordinary._call("wait_for_extractions", {})).startswith("ERROR")
+    asyncio.run(scenario())
+
+
+def test_separate_background_batches_can_wait_on_the_same_unchanged_page(monkeypatch):
+    async def scenario():
+        settled = 0
+        async def drain():
+            nonlocal settled
+            settled += 1
+        async def observe(): return "unchanged source list"
+        actions = iter([("wait_for_extractions", {})] * 3 + [("finish", {"summary": "done"})])
+        async def chat(*args, **kwargs): return {"tool_calls": [next(actions)]}
+        monkeypatch.setattr(llm, "chat", chat)
+        e = Explorer(SimpleNamespace(observe=observe, site_id="synthetic", url="https://fixture.example/list"),
+                     Mission("test", "settle selected batches", {}, deadline=time.time() + 60), None,
+                     await_extractions=drain)
+        await e.run()
+        assert sum("wait_for_extractions" in s and "ERROR" not in s for s in e.history) == 3
+        assert settled >= 3 and e.status == "finished"
     asyncio.run(scenario())
 
 

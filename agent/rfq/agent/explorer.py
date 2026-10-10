@@ -489,7 +489,7 @@ def _next_link(text: str, label: str) -> str | None:
     return None
 
 
-OUTSIDE_STATE = {"wait_for", "get_tan"}   # their result changes without the page changing: asking again is no loop
+OUTSIDE_STATE = {"wait_for", "get_tan", "wait_for_extractions"}  # results can change while the DOM stays identical
 
 _LINK = re.compile(r'\[\w+\] link "(.*?)" -> (\S+)(?: \([^)]*\))*')
 
