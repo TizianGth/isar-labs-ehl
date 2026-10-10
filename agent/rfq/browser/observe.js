@@ -158,8 +158,14 @@
     }
     if (t === "CANVAS" || t === "IMG" || t === "SVG" || role === "img") {
       const label = clean(el.getAttribute("aria-label") || el.getAttribute("alt") || el.getAttribute("title") || (t === "CANVAS" ? el.textContent : ""));
-      emit(label ? `[${t === "IMG" || t === "CANVAS" ? t.toLowerCase() : "img"}: ${label}]` : (t === "IMG" ? "[image without text]" : ""));
-      if (t === "CANVAS" && !label) emit("[canvas without text: needs screenshot]");
+      if (label) emit(`[${t === "IMG" || t === "CANVAS" ? t.toLowerCase() : "img"}: ${label}]`);
+      else if (t === "CANVAS" || t === "IMG") {
+        const box = el.getBoundingClientRect();
+        const size = `${Math.round(box.width)}x${Math.round(box.height)} px`;
+        if (box.width * box.height >= 2500) {        // real pictures, not icons: targetable by inspect_visual
+          flush(); out.push(`[${ref(el)}] ${t === "CANVAS" ? "canvas without text: needs screenshot" : "image without text"} (${size})`);
+        } else if (t === "IMG") emit("[image without text]");
+      }
       if (block) flush();
       return;
     }

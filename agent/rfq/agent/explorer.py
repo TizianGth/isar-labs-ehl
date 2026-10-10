@@ -7,6 +7,7 @@ model-selected pages and files into structured facts, `inspect_visual` shows the
 text is not enough.
 """
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -115,6 +116,7 @@ class Explorer:
     status: str = "running"        # running | complete | finished | incomplete | deadline | failed
     stop: bool = False             # set by tools that end the mission (e.g. the binding submission)
     visual_used: int = 0
+    pictures_seen: set = field(default_factory=set)   # screenshots already looked at (sha1)
     last_result: str = ""
 
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
@@ -362,8 +364,13 @@ class Explorer:
     async def _inspect_visual(self, question: str, ref: str | None) -> str:
         if self.visual_used >= self.mission.max_visual:
             return "ERROR: screenshot budget of this mission used up; continue with the text view"
+        jpeg, shows = await self.site.screenshot(re.sub(r"[^\w]", "", ref) if ref else None)
+        digest = hashlib.sha1(jpeg).hexdigest()
+        if digest in self.pictures_seen:     # the same picture again teaches nothing: no model call, no budget
+            return ("ERROR: this screenshot is identical to one you already looked at. Target the picture's own ref "
+                    "(e.g. a [eN] canvas/image line), scroll the document, or open another view first.")
+        self.pictures_seen.add(digest)
         self.visual_used += 1
-        jpeg = await self.site.screenshot(re.sub(r"[^\w]", "", ref) if ref else None)
         context = (await self.site.observe(limit=3000))
         data = await llm.ask_json(VISION_SYSTEM, [
             {"type": "text", "text": f"QUESTION: {question}\n\nText view of the same page (refs usable for actions):\n{context}"},
@@ -371,8 +378,8 @@ class Explorer:
         answer = str(data.get("answer", "")).strip()
         if answer:
             self.site.note_visual(self.site.page.url, f"{question} -> {answer}")
-        log("visual", site=self.site.site_id, question=question[:200], data=data)
-        return ("visual answer: " + json.dumps(data, ensure_ascii=False)[:1200]
+        log("visual", site=self.site.site_id, question=question[:200], shows=shows, data=data)
+        return (f"visual answer ({shows}): " + json.dumps(data, ensure_ascii=False)[:1200]
                 + "\n(the answer is now part of this page's text for extract)")
 
 
@@ -383,8 +390,9 @@ def _content_lines(text: str) -> set[str]:
 
 def _hints(observation: str, vision_left: bool) -> str:
     hints = []
-    if vision_left and re.search(r"\[(?:canvas|image) without text", observation):
-        hints.append("This page shows a picture without text alternative. If you need its content, use inspect_visual.")
+    if vision_left and re.search(r"(?:canvas|image) without text", observation):
+        hints.append("This page shows a picture without text alternative. If you need its content, use inspect_visual "
+                     "with the picture's ref ([eN] canvas/image line), not the ref of a tab or button.")
     return "\n".join(hints)
 
 

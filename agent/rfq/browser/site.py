@@ -450,6 +450,10 @@ class Site:
         if value is None:
             return f"ERROR: no option {option!r}. Options: " + " | ".join(label for _, label in options)
         await el.select_option(value=value, timeout=4000)
+        kept, shown = await el.evaluate("e => [e.value, e.selectedOptions[0] ? e.selectedOptions[0].textContent.trim() : '']")
+        if kept != value:          # read back: scripts may reset a choice (e.g. until a previous step is applied)
+            return (f"ERROR: the field did not keep {option!r}; it shows {shown!r}. Apply the previous step first or "
+                    "select it again")
         hint = hint and await el.evaluate("""e => { const f = e.form || e.closest('form') || document;
             return [...f.querySelectorAll('select:disabled, input:disabled')].length; }""")
         return f"selected {value!r}" + (" (other fields of this form are still disabled: apply the choice with the "
@@ -609,17 +613,37 @@ class Site:
         finally:
             await _close_quietly(helper.page)       # closing a hung tab can hang too: bounded
 
-    async def screenshot(self, ref: str | None = None) -> bytes:
-        """JPEG of an element (if it has a size) or of the viewport."""
+    async def screenshot(self, ref: str | None = None) -> tuple[bytes, str]:
+        """JPEG of an element (if it has a size) or of the viewport, and a note on what it shows. A small control
+        (tab, button) is not a document: when the page shows a large picture without text, that picture is taken."""
         if ref:
             try:
-                _, el = await self._element(ref)
+                frame, el = await self._element(ref)
                 box = await el.bounding_box()
                 if box and box["width"] > 4 and box["height"] > 4:
-                    return await el.screenshot(type="jpeg", quality=70, timeout=5000)
+                    tag = await el.evaluate("e => e.tagName")
+                    if tag not in ("CANVAS", "IMG", "SVG") and box["width"] * box["height"] < 25000:
+                        picture = await self._largest_picture(frame)
+                        if picture is not None:
+                            return (await picture.screenshot(type="jpeg", quality=70, timeout=8000),
+                                    f"{ref} is a small control; the screenshot shows the largest picture of the page instead")
+                    return await el.screenshot(type="jpeg", quality=70, timeout=8000), f"element {ref}"
             except (PlaywrightError, ValueError):
                 pass
-        return await self.page.screenshot(type="jpeg", quality=60)
+        return await self.page.screenshot(type="jpeg", quality=60), "the visible part of the page"
+
+    async def _largest_picture(self, frame):
+        """The largest visible canvas/image without text (a scanned document, a drawn price table), or None."""
+        handle = await frame.evaluate_handle("""() => {
+            let best = null, area = 40000;
+            for (const e of document.querySelectorAll('canvas, img')) {
+                if (e.getAttribute('aria-label') || e.getAttribute('alt')) continue;
+                const b = e.getBoundingClientRect(), a = b.width * b.height;
+                if (a > area && getComputedStyle(e).visibility !== 'hidden') { best = e; area = a; }
+            }
+            return best; }""")
+        element = handle.as_element()
+        return element
 
 
 class _Popups(list):

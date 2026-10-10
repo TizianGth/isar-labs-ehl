@@ -260,3 +260,43 @@ def test_a_click_folds_only_its_own_popup(monkeypatch):
     (marked, other_closed, url_after_mark), opened, url_after_open, other_closed_later = asyncio.run(scenario())
     assert marked == "clicked" and not other_closed and url_after_mark.endswith("/opener")
     assert "popup window opened" in opened and url_after_open.endswith("/target") and not other_closed_later
+
+
+def test_vision_targets_the_document_and_never_looks_twice(monkeypatch):
+    """Scanned documents (canvas) get a ref; a tab button is not the document; an unchanged picture is not looked at
+    again (fake-portal 'scanned': the budget went to a tab button and to repeated, cut-off views)."""
+    calls = []
+
+    async def fake_ask_json(system, user, **kwargs):
+        calls.append(user)
+        return {"answer": "Preis 12,50", "uncertain": None}
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask_json)
+    page = ("<html><body><p>Technisches Datenblatt</p><button>Preise</button>"
+            "<canvas id='doc' width='600' height='400'></canvas>"
+            "<script>const c = document.getElementById('doc').getContext('2d'); c.fillStyle = '#fff';"
+            "c.fillRect(0, 0, 600, 400); c.fillStyle = '#000'; c.font = '30px sans-serif'; c.fillText('Preis 12,50', 40, 80);"
+            "</script><img src='data:image/gif;base64,R0lGODlhAQABAAAAACw=' width='16' height='16'></body></html>")
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=page)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("scan", BASE + "/doc", {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=40)
+            observation = await site.observe()
+            explorer = Explorer(site, Mission("t", "goal", {}, deadline=10**10), None)
+            first = await explorer._inspect_visual("Welcher Preis steht im Dokument?", _ref(observation, "Preise"))
+            again = await explorer._inspect_visual("Und nochmal?", _ref(observation, "Preise"))
+            await browser.close()
+            return observation, first, again, explorer.visual_used
+    observation, first, again, used = asyncio.run(scenario())
+    assert re.search(r"\[\w+\] canvas without text: needs screenshot \(600x400 px\)", observation)
+    assert not re.search(r"\[\w+\] image without text", observation)       # a 16 px icon is no document
+    assert "largest picture" in first and "12,50" in first
+    assert again.startswith("ERROR: this screenshot is identical") and used == 1 and len(calls) == 1
