@@ -21,7 +21,7 @@ def test_clear_win_is_adopted_and_quality_loss_rejected():
 
 def test_platform_failures_invalidate_and_cost_only_gains_count():
     assert bench.decide([(run(33), run(30, failure="platform"))])[0] == "INVALID"
-    pairs = [(run(33, cost=0.10, seconds=330), run(32.5, cost=0.096, seconds=338)) for _ in range(3)]
+    pairs = [(run(33, cost=0.10, seconds=330), run(32.5, cost=0.096, seconds=335)) for _ in range(3)]
     assert bench.decide(pairs)[0] == "ADOPT-COST"
     assert bench.decide([(run(30), run(33)) for _ in range(3)])[0] == "REJECT"
     assert bench.decide([(run(30), run(30.3)) for _ in range(3)])[0] == "INCONCLUSIVE"
