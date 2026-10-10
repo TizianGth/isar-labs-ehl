@@ -14,7 +14,7 @@ import time
 
 from playwright.async_api import async_playwright
 
-from rfq import contract, llm, metrics
+from rfq import contract, flags, llm, metrics
 from rfq.agent.orchestrator import Orchestrator
 from rfq.browser.site import Site
 from rfq.log import log
@@ -78,6 +78,8 @@ async def main() -> int:
         # and one that cannot be reached at once blocks nothing (missions retry it later).
         for site in sites.values():
             site.begin_start(timeout=100)
+        if not flags.START_OVERLAP:          # switched off: every website first, as before
+            await asyncio.gather(*(site.wait_started() for site in sites.values()))
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs

@@ -10,7 +10,7 @@ import re
 import time
 from decimal import Decimal
 
-from .. import llm, metrics
+from .. import flags, llm, metrics
 from ..log import log
 from .explorer import TOOLS, Explorer, Mission, _tool
 from .prompts import EXTRACT_SYSTEM, KINDS
@@ -35,6 +35,22 @@ SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
     _tool("submit_bid", "Final binding submission: clicks the given button and confirms the browser dialog. Only on "
           "the final review/sign page with the TAN entered.", {"ref": {"type": "string"}}, ["ref"]),
 ]
+
+
+STEPS_GUIDANCE = """  Do a whole position with ONE `steps` call: each product filter as a select with then_click=<the form's apply
+  button, e.g. "Auswahl übernehmen"> (the next filter stays disabled until the choice is applied), then a fill_fields
+  for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges, packaging, project
+  bonus; they may sit in a collapsed section) and the lead time, and finally the click that goes to the next step.
+  If `steps` stops early, look at the page and continue from where it stopped."""
+SINGLE_GUIDANCE = """  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button,
+  e.g. "Auswahl übernehmen">) — the next filter stays disabled until the choice is applied. When our catalogue number
+  is selectable, use fill_fields once for catalogue number, quantity, unit price, the price breakdown fields (base,
+  surcharges, packaging, project bonus; they may sit in a collapsed section) and the lead time; then go to the next step."""
+
+
+def submit_tools() -> list[dict]:
+    """The submission's tools; without `steps` when that switch is off."""
+    return [t for t in SUBMIT_TOOLS if flags.STEPS_TOOL or t["function"]["name"] != "steps"]
 
 
 def de(value, digits: int = 2) -> str:
@@ -93,10 +109,11 @@ class SubmitExplorer(Explorer):
         # submit_bid uses this reading only if the page is unchanged apart from the TAN typed into it.
         if self.review_prefetch is not None and not self.review_prefetch[1].done():
             self.review_prefetch[1].cancel()
-        text = await self.site.full_text()
-        reading = asyncio.ensure_future(self._read("bid_review", text))
-        reading.add_done_callback(lambda t: t.cancelled() or t.exception())   # an unused failure is no warning
-        self.review_prefetch = (text, reading)
+        if flags.REVIEW_PREFETCH:
+            text = await self.site.full_text()
+            reading = asyncio.ensure_future(self._read("bid_review", text))
+            reading.add_done_callback(lambda t: t.cancelled() or t.exception())   # an unused failure is no warning
+            self.review_prefetch = (text, reading)
         before = len(orch.bb.items.get("mail_message", []))
 
         def tan_progress() -> tuple[str, bool]:
@@ -238,11 +255,7 @@ Procedure and traps:
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
   preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung).
 - Positions may come in any order: read the position number on the page and use THAT position's line of the table.
-  Do a whole position with ONE `steps` call: each product filter as a select with then_click=<the form's apply
-  button, e.g. "Auswahl übernehmen"> (the next filter stays disabled until the choice is applied), then a fill_fields
-  for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges, packaging, project
-  bonus; they may sit in a collapsed section) and the lead time, and finally the click that goes to the next step.
-  If `steps` stops early, look at the page and continue from where it stopped.
+{STEPS_GUIDANCE if flags.STEPS_TOOL else SINGLE_GUIDANCE}
 - Never use "add position" (extra positions cost points). Use "omit position" only for positions marked SKIP.
 - Discount and NET total: type our values; ignore any displayed gross amount incl. VAT or other suggested totals.
 - Declarations: acknowledge the tender documents; do NOT accept/declare your own terms and conditions (AGB).
@@ -259,6 +272,6 @@ Procedure and traps:
     explorer.orchestrator = orch
     explorer.mission.kinds = {}
     started = time.time()
-    await explorer.run(SUBMIT_TOOLS)
+    await explorer.run(submit_tools())
     log("submit_phase_done", seconds=round(time.time() - started, 1), state=explorer.state, receipt=explorer.receipt,
         mission_status=explorer.status)

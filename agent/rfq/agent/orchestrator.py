@@ -14,7 +14,7 @@ import re
 import time
 from urllib.parse import parse_qsl, urlparse
 
-from .. import llm, metrics
+from .. import flags, llm, metrics
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
@@ -415,7 +415,7 @@ EVERY listed message whose subject contains the reference (skip signing-TAN mess
 to open, they are filtered later). Then switch to the archive folder (and any other folder) and do the same. If a
 search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
-        mail.background_extraction = True
+        mail.background_extraction = flags.BACKGROUND_EXTRACTION
 
         async def tracked(name: str, site: Site, mission: Mission, attempts: int = 2):
             try:
@@ -559,7 +559,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
    may be on a separate tab/view; several records may be paged). Prefer extract_urls with several detail URLs.
 The progress checklist tells you what is still missing per material.""", ["materials"], 35,
                             progress=lambda g=group, rs=reqs: self.erp_progress(g, rs))
-        mission.background_extraction = True      # navigation goes on while detail pages are extracted
+        mission.background_extraction = flags.BACKGROUND_EXTRACTION   # navigation goes on while pages are extracted
         return mission
 
     # ---------------------------------------------------------------- rules + submission
