@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M3XV47TS0V1XM2CC2MBT9E",
+  "session_id": "76abc8de-2e9b-4d72-99dc-d8c889cd0eb9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T23:56:15.22835907Z",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/eval/replay_fake_portals.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "f6b197ace241",
+  "checkpoint_transcript_start": 1,
+  "transcript_lines_at_start": 1,
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T23:56:15.204731988Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 13,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 13,
+    "total_lines_changed": 18,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1497,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "dev/runs/sandbox/run_09624.jsonl": 348,
+        "dev/runs/sandbox/run_becee.jsonl": 301,
+        "dev/runs/sandbox/run_c8fe.jsonl": 332,
+        "dev/runs/sandbox/run_c8fe_status.json": 246,
+        "dev/runs/sandbox/run_f33ba.jsonl": 270
+      }
+    }
+  ]
+}
