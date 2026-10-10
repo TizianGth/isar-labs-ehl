@@ -128,3 +128,13 @@ def test_no_bid_when_only_blocked_material():
     bb["materials"][0]["data"]["materials"][0]["status_meaning"] = "blocked"
     answer = build(CTX, bb).answer
     assert answer["decision"] == "no_bid" and answer["positions"] == [] and answer["total_net"] == 0
+
+
+def test_missing_end_reserve_never_causes_no_bid():
+    bb = _evidence()
+    req = bb["requirements"][1]["data"]["requirements"][0]
+    req.update({"stroke_mm": "90", "usable_stroke": True, "end_reserve_key": "E-1"})   # no reserve mail exists
+    result = build(CTX, bb)
+    assert result.answer["decision"] == "bid"
+    assert result.answer["positions"][0]["material_number"] == "M-1"
+    assert any("WARNING end reserve" in line for line in result.trace)

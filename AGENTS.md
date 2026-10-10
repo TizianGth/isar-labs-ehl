@@ -32,44 +32,49 @@ Am Ende wird **ein** signiertes Angebot im Konfigurator des Vergabeportals abgeg
 
 Details: `docs/01-challenge.md` §Fair Play.
 
-## 3. Repo-Layout (Zielbild)
+## 3. Repo-Layout (Ist-Stand MVP, Commit auf `main`)
 
 ```
-agent/                 # == eingereichtes Package (agent.json liegt HIER). Nur generischer Code!
-  agent.json           # {"setup":["uv","sync"],"run":["uv","run","--no-sync","python","main.py"],"browsers":4,"models":["qwen"]}
-  pyproject.toml uv.lock main.py
-  rfq/
-    contract.py        # Run laden (API / CHALLENGE_SCOUTING), Deadline, Logging
-    browser/           # session.py observe.py observe.js actions.py guards.py documents.py
-    llm/               # client.py (Qwen/Clef/BYO), loop.py (Tool-Loop), prompts/*.md
-    facts.py           # typisierte Evidenz mit Provenienz (pydantic)
-    agents/            # orchestrator.py explorer.py missions.py
-    rules/             # parse.py (Zahl/Datum/Einheit) resolve.py pricing.py validate.py
-    submit/            # configurator.py tan.py
-  tests/               # NUR synthetische Testdaten
-dev/                   # NICHT eingereicht: Scout-Tools, HTML-Fixtures der Public-Sites, Oracle, Eval-Harness
-docs/                  # Wissensbasis (siehe Index)
+agent/                      # == eingereichtes Package (agent.json liegt HIER). Nur generischer Code!
+  agent.json                # setup "uv sync --no-dev", run "uv run --no-sync python main.py", browsers 4, models ["qwen"]
+  main.py                   # Einstieg: Run laden, 1 Browser je Site (Sandbox: CDP), Orchestrator, --dry-run/--out/--evidence
+  rfq/contract.py           # Run-Contract (API / CHALLENGE_SCOUTING lokal), Uhr
+  rfq/llm.py                # Qwen-Client: Retry, Timeouts, Semaphore, Thinking an/aus, JSON-Modus, Usage-Log
+  rfq/log.py                # JSON-Zeilen auf stdout
+  rfq/browser/observe.js    # DOM→Text-Serializer (Köder raus, Tooltips/details/Canvas rein, Refs)
+  rfq/browser/guards.js     # Login-/Cookie-/Overlay-/Gate-/Fehlerseiten-Erkennung (generisch)
+  rfq/browser/site.py       # Site = Website in einem Tab: Guards um jede Aktion, Popups, Relogin, Helper-Tabs, fill_fields
+  rfq/agent/explorer.py     # LLM-Tool-Loop (1 Tool/Schritt), Fortschritts-Checkliste, Loop-Schutz
+  rfq/agent/orchestrator.py # Brief → Missionen parallel (Tender, Spezifikation, Mail, ERP je Kataloggruppe) → Regeln → Abgabe
+  rfq/agent/prompts.py      # System-Prompts + Extraktions-Schemata (site-agnostisch)
+  rfq/agent/submit.py       # Abgabe-Agent: Formular, TAN aus Mail, Summary-Check, confirm()-Dialog
+  rfq/rules/parse.py        # Zahlen (Locale), Daten, IDs
+  rfq/rules/resolve.py      # Regeln + Pricing (Decimal, HALF_UP) mit Entscheidungs-Trace
+  tests/                    # NUR synthetische Testdaten
+dev/                        # NICHT eingereicht: Fixtures, Oracle, score.py, check_no_leaks.py, runs/
+docs/                       # Wissensbasis (siehe Index)
+(Root: agent.py/research.py/evidence.py/smoke/ = Tizians Starter-Kit-Prototyp, nicht Teil des Packages)
 ```
 
-Einreichen/Testen immer aus `agent/`: `atira test-run ./agent` (CLI packt den Ordner ohne `.gitignore`-Dateien).
+Einreichen/Testen immer aus `agent/`: `atira test-run ./agent`.
 Alles mit Public-Werten (Fixtures, Oracle, Golden Answers) liegt ausschließlich in `dev/`.
 
-## 4. Architektur (Kurzfassung — Details `docs/02-architecture.md`)
+## 4. Architektur (Kurzfassung — Details `docs/02-architecture.md`, Ist-Stand `docs/11-mvp-status.md`)
 
 ```
-Brief ──► TaskContext (LLM-Extraktion: Referenz, Stichtag, Firma, USt-Id, Direktor-Mailbox, autorisierte Absender)
-            │
-            ▼
-   Orchestrator (Python, asyncio, Deadline-Wächter, Blackboard)
-     ├─ Explorer-Agent × 4  (je 1 Browser, LLM-Tool-Loop, Missionen = Informationsbedarf, NICHT Site-Skripte)
-     │     Tools: observe · click · fill · select · check · set_range · expand · goto_link · back · read_document
-     │            · paginate(ref) · search(ref,query) · report_fact(...) · ask_blackboard(...) · done
-     │     Guards (Code): Cookie-Wall, Overlays/Umfragen schließen, Session-Relogin, 5xx/„Fehler“-Retry,
-     │                    Zugangs-Gates (Slider+Checkbox+Belegnummer), Popups/Fenster, iframes
-     ├─ Blackboard: typisierte Facts mit Provenienz (Quelle, Datum, Referenz, Absender, Rohtext)
-     ├─ Resolver + Pricing (reines Python, Decimal, ROUND_HALF_UP) ─► Answer-JSON + Rechenweg-Trace
-     └─ Submit-Agent: Konfigurator ausfüllen (LLM wählt Felder, Code verifiziert jeden Schritt),
-                      TAN anfordern → neueste TAN aus Mail → confirm()-Dialog akzeptieren
+Brief ──► LLM-Extraktion (Referenz, Stichtag, Firma, USt-Id, Site-Rollen, autorisierte Absender je Thema)
+   │
+   ▼
+Orchestrator (asyncio, Blackboard = append-only Extraktionen mit URL)
+  ├─ Mission tender         (Browser 1)  → positions, clarifications
+  ├─ Mission specification  (Browser 2)  → spec_revisions, requirements     ──┐
+  ├─ Mission mail           (Browser 4)  → mail_list, mail_message           │
+  └─ Missionen erp:<Gruppe> (Browser 3, je Kataloggruppe ein Tab) ◄─────────┘ (starten, sobald Spezifikation fertig)
+       Explorer-Tools: click · type · select(+then_click) · fill_fields · check · set_slider · open_url · back
+                       · read_all_pages(next_ref) · extract(kind) · extract_urls(urls, kind) · finish
+       Fortschritts-Checkliste je Mission (vom Code aus dem Blackboard) → Auto-Finish, kein Wiederholen
+   ▼
+rules/resolve.py (deterministisch) → Answer + Trace → submit.py (Formular, TAN, confirm) 
 ```
 
 Kernprinzipien:
@@ -93,18 +98,18 @@ Kernprinzipien:
 | `feat/erp-mail-evidence` | ERP + Mail | Missionen + Fact-Schemas für Material/Bestand/Konditionen, Mail-Freigaben, Keys |
 | `feat/pricing-submission` | Rechnen + Abgabe | `rules/*` (Parser, Resolver, Pricing, Validate), `submit/*` (Konfigurator, TAN) |
 
-Schnittstellen sind in `agent/rfq/facts.py` definiert (Owner: pricing-submission, Änderungen per PR mit Review
-durch orchestrator). Merge-Reihenfolge: orchestrator (Layout) → browser-tools → facts.py → Rest.
+Schnittstelle zwischen Explorern und Regeln sind die Extraktions-Schemata `KINDS` in `agent/rfq/agent/prompts.py`
+(Owner: pricing-submission + orchestrator; Änderungen per PR). Alle Branches bitte auf `main` rebasen — das MVP liegt dort.
 
 ## 6. Arbeitsweise
 
-- Python 3.12, `uv`, asyncio, Playwright (async), `pydantic` v2, `openai` SDK (für Qwen, OpenAI-kompatibel).
+- Python 3.12, `uv`, asyncio, Playwright (async), `openai` SDK (für Qwen, OpenAI-kompatibel). Keine pydantic-Abhängigkeit (noch nicht nötig).
   Keine weiteren schweren Abhängigkeiten ohne Absprache (Setup max. 5 min, Package ≤ 20 MB).
 - Geld & Mengen: **`decimal.Decimal`**, niemals `float`. Rundung `ROUND_HALF_UP` exakt dort, wo die Regeln es sagen.
 - Zahlen/Datum immer über `rules/parse.py` (Locale-Tags `(de-DE)`/`(en-US)`, `(TT/MM)`/`(MM/TT)`, Zeitzonen).
 - Logging: jede LLM-Antwort, jede Aktion, jeder Fact als JSON-Zeile auf stdout (die Plattform zeigt stdout im Run-Log).
   Keine Secrets loggen. Format: `{"t":…,"agent":…,"event":…,…}`.
-- Prompts liegen als Markdown in `agent/rfq/llm/prompts/`, sind **site-agnostisch** und enthalten nur Regeln,
+- Prompts liegen in `agent/rfq/agent/prompts.py`, sind **site-agnostisch** und enthalten nur Regeln,
   Glossar und Vorgehen — nie Public-Werte.
 - Kleine PRs, je Branch eigener Bereich; `facts.py` und Prompts nur per Review ändern.
 - Commits: aussagekräftig, Englisch, Imperativ.
@@ -135,6 +140,7 @@ läuft lokal gegen Scouting-Sites · Logs nachvollziehbar.
 | `docs/07-workstreams.md` | Aufgaben je Person/Branch, Schnittstellen, Meilensteine |
 | `docs/08-pitfalls.md` | Häufige Fehler (eigene Funde + Literatur) und Features, die wir übernehmen |
 | `docs/09-glossary-de.md` | Deutsch-Glossar (für Runtime-Prompts geeignet, keine Szenario-Werte) |
+| `docs/11-mvp-status.md` | Was funktioniert, Messwerte, offene Punkte, nächste Aufgaben je Person |
 | `docs/10-risks-error-handling.md` | Fehlerbehandlung in Schichten, Deadline, LLM-/Browser-Edge-Cases, Review-Sicherheit |
 | `docs/prompts/*.md` | Kickoff-Prompts je Workstream zum Einfügen in Codex/Claude |
 | `docs/reference/` | Brief, Answer-Schema, Plattform-Docs (Snapshot) |

@@ -28,7 +28,7 @@ def client() -> AsyncOpenAI:
 
 
 async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinking: bool = False,
-               json_mode: bool = False, temperature: float = 0.1, tag: str = "") -> dict:
+               json_mode: bool = False, temperature: float = 0.1, tag: str = "", timeout: float | None = None) -> dict:
     """One chat completion; returns {"content": str, "tool_calls": [(name, args_dict)]}."""
     kwargs: dict = {"model": MODEL, "messages": messages, "temperature": temperature,
                     "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}}}
@@ -42,7 +42,9 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         started = time.monotonic()
         try:
             async with _slots:
-                response = await client().chat.completions.create(**kwargs)
+                # a hung call must not eat minutes: short for navigation steps, longer for big extractions
+                response = await client().chat.completions.create(
+                    **kwargs, timeout=timeout or (60 if tools else 150))
         except Exception as error:  # network, 5xx, timeouts, queue: retry with backoff
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
             await asyncio.sleep(delay)

@@ -223,6 +223,7 @@ class Site:
             return message
 
     async def _element(self, ref: str):
+        ref = re.sub(r"[^\w]", "", str(ref))          # models sometimes send '"e9"' or '[e9]'
         frame, locator = self._locate(ref)
         if not await locator.count():
             raise ValueError(f"ref {ref} is not on the current page (refs change after every action)")
@@ -276,7 +277,11 @@ class Site:
             await asyncio.sleep(0.3)
         return f"typed; field now contains {value!r}" + (" and pressed Enter" if submit else "")
 
-    async def _do_select(self, ref: str, option: str) -> str:
+    async def _do_select(self, ref: str, option: str, then_click: str | None = None) -> str:
+        result = await self._select(ref, option, hint=not then_click)
+        return result + ("" if result.startswith("ERROR") else await self._then_click(then_click))
+
+    async def _select(self, ref: str, option: str, hint: bool = False) -> str:
         _, el = await self._element(ref)
         if problem := await self._ready(el):
             return problem
@@ -289,7 +294,10 @@ class Site:
         if value is None:
             return f"ERROR: no option {option!r}. Options: " + " | ".join(label for _, label in options)
         await el.select_option(value=value, timeout=4000)
-        return f"selected {value!r}"
+        hint = hint and await el.evaluate("""e => { const f = e.form || e.closest('form') || document;
+            return [...f.querySelectorAll('select:disabled, input:disabled')].length; }""")
+        return f"selected {value!r}" + (" (other fields of this form are still disabled: apply the choice with the "
+                                        "form's apply/update button, e.g. via then_click)" if hint else "")
 
     async def _do_check(self, ref: str, checked: bool = True) -> str:
         _, el = await self._element(ref)
@@ -301,7 +309,12 @@ class Site:
         await el.set_checked(bool(checked), force=True, timeout=4000)
         return f"{'checked' if checked else 'unchecked'}"
 
-    async def _do_fill_fields(self, fields: list) -> str:
+    async def _then_click(self, ref: str | None) -> str:
+        if not ref:
+            return ""
+        return "; then " + await self._do_click(str(ref))
+
+    async def _do_fill_fields(self, fields: list, then_click: str | None = None) -> str:
         """Several form fields in one step: text inputs, selects and checkboxes, each verified."""
         results = []
         for field in fields or []:
@@ -310,7 +323,7 @@ class Site:
                 _, el = await self._element(ref)
                 tag, kind = await el.evaluate("e => [e.tagName, e.type]")
                 if tag == "SELECT":
-                    results.append(f"{ref}: " + await self._do_select(ref, str(value)))
+                    results.append(f"{ref}: " + await self._select(ref, str(value)))
                 elif kind in ("checkbox", "radio"):
                     on = str(value).lower() not in ("false", "0", "no", "nein", "")
                     results.append(f"{ref}: " + await self._do_check(ref, on))
@@ -318,7 +331,7 @@ class Site:
                     results.append(f"{ref}: " + await self._do_type(ref, str(value)))
             except (PlaywrightError, ValueError) as error:
                 results.append(f"{ref}: ERROR {str(error).splitlines()[0][:150]}")
-        return "; ".join(results)
+        return "; ".join(results) + await self._then_click(then_click)
 
     async def _do_set_slider(self, ref: str, value: str = "max") -> str:
         _, el = await self._element(ref)

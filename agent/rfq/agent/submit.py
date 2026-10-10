@@ -63,10 +63,15 @@ class SubmitExplorer(Explorer):
     async def _get_tan(self) -> str:
         orch = self.orchestrator
         before = len(orch.bb.items.get("mail_message", []))
+        def tan_progress() -> tuple[str, bool]:
+            found = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:] if (i["data"].get("data") or {}).get("tan")]
+            return (f"TAN messages extracted since the request: {len(found)}", bool(found))
+
         mission = Mission("tan", f"""A signing TAN for tender {orch.brief.get('tender_reference')} was just requested and
 arrives as a new message in the inbox (no search needed, maybe reload the inbox). Find the NEWEST TAN message
-(highest request number / most recent) and extract it with extract_urls kind 'mail_message'. Then finish.""",
-                          {"mail_message": "one opened e-mail message"}, max_steps=10, deadline=orch.end - 20)
+(highest request number / most recent) and extract it with extract_urls kind 'mail_message'.""",
+                          {"mail_message": "one opened e-mail message"}, max_steps=10, deadline=orch.end - 20,
+                          progress=tan_progress)
         site = orch.site_for("mail")
         await site.goto(site.url)
         await Explorer(site, mission, orch.extract).run()
@@ -125,8 +130,8 @@ Procedure and traps:
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
   preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung).
 - Positions may come in any order: read the position number on the page and use THAT position's line of the table.
-  Choose the product filters of that position one at a time; after each choice press the form's apply button
-  (e.g. "Auswahl übernehmen") — the next filter stays disabled until then. When our catalogue number is selectable,
+  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button,
+  e.g. "Auswahl übernehmen">) — the next filter stays disabled until the choice is applied. When our catalogue number is selectable,
   use fill_fields once for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges,
   packaging, project bonus; they may sit in a collapsed section) and the lead time; then go to the next step.
 - Never use "add position" (extra positions cost points). Use "omit position" only for positions marked SKIP.
@@ -135,7 +140,7 @@ Procedure and traps:
 - On the final review page compare everything with the table above. Then click the button that requests the TAN,
   call get_tan, type the TAN, and call submit_bid with the ref of the final binding submit button.
 - If the page reports validation errors, fix them and continue."""
-    mission = Mission("submit", goal, {}, max_steps=110, deadline=orch.end - 5, max_blocked=10_000)
+    mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000)
     site = orch.site_for("tender")
     explorer = SubmitExplorer(site, mission, orch.extract)
     explorer.orchestrator = orch

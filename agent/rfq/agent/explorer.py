@@ -29,13 +29,14 @@ TOOLS = [
     _tool("type", "Fill a text field (replaces its content).",
           {"ref": _REF, "text": {"type": "string"}, "submit": {"type": "boolean", "description": "press Enter after"}},
           ["ref", "text"]),
-    _tool("select", "Choose an option of a select by its visible text (or value).",
-          {"ref": _REF, "option": {"type": "string"}}, ["ref", "option"]),
+    _tool("select", "Choose an option of a select by its visible text (or value). Optional then_click: ref of a "
+          "button to press right after (e.g. the form's apply/update button).",
+          {"ref": _REF, "option": {"type": "string"}, "then_click": _REF}, ["ref", "option"]),
     _tool("check", "Tick or untick a checkbox/radio.", {"ref": _REF, "checked": {"type": "boolean"}}, ["ref"]),
     _tool("fill_fields", "Fill several form fields at once (text inputs, selects by option text, checkboxes with "
           "true/false). Use it for forms with many fields.",
           {"fields": {"type": "array", "items": {"type": "object", "properties": {"ref": {"type": "string"},
-           "value": {"type": "string"}}, "required": ["ref", "value"]}}}, ["fields"]),
+           "value": {"type": "string"}}, "required": ["ref", "value"]}}, "then_click": _REF}, ["fields"]),
     _tool("set_slider", "Move a range slider (value 'max' for fully right).",
           {"ref": _REF, "value": {"type": "string"}}, ["ref"]),
     _tool("open_url", "Open a URL of this website that appeared in an observation (e.g. an iframe src).",

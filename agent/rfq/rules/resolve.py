@@ -192,8 +192,12 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
                     target[k] = v
 
     def matches(mat: dict, req: dict, stroke: D | None) -> bool:
-        checks = [(number(mat.get("bore_mm")), number(req.get("bore_mm"))), (number(mat.get("stroke_mm")), stroke),
+        """Exact match. stroke=None means 'nominal stroke unknown' (e.g. end reserve not found): stroke is then not
+        compared here and the caller picks among the remaining candidates."""
+        checks = [(number(mat.get("bore_mm")), number(req.get("bore_mm"))),
                   (number(mat.get("pressure_bar")), number(req.get("pressure_bar")))]
+        if stroke is not None:
+            checks.append((number(mat.get("stroke_mm")), stroke))
         if any(a is None or b is None or a != b for a, b in checks):
             return False
         if not same_text(mat.get("mounting"), req.get("mounting")):
@@ -232,6 +236,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
                 attrs[field_name] = amendment.get("value")
                 note(f"{pid}: amendment {attribute} = {amendment.get('value')}")
         stroke = number(attrs.get("stroke_mm"))
+        usable_floor = None
         if attrs.get("usable_stroke") and stroke is not None:
             key = norm_id(attrs.get("end_reserve_key"))
             entry = reserves.get(key)
@@ -240,10 +245,19 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
                 stroke = stroke + 2 * reserve
                 note(f"{pid}: usable stroke + 2x{reserve} ({key}) = nominal {stroke}")
             else:
-                note(f"{pid}: end reserve {key} for revision {req['revision']} not found")
+                note(f"{pid}: WARNING end reserve {key} for revision {req['revision']} not found; nominal stroke unknown")
+                usable_floor, stroke = stroke, None
         group = norm_id(attrs.get("catalog_group"))
         candidates = [m for m in materials.values() if not group or not m.get("catalog_group") or norm_id(m.get("catalog_group")) == group]
         fitting = [m for m in candidates if matches(m, attrs, stroke)]
+        if stroke is None and usable_floor is not None:
+            # unknown reserve: the nominal stroke must exceed the usable one; prefer the closest such material
+            longer = [m for m in fitting if (number(m.get("stroke_mm")) or D(0)) > usable_floor]
+            ranked = sorted(longer or fitting, key=lambda m: (m.get("status_meaning") != "active", number(m.get("stroke_mm")) or D(0)))
+            fitting = ranked[:1]
+            uncertain = True
+        else:
+            uncertain = False
         active = [m for m in fitting if m.get("status_meaning") == "active"]
         note(f"{pid}: group {group} candidates={[m['material_number'] for m in candidates]} "
              f"fitting={[m['material_number'] for m in fitting]} active={[m['material_number'] for m in active]}")
@@ -251,7 +265,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             if fitting and all(m.get("status_meaning") is None for m in fitting):
                 active = fitting
                 note(f"{pid}: status unknown, using fitting material")
-            elif candidates:
+            elif candidates and not uncertain:
                 no_material.append(pid)
                 continue
             else:

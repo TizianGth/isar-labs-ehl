@@ -3,6 +3,7 @@
 Sandbox: attach to the run's browsers (CDP_URLS, one website per browser); never start browsers of our own.
 Locally (no CDP_URLS): launch one Chromium with one context per website. Options:
   --out FILE   write answer, trace and evidence as JSON      --dry-run   stop before the binding submission
+  --evidence FILE   (dev) skip exploration, replay brief + evidence of an earlier --out file
 """
 import argparse
 import asyncio
@@ -52,6 +53,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--evidence", help="dev only: replay brief + evidence from an earlier --out file")
     args = parser.parse_args()
     if args.dry_run:
         os.environ["RFQ_DRY_RUN"] = "1"
@@ -65,7 +67,8 @@ async def main() -> int:
             log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
                 error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
         orchestrator = Orchestrator(run, sites)
-        result = await orchestrator.run_all()
+        replay = json.load(open(args.evidence)) if args.evidence else None
+        result = await orchestrator.run_all(replay)
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,

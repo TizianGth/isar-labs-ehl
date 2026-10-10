@@ -23,7 +23,7 @@ from .submit import submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
-SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "330"))   # seconds kept for the submission phase
+SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "480"))   # seconds kept for the submission phase
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -41,7 +41,15 @@ class Blackboard:
         return self.items.get(kind, [])
 
     def dump(self) -> dict:
-        return {k: [{"url": i["url"], **i["data"]} for i in v] for k, v in self.items.items()}
+        return {k: [{"url": i["url"], "data": i["data"]} for i in v] for k, v in self.items.items()}
+
+    def load(self, dumped: dict) -> None:
+        """Re-use the evidence of an earlier run (dev: iterate on rules/submission without re-exploring)."""
+        for kind, items in dumped.items():
+            for item in items:
+                item = dict(item)
+                url = item.pop("url", "")
+                self.add(kind, item["data"] if set(item) == {"data"} else item, url)
 
 
 class Orchestrator:
@@ -310,11 +318,16 @@ The progress checklist tells you what is still missing per material.""", ["mater
         log("answer", answer=result.answer, skipped=result.skipped)
         return result
 
-    async def run_all(self) -> Result | None:
+    async def run_all(self, replay: dict | None = None) -> Result | None:
         result = None
         try:
-            await self.read_brief()
-            await asyncio.wait_for(self.gather_evidence(), timeout=max(60, self.end - SUBMIT_RESERVE - time.time()))
+            if replay:
+                self.brief = replay["brief"]
+                self.bb.load(replay["evidence"])
+                log("replay", kinds={k: len(v) for k, v in self.bb.items.items()})
+            else:
+                await self.read_brief()
+                await asyncio.wait_for(self.gather_evidence(), timeout=max(60, self.end - SUBMIT_RESERVE - time.time()))
         except Exception as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500])
         try:
