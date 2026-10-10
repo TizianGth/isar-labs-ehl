@@ -5,3 +5,4 @@ runs/*.json
 dev/.venv/
 scratch/
 variants/
+runs/replay/

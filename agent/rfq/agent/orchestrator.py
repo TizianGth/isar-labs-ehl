@@ -108,13 +108,9 @@ class Orchestrator:
             skipped = len(parts) - MAX_CHUNKS
             parts = parts[:MAX_CHUNKS - 1] + parts[-1:]
             log("extract_parts_skipped", kind=kind, url=url[:160], skipped=skipped)
-        results = await asyncio.gather(*(llm.ask_json(EXTRACT_SYSTEM, (
-            f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
-            f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
-            f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}"
-            + (f" (part {i + 1} of {len(parts)})" if len(parts) > 1 else "")
-            + f"\n<<<PAGE TEXT>>>\n{part}\n<<<END>>>"), thinking=THINKING_EXTRACT, tag=f"extract:{kind}")
-            for i, part in enumerate(parts)))
+        results = await asyncio.gather(*(llm.ask_json(EXTRACT_SYSTEM, extraction_prompt(
+            kind, spec, part, url, self.brief.get("tender_reference"), self.brief.get("scenario_datetime_utc"),
+            i, len(parts)), thinking=THINKING_EXTRACT, tag=f"extract:{kind}") for i, part in enumerate(parts)))
         data = _merge_parts(kind, [r for r in results if r])
         if not data:
             return "extraction returned nothing"
@@ -685,6 +681,14 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
         return result
+
+
+def extraction_prompt(kind: str, spec: dict, text: str, url: str, reference, scenario, part: int = 0, parts: int = 1) -> str:
+    """The user message of one extraction call (also used by dev/eval/extract_replay.py)."""
+    return (f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
+            f"Task context: tender reference {reference}, scenario date {scenario}.\nPAGE URL: {url}"
+            + (f" (part {part + 1} of {parts})" if parts > 1 else "")
+            + f"\n<<<PAGE TEXT>>>\n{text}\n<<<END>>>")
 
 
 def _page_start(site) -> str:

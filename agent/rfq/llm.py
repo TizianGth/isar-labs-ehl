@@ -116,7 +116,8 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         if not QUIET_CALLS or seconds > 8 or attempt:   # sandbox: only slow or retried calls (usage has the totals)
             log("llm", tag=tag, s=round(seconds, 2),
                 tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
-        return {"content": message.content or "", "tool_calls": calls}
+        return {"content": message.content or "", "tool_calls": calls,
+                "output_tokens": getattr(tokens, "completion_tokens", None) if tokens else None}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
 
 
