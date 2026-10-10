@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4M3XV47TS0V1XM2CC2MBT9E",
   "strategy": "manual-commit",
   "branch": "codex/speed-quality",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "dev/eval/replay_fake_portals.py"
   ],
@@ -13,6 +13,12 @@
       "transcript": "/0/full.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ]
 }
