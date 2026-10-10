@@ -4,8 +4,9 @@ Unser Agent liest eine öffentliche Ausschreibung auf vier Websites (Vergabeport
 berechnet das Angebot nach den Regeln des Briefs und gibt es signiert im Vergabeportal ab. Ein Sprachmodell (Qwen)
 navigiert und entscheidet; Python rechnet deterministisch.
 
-**Stand:** Das Paket `agent/` erreicht im Sandbox-Test-Run **Quality 100, eligible**
-(`run_ed06b2d2e8a71fac`, Commit `cbf0f2e`, Paket `e57a1bbd63ff`, 31 Dateien, ≈ 10,5 min, $0,098).
+**Stand:** Gewertete Submission `sub_6bdf6c7dfe36193f` (Commit `011dadc`): **Quality 100, eligible, 7:19 min, $0,095 —
+Platz 1 im Public-Leaderboard** (`run_6e07bf4619c1ff9c`). Robustheits-Features für fremde Datensätze (Hedging, Köder-Mails,
+Task-Lifecycle, lange Dokumente) stehen in `docs/11-mvp-status.md`.
 
 ## Struktur
 

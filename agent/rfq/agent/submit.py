@@ -86,6 +86,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
                           {"mail_message": "one opened e-mail message"}, max_steps=10,
                           deadline=min(orch.end - 20, time.time() + 120), progress=tan_progress)
         site = orch.site_for("mail")
+        site.fresh_start()
         await site.goto(site.url)
         await Explorer(site, mission, orch.extract).run()
         tans = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:]
@@ -194,6 +195,7 @@ Procedure and traps:
 - If the page reports validation errors, fix them and continue."""
     mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000, max_visual=2)
     site = orch.site_for("tender")
+    site.fresh_start()
     if not await site.responsive():          # never start the decisive phase on a hung tab
         await site.recover_tab("before the submission")
     explorer = SubmitExplorer(site, mission, orch.extract)

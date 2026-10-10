@@ -132,12 +132,13 @@ def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
 
             async def handle(route):
                 await route.fulfill(status=200, content_type="text/html; charset=utf-8",
-                                    body="<html><body><p>busy</p><script>setTimeout(() => { while (true) {} }, 50)</script></body></html>")
+                                    body="<html><body><p>busy</p></body></html>")
 
             await context.route(f"{BASE}/**", handle)
             site = Site("frozen", BASE, {"username": "u", "password": "p"}, context)
             await asyncio.wait_for(site.start(), timeout=40)
-            await asyncio.sleep(0.3)                      # now the page's JS never returns
+            await site.page.evaluate("setTimeout(() => { while (true) {} }, 10)")
+            await asyncio.sleep(0.3)                      # now this tab's JS never returns (a fresh tab is fine)
             frozen = site.page
             started = time.time()
             observation = await asyncio.wait_for(site.observe(), timeout=40)
@@ -197,3 +198,12 @@ def test_hanging_page_falls_back_to_load_more(monkeypatch):
     result, texts = asyncio.run(scenario())
     assert "did not load" in result and "load more" in result
     assert "Eintrag 3" in texts and "Eintrag 4" in texts
+
+
+def test_decisive_steps_get_a_fresh_start_on_a_site():
+    """Run dc33…: the mail start page hung twice during research, so the TAN step skipped it for good."""
+    site = Site("mail", BASE, {"username": "u", "password": "p"}, None)
+    site.hung[BASE] = 2
+    site._recoveries = 8
+    site.fresh_start()
+    assert site.hung == {} and site._recoveries == 0

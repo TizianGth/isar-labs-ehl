@@ -60,6 +60,26 @@ Wichtig: Das Oracle ist **unser** Soll und noch nicht durch einen Sandbox-Test-R
 Zusätzlich: Mail-Checkliste nach Themen des Briefs (nicht nur Ordner), kürzere Schritt-Historie (−Tokens).
 Lokal (Run 7, Commit vor Mail-Fix): Oracle-Schätzung 96,1/100, 6,5 min, 964 k Input-Tokens (516 k gecacht) ≈ $0,09.
 
+## Codex-Backlogs W01–W09 / S0–S5 — Stand Branch `feat/robust-general`
+
+Basis: Submission `sub_6bdf6c7dfe36193f` (Commit 011dadc) → **100 · eligible, 7:19, $0,095, Platz 1**.
+Ziel des Branches: weniger Ausfälle und Köder-Fehler auf fremden (privaten) Datensätzen, Public-Qualität unverändert.
+
+| ID | Status | Umsetzung | Test |
+| --- | --- | --- | --- |
+| W01 | erledigt | Codex-Fix übernommen: LLM-Slots werden auch bei Cancellation freigegeben | `test_llm_cancellation.py` |
+| W02 | erledigt | ERP-Missionen enden mit ihrer Phase (cancel + await); ohne eigenen Tab wartet eine Mission, statt den Tab zu teilen | `test_deadlines.py::test_erp_missions_end_with_the_phase_and_never_share_a_tab` |
+| W03 | teilweise | Mail-Checkliste zählt ein Thema nur mit einer Mail, die auch die Regeln nutzen (Referenz, kein Entwurf, Datum ≤ Stichtag, autorisierter Absender inkl. `Name <adresse>`), und nennt den Grund bei Ködern. Offen: gezielte Recovery auf einer anderen Website | `test_decoy_mails_do_not_satisfy_a_topic`, `test_mail_address_forms` |
+| W04 | erledigt | Review-Seite: `1234.50` = Dezimalpunkt, sonst deutsches Format; echte Abweichungen bleiben blockierend | `test_review.py::test_number_formats_on_the_review_page` |
+| W07/S3 | teilweise | gleichzeitige identische Extraktionen teilen sich einen Call (nur Erfolge, Abbruch reißt Wartende nicht mit); Dokumente > 60k Zeichen werden in Teilen gelesen statt abgeschnitten (bis 60k unverändert) | `test_concurrent_identical_extractions_share_one_call`, `test_long_documents_are_read_in_parts_not_cut`, `test_a_cancelled_extraction_does_not_cancel_the_one_waiting_for_it` |
+| W08 | teilweise | 401/403 nach Annahme (Token gesperrt) wird nicht 6× wiederholt; Run-Log ergänzt | `test_refused_access_is_not_retried` |
+| neu | erledigt | **Hedging**: Modell-Request nach 12 s (Tools) / 30 s (JSON) ohne Antwort bekommt einen Zwilling, die erste Antwort gewinnt (max. 2 gleichzeitig, adaptiv, nicht bei Thinking/kurz vor Deadline). Lokal gingen in Lauf 12 ≈ 600 s an 7 hängenden Requests verloren | `test_llm_hedging.py` (6 Fälle) |
+| neu | erledigt | **Site-Memory**: Seitentypen, auf denen Fakten gefunden wurden (Werte als `*`), stehen in der Checkliste aller Missionen derselben Website | `test_site_memory_shares_page_types_not_values` |
+| W05/S2, W06/S1, S4 | offen | Abgabe bündeln (≈ 35 Modellschritte), Startbarriere (Sites in der Sandbox nach 34 s bereit), schneller Dokumentpfad | — |
+
+Verifikation: 53 Tests grün, Leak-Check ok; Sandbox-Test-Run `run_56b54d30340a6231` (Commit 6692197) **100 · eligible**,
+11:05 min, $0,113, 10 Hedges; Replay der Evidenz von Lauf 10–12 durch die Regeln liefert identische Antworten.
+
 ## So testet man schnell
 
 ```bash

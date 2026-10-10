@@ -105,6 +105,12 @@ class Site:
                 continue
         return False
 
+    def fresh_start(self) -> None:
+        """A decisive step needs this website now (the submission, the TAN inbox): hangs and tab recoveries of the
+        research phase must not block it. The site may have recovered from a temporary outage since then."""
+        self.hung.clear()
+        self._recoveries = 0
+
     async def recover_tab(self, reason: str) -> None:
         """The tab stopped responding: continue in a fresh tab at the last good address (the session is shared)."""
         if self._recoveries >= 8:
