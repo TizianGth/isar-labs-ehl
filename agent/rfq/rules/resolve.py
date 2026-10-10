@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, norm_id, number, revision_is_current, same_text, when
+from .parse import cert, clean, day, integer, mail_address, norm_id, number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -146,9 +146,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
 
     def authorized(topic: str, sender: str) -> bool:
         local = (ctx.director_localpart if topic == "discount" else ctx.authorized.get(topic)) or ""
-        sender = clean(sender).lower()
-        if "<" in sender:
-            sender = sender.split("<")[-1].rstrip(">")
+        sender = mail_address(sender)
         if local and not sender.startswith(local.lower() + "@"):
             return False
         if domain and not sender.endswith("@" + domain):

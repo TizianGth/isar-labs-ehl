@@ -139,3 +139,10 @@ def test_missing_end_reserve_never_causes_no_bid():
     assert result.answer["decision"] == "bid"
     assert result.answer["positions"][0]["material_number"] == "M-1"
     assert any("WARNING end reserve" in line for line in result.trace)
+
+
+def test_mail_address_forms():
+    from rfq.rules.parse import mail_address
+    assert mail_address("Anna Berg <A.Berg@Firma.example>") == "a.berg@firma.example"
+    assert mail_address(" a.berg@firma.example ") == "a.berg@firma.example"
+    assert mail_address(None) == ""

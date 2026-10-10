@@ -10,6 +10,12 @@ def clean(text) -> str:
     return re.sub(r"\s+", " ", ZERO_WIDTH.sub("", str(text or "")).replace(" ", " ")).strip()
 
 
+def mail_address(sender) -> str:
+    """'Anna Berg <a.berg@firma.example>' -> 'a.berg@firma.example' (lower case)."""
+    sender = clean(sender).lower()
+    return sender.split("<")[-1].rstrip(">").strip() if "<" in sender else sender
+
+
 def norm_id(text) -> str:
     """Identifier for comparisons: no zero-width chars, no spaces, upper case."""
     return re.sub(r"\s+", "", clean(text)).upper()

@@ -310,7 +310,13 @@ class Orchestrator:
                 if ref and ref in subject and "TAN" not in subject and m.get("url"):
                     listed[_url_key(m["url"])] = parse.clean(m.get("subject"))
         done = {_url_key(i["url"]) for i in self.bb.get("mail_message")}
-        found = {i["data"].get("topic") for i in self.bb.get("mail_message") if self._valid_mail(i["data"], ref)}
+        found, unusable = set(), {}
+        for i in self.bb.get("mail_message"):
+            topic, problem = i["data"].get("topic"), self._mail_problem(i["data"], ref)
+            if topic and problem is None:
+                found.add(topic)
+            elif topic and problem != "other reference":
+                unusable.setdefault(topic, set()).add(problem)
         wanted = {"discount": "Rabatt / discount approval"} | {
             r.get("topic"): r.get("subject_keyword") for r in self.brief.get("authorized_records") or [] if r.get("topic")}
         absent = {topic: keyword for topic, keyword in wanted.items() if topic not in found}
@@ -323,29 +329,38 @@ class Orchestrator:
             lines.append("topics NOT found yet (search '<reference> <subject keyword>' in every folder; if a topic "
                          "really does not exist, finish and list it as missing): "
                          + ", ".join(f"{t} ('{k}')" for t, k in absent.items()))
+        decoys = {t: problems for t, problems in unusable.items() if t in absent}
+        if decoys:
+            lines.append("found but NOT usable, the rules ignore these (look for a valid one): "
+                         + "; ".join(f"{t}: {', '.join(sorted(p))}" for t, p in decoys.items()))
         if unread_pages:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
         if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
         return "\n".join(lines), not absent and not missing and not unread_pages
 
-    def _valid_mail(self, m: dict, ref: str) -> bool:
-        """A mail satisfies its topic only if the rules would use it: exact reference, not a draft, dated no later
-        than the scenario date, from the authorized sender (local part + bidder mailbox domain) when known."""
-        topic = m.get("topic")
-        if not topic or parse.norm_id(m.get("reference")) != ref or m.get("is_draft_or_preview"):
-            return False
+    def _mail_problem(self, m: dict, ref: str) -> str | None:
+        """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
+        if parse.norm_id(m.get("reference")) != ref:
+            return "other reference"
+        if m.get("is_draft_or_preview"):
+            return "draft/preview"
         at, scenario = parse.when(m.get("datetime_utc")), parse.when(self.brief.get("scenario_datetime_utc"))
-        if at is not None and scenario is not None and at > scenario:
-            return False
-        local = self.brief.get("director_localpart") if topic == "discount" else next(
-            (r.get("sender_localpart") for r in self.brief.get("authorized_records") or [] if r.get("topic") == topic), None)
-        sender = parse.clean(m.get("sender")).lower()
-        if local and not sender.startswith(str(local).lower() + "@"):
-            return False
-        domain = next((parse.clean(i["data"].get("mailbox_address")).split("@", 1)[1].lower()
-                       for i in self.bb.get("mail_list") if "@" in parse.clean(i["data"].get("mailbox_address"))), None)
-        return not domain or sender.endswith("@" + domain)
+        if scenario is not None and (at is None or at > scenario):
+            return "after the scenario date" if at else "no readable date"
+        topic = m.get("topic")
+        authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
+                      if r.get("topic") and r.get("sender_localpart")}
+        local = str((self.brief.get("director_localpart") if topic == "discount" else authorized.get(topic)) or "")
+        domain = None
+        for item in self.bb.get("mail_list"):
+            address = parse.clean(item["data"].get("mailbox_address"))
+            if "@" in address:
+                domain = address.split("@", 1)[1].lower()
+        sender = parse.mail_address(m.get("sender"))
+        if (local and not sender.startswith(local.lower() + "@")) or (domain and not sender.endswith("@" + domain)):
+            return "not from the authorized sender"
+        return None
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:

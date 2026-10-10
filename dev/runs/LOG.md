@@ -8,3 +8,5 @@
 | 2026-10-10 16:12 | fa5f706 | run_c8fe786cf41aea8d | 59.2 · eligible | 13,5 min | $0.081 | Viewer-Seite 5 lud in der Sandbox nie (13×) → A-5/01.05 fehlten → behoben in 011dadc |
 | 2026-10-10 16:40 | 011dadc | run_becee3d9dd562e33 | – (von Tizian abgebrochen) | 4 min | $0.065 | bis dahin gesund: nach 201 s fast alle Missionen fertig |
 | 2026-10-10 16:58 | 011dadc | run_09624e2411da68ac | **100 · eligible** | ≈ 10 min (Evidenz 370 s) | $0.102 (262 Calls) | 1 hängende ERP-Seite umgangen, 1 ERP-Recovery, Review 44/44 |
+| 2026-10-10 17:22 | 011dadc (`sub_6bdf6c7dfe36193f`) | run_6e07bf4619c1ff9c | **100 · eligible · Submission (scored)** | **7:19** (Evidenz 243 s, Review 438 s) | $0.0951 (241 Calls) | Leaderboard Platz 1; Review 44/44; nach Annahme 3× 401 (Token gesperrt, harmlos) |
+| 2026-10-10 19:34 | 7406df9 (lokal, Scouting) | run12 (dry-run) | Oracle 100 · **Abgabe nicht erreicht** | 17:55 | ≈ $0.10 (256 Calls) | 7 hängende Qwen-Requests (2× 150 s Extraktion, 5× 60 s Navigation ≈ 600 s) + langsames ERP → Abgabe-Deadline → Hedging in 6692197 |

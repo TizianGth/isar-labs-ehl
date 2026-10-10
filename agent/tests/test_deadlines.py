@@ -143,11 +143,13 @@ def test_decoy_mails_do_not_satisfy_a_topic():
     for i, decoy in enumerate([mail(sender="log@other.example"), mail(datetime_utc="2030-03-11T10:00:00Z"),
                                mail(is_draft_or_preview=True), mail(reference="XT-1-A"), mail(sender="boss@bidder.example")]):
         o.bb.add("mail_message", decoy, f"u{i}")
+    o.bb.add("mail_message", mail(datetime_utc=None), "u-undated")
     text, _ = o.mail_progress()
     assert "packaging ('Pack')" in text                     # still missing: only decoys so far
-    o.bb.add("mail_message", mail(), "u-valid")
+    assert "packaging: after the scenario date, draft/preview, no readable date, not from the authorized sender" in text
+    o.bb.add("mail_message", mail(sender="Lo Gistik <LOG@bidder.example>"), "u-valid")   # display name form
     text, _ = o.mail_progress()
-    assert "packaging ('Pack')" not in text
+    assert "packaging ('Pack')" not in text and "NOT usable" not in text
 
 
 def test_concurrent_identical_extractions_share_one_call(monkeypatch):
