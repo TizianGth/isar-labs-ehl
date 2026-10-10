@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KTD7RX32BMGM4JVR12KX8S",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-10T21:09:56.470954511Z",
+  "branch": "wip/batch-cascade",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/browser/site.py",
+    "agent/tests/test_browser_tools.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-10T21:09:56.454913546Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 180,
+    "human_modified": 14,
+    "human_removed": 0,
+    "total_committed": 180,
+    "total_lines_changed": 194,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1497,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "dev/runs/sandbox/run_09624.jsonl": 348,
+        "dev/runs/sandbox/run_becee.jsonl": 301,
+        "dev/runs/sandbox/run_c8fe.jsonl": 332,
+        "dev/runs/sandbox/run_c8fe_status.json": 246,
+        "dev/runs/sandbox/run_f33ba.jsonl": 270
+      }
+    }
+  ]
+}
