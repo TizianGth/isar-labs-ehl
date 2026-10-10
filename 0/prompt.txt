@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>b2c1ztjyj</task-id>
+<tool-use-id>toolu_01RL7K17t5EzBLGNB3qTUXzd</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/b2c1ztjyj.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for run5 and summarize submit flow" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bs37xcxu7</task-id>
+<tool-use-id>toolu_01DRWzs6T4Fu6yGa8VNWSmcE</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/tasks/bs37xcxu7.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for submit replay and summarize" completed (exit code 0)</summary>
+</task-notification>
