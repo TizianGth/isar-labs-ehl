@@ -207,3 +207,68 @@ def test_decisive_steps_get_a_fresh_start_on_a_site():
     site._recoveries = 8
     site.fresh_start()
     assert site.hung == {} and site._recoveries == 0
+
+
+def _cascade_page(query: dict) -> str:
+    a, b = query.get("a", ""), query.get("b", "")
+    notice = '<a href="/help">Hinweis zur Auswahl</a>' if a else ""      # shifts every ref after the first apply
+    opts = lambda name, values, chosen: "".join(f'<option{" selected" if v == chosen else ""}>{v}</option>' for v in values)
+    return f"""<html><body>{notice}<form action="/form" method="get">
+      <label>Größe <select name="a">{opts("a", ["-", "S", "M"], a)}</select></label>
+      <button type="submit">Übernehmen</button>
+      <label>Farbe <select name="b" {"" if a else "disabled"}>{opts("b", ["-", "rot", "blau"], b)}</select></label>
+      <label>Anzahl <input name="n" value=""></label>
+      <button type="submit" formaction="/done">Weiter</button></form></body></html>"""
+
+
+def test_steps_do_a_whole_form_in_one_action_across_rerenders():
+    """N1: one `steps` call does filter, apply, dependent filter, apply, fields and 'next', although every apply
+    re-renders the page and renumbers its refs."""
+    from urllib.parse import parse_qs, urlparse
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                url = urlparse(route.request.url)
+                query = {k: v[0] for k, v in parse_qs(url.query).items()}
+                if url.path == "/done":
+                    body = f"<html><body><p>Fertig a={query.get('a')} b={query.get('b')} n={query.get('n')}</p></body></html>"
+                else:
+                    body = _cascade_page(query)
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("form", BASE, {"username": "u", "password": "p"}, context)
+            await site.start()
+            await site.goto(f"{BASE}/form")
+            seen = await site.observe()
+            ref = lambda kind, name: re.search(r'\[(\w+)\] ' + re.escape(kind) + r' "' + re.escape(name), seen).group(1)
+            size, apply, colour, count, nxt = (ref("select", "Größe"), ref("button", "Übernehmen"), ref("select", "Farbe"),
+                                               ref("input[text]", "Anzahl"), ref("button", "Weiter"))
+            result = await site.act("steps", {"steps": [
+                {"action": "select", "ref": size, "option": "S", "then_click": apply},
+                {"action": "select", "ref": colour, "option": "blau", "then_click": apply},
+                {"action": "fill_fields", "fields": [{"ref": count, "value": "7"}]},
+                {"action": "click", "ref": nxt},
+                {"action": "type", "ref": count, "text": "8"},
+                {"action": "click", "ref": nxt}]})
+            final = await site.observe()
+            await browser.close()
+            return result, final
+    result, final = asyncio.run(scenario())
+    assert "Fertig a=S b=blau n=7" in final
+    assert "5. type: ERROR" in result and "no longer on the page" in result and "STOPPED: 1 later action" in result
+
+
+def test_rematch_follows_controls_by_kind_name_and_order():
+    from rfq.browser.site import _rematch
+    before = '[e1] button "OK"\n[e2] select "Größe" options: a\n[e3] button "OK"'
+    after = '[e1] link "Hinweis" -> /h\n[e2] button "OK"\n[e3] select "Größe" options: a\n[e4] button "OK"'
+    assert _rematch({"action": "select", "ref": "e2", "then_click": "e3"}, before, after) == \
+        {"action": "select", "ref": "e3", "then_click": "e4"}
+    assert _rematch({"action": "fill_fields", "fields": [{"ref": "[e1]", "value": "x"}]}, before, after)["fields"] == \
+        [{"ref": "e2", "value": "x"}]
+    assert "no longer on the page" in _rematch({"action": "click", "ref": "e2"}, before, '[e1] button "OK"')

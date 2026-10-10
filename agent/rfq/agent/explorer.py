@@ -79,7 +79,7 @@ TOOLS = [
           ["summary"]),
 ]
 ACTIONS = ("click", "type", "select", "check", "set_slider", "open_url", "back", "fill_fields", "hover", "press_key",
-           "scroll", "wait_for")
+           "scroll", "wait_for", "steps")
 
 
 @dataclass
@@ -94,6 +94,8 @@ class Mission:
     progress: Callable[[], tuple[str, bool]] | None = None
     max_blocked: int = 4           # loop protection: abort after this many blocked repeats
     max_visual: int = 3            # screenshots the model may ask for in this mission
+    # extract/extract_urls run in the background while the model keeps navigating (their results arrive later)
+    background_extraction: bool = False
 
 
 @dataclass
@@ -116,6 +118,7 @@ class Explorer:
     stop: bool = False             # set by tools that end the mission (e.g. the binding submission)
     visual_used: int = 0
     last_result: str = ""
+    pending: dict[str, asyncio.Task] = field(default_factory=dict)   # background extractions: label -> task
 
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
         tools = tools or TOOLS
@@ -130,8 +133,25 @@ class Explorer:
             log("mission_crashed", mission=tag, error=f"{type(error).__name__}: {error}"[:500])
             self.status = "failed"
             return self
+        except asyncio.CancelledError:       # the phase ended: stop at once, without waiting for extractions
+            self._stop_background(tag)
+            raise
+        finally:   # background extractions still running: a short wait (their facts count), then they are stopped
+            if self.pending:
+                await self._drain(min(10.0, self.mission.deadline - time.time()))
+                self._stop_background(tag)
+
+    def _stop_background(self, tag: str) -> None:
+        self._collect()
+        if self.pending:
+            log("background_cancelled", mission=tag, pending=list(self.pending))
+        for task in self.pending.values():
+            task.cancel()
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())
+        self.pending.clear()
 
     async def _loop(self, tools: list[dict], tag: str) -> "Explorer":
+        await self.site.wait_started()
         observation = await self.site.observe()
         kinds = "\n".join(f"- {k}: {v}" for k, v in self.mission.kinds.items()) or "- (none)"
         intro = (f"MISSION ({self.mission.name}) on website '{self.site.site_id}' ({self.site.url}):\n"
@@ -146,12 +166,20 @@ class Explorer:
                 self.status, self.missing = "deadline", self.missing + ["deadline reached"]
                 return self
             checklist, complete = self.mission.progress() if self.mission.progress else ("", False)
+            if complete and self.pending:      # results still on their way may add work (e.g. another material)
+                await self._drain(min(30.0, remaining - 10))
+                checklist, complete = self.mission.progress()
+            arrived = self._collect()
             if complete:
                 self.summary, self.status = "complete: " + checklist, "complete"
                 log("mission_complete", mission=tag, step=step, checklist=checklist[:800])
                 return self
             hints = _hints(observation, self.visual_used < self.mission.max_visual)
             last = (f"\n\nRESULT OF THE LAST STEP:\n{self.last_result[:3000]}" if self.last_result else "")
+            if arrived:
+                last += "\n\nRESULTS OF BACKGROUND EXTRACTIONS (finished since):\n" + "\n".join(arrived)[:3000]
+            if self.pending:
+                last += "\n\nSTILL EXTRACTING IN THE BACKGROUND (do not request again):\n" + "\n".join(self.pending)
             messages = [{"role": "system", "content": EXPLORER_SYSTEM},
                         {"role": "user", "content": intro},
                         {"role": "user", "content": "STEPS SO FAR:\n" + ("\n".join(self.history[-20:]) or "-") + last
@@ -168,6 +196,13 @@ class Explorer:
             # The same action on the same page state is a loop; the same ref on a new page is not.
             signature = name + json.dumps(args, sort_keys=True, ensure_ascii=False) + str(hash(observation))
             repeats[signature] = repeats.get(signature, 0) + 1
+            if name == "finish" and self.pending and self.mission.progress:
+                await self._drain(min(30.0, self.mission.deadline - time.time() - 10))
+                if not self.mission.progress()[1]:
+                    self.last_result = ("finish postponed: background extractions have just finished and the "
+                                        "progress checklist is still incomplete; look at it and continue.")
+                    self.history.append(f"{step + 1}. finish -> postponed (background results arrived, checklist incomplete)")
+                    continue
             if name == "finish":
                 self.summary = str(args.get("summary", ""))
                 self.missing += [str(m) for m in args.get("missing") or []]
@@ -210,12 +245,16 @@ class Explorer:
                     collection = self._collection(args.get("collection_id"))
                     if collection is None:
                         return "ERROR: no collection yet; use read_all_pages first"
-                    return await self._extract_collection(collection, kind)
-                return await self.extractor(kind, await self.site.full_text(), self.site.page.url, via="page")
+                    return await self._extraction(f"extract {collection.id} ({kind})",
+                                                  self._extract_collection(collection, kind))
+                url = self.site.page.url
+                return await self._extraction(f"extract {url} ({kind})",
+                                              self.extractor(kind, await self.site.full_text(), url, via="page"))
             if name == "extract_urls":
-                urls = [str(u) for u in (args.get("urls") or [])][:12]
-                results = await asyncio.gather(*(self._extract_url(u, str(args.get("kind"))) for u in urls))
-                return " | ".join(results)
+                kind = str(args.get("kind"))
+                urls = [self.site.absolute(str(u)) for u in (args.get("urls") or [])][:12]
+                return await self._extraction(f"extract_urls {len(urls)} page(s) ({kind}): {', '.join(urls)[:300]}",
+                                              _joined(*(self._extract_url(u, kind) for u in urls)))
             if name == "read_document":
                 return await self._read_document(args)
             if name == "inspect_visual":
@@ -226,6 +265,38 @@ class Explorer:
         except Exception as error:   # a tool must never kill the mission
             log("tool_error", tool=name, error=f"{type(error).__name__}: {error}"[:300])
             return f"ERROR: {type(error).__name__}: {str(error)[:200]}"
+
+    # ---------------------------------------------------------------- background extraction
+    async def _extraction(self, label: str, work) -> str:
+        """Run an extraction now, or (background_extraction) start it and let the model continue navigating."""
+        if not self.mission.background_extraction:
+            return await work
+        label = f"[x{len(self.history) + 1}] {label}"
+        self.pending[label] = asyncio.ensure_future(work)
+        return (f"extraction started in the background: {label}. Its result and the updated checklist arrive in a "
+                f"later step; continue with the next page meanwhile (do not request it again).")
+
+    def _collect(self) -> list[str]:
+        """Results of background extractions that have finished (also into the step history)."""
+        arrived = []
+        for label, task in list(self.pending.items()):
+            if not task.done():
+                continue
+            del self.pending[label]
+            if task.cancelled():
+                result = "ERROR: cancelled"
+            elif task.exception() is not None:
+                error = task.exception()
+                result = f"ERROR: {type(error).__name__}: {str(error)[:200]}"
+            else:
+                result = task.result()
+            arrived.append(f"{label} -> {result}")
+            self.history.append(f"   (background) {label[:120]} -> {result[:200]}")
+        return arrived
+
+    async def _drain(self, timeout: float) -> None:
+        if self.pending and timeout > 0:
+            await asyncio.wait(list(self.pending.values()), timeout=timeout)
 
     # ---------------------------------------------------------------- model-selected content
     async def _extract_url(self, url: str, kind: str) -> str:
@@ -374,6 +445,10 @@ class Explorer:
         log("visual", site=self.site.site_id, question=question[:200], data=data)
         return ("visual answer: " + json.dumps(data, ensure_ascii=False)[:1200]
                 + "\n(the answer is now part of this page's text for extract)")
+
+
+async def _joined(*parts) -> str:
+    return " | ".join(await asyncio.gather(*parts))
 
 
 def _content_lines(text: str) -> set[str]:

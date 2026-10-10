@@ -278,3 +278,141 @@ def test_no_bid_is_checked_again_with_fresh_qa_before_it_is_accepted(monkeypatch
     assert checked.answer["decision"] == "bid" and missions == [("recheck", 1)]
     assert site.fresh and site.collections == {} and o._cache == {"materialsdef": "keep"}
     assert o.evidence_digest()["amendments"] == [["R1", "A-1", "stroke", "480"]]
+
+
+def test_a_slow_website_blocks_only_its_own_missions(monkeypatch):
+    """N3: websites load in the background; waiting for one never waits for another, and a failed start is no error."""
+    from rfq.browser.site import Site
+
+    async def scenario():
+        fast, slow, broken = (Site(n, f"http://{n}.test", {}, None) for n in ("fast", "slow", "broken"))
+        delays = {"fast": 0.05, "slow": 2.0}
+
+        async def start(self):
+            if self.site_id == "broken":
+                raise RuntimeError("unreachable")
+            await asyncio.sleep(delays[self.site_id])
+        monkeypatch.setattr(Site, "start", start)
+        for site in (fast, slow, broken):
+            site.begin_start(timeout=5)
+        began = time.time()
+        await fast.wait_started()
+        fast_wait = time.time() - began
+        await broken.wait_started()
+        await slow.wait_started()
+        return fast_wait, time.time() - began
+    fast_wait, all_wait = asyncio.run(scenario())
+    assert fast_wait < 0.5 and all_wait >= 1.9
+
+
+class _FakeSite:
+    """Just enough of a Site for the explorer loop (no browser)."""
+    site_id, url = "erp", "http://erp.test"
+
+    def __init__(self):
+        self.page = type("P", (), {"url": "http://erp.test/list"})()
+        self.clicks = []
+
+    async def wait_started(self):
+        pass
+
+    async def observe(self, limit=0):
+        return f"URL: {self.page.url}?view={len(self.clicks)}\n[e1] link \"Detail\" -> /detail"
+
+    async def act(self, name, args):
+        self.clicks.append((name, time.time()))
+        await asyncio.sleep(0.25)          # a page load
+        return "clicked"
+
+    def absolute(self, url):
+        return url if url.startswith("http") else "http://erp.test" + url
+
+    def was_seen(self, url):
+        return True
+
+    async def read_url(self, url):
+        return f"URL: {url}\npage text"
+
+
+def _scripted(monkeypatch, calls: list, prompts: list):
+    async def chat(messages, **kwargs):
+        prompts.append(messages[-1]["content"])
+        return {"content": "", "tool_calls": [calls.pop(0)]}
+    monkeypatch.setattr(llm, "chat", chat)
+
+
+def test_background_extraction_lets_the_mission_navigate_meanwhile(monkeypatch):
+    """Evidence speed-up: extract_urls returns at once; the model clicks on while the page is extracted, sees the
+    result in a later step, and the mission completes only once the extraction has landed."""
+    from rfq.agent.explorer import Explorer, Mission
+    done, prompts = {"facts": False, "at": None}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.6)
+        done.update(facts=True, at=time.time())
+        return "M-1: price"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/detail"], "kind": "materials"}),
+                            ("click", {"ref": "e1"}), ("click", {"ref": "e1"}), ("click", {"ref": "e1"})], prompts)
+    site = _FakeSite()
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: ("facts" if done["facts"] else "missing", done["facts"]),
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert site.clicks and site.clicks[0][1] < done["at"]            # navigated before the extraction finished
+    assert "STILL EXTRACTING IN THE BACKGROUND" in prompts[1]
+    assert explorer.status == "complete" and not explorer.pending
+    assert any("(background)" in h and "M-1: price" in h for h in explorer.history)
+
+
+def test_finish_waits_for_background_results_and_is_postponed_if_work_remains(monkeypatch):
+    from rfq.agent.explorer import Explorer, Mission
+    state, prompts = {"pages": 0}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.3)
+        state["pages"] += 1
+        return "found another material"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/a"], "kind": "materials"}),
+                            ("finish", {"summary": "done"}),
+                            ("extract_urls", {"urls": ["/b"], "kind": "materials"}),
+                            ("finish", {"summary": "done"})], prompts)
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: (f"pages {state['pages']}/2", state["pages"] >= 2),
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(_FakeSite(), mission, extractor).run())
+    assert any("postponed" in h for h in explorer.history)       # first finish: results came, checklist incomplete
+    assert state["pages"] == 2 and explorer.status in ("complete", "finished") and not explorer.pending
+
+
+def test_a_slow_new_erp_tab_does_not_hold_up_the_other_groups(monkeypatch):
+    started = {}
+    calls = {"n": 0}
+
+    async def tab(self, base):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            await asyncio.sleep(3)          # this group's tab takes long to load
+        return object()
+
+    async def mission_run(self, site, mission):
+        started[mission.name] = time.time()
+        self.status[mission.name] = "complete"
+
+    monkeypatch.setattr(Orchestrator, "_tab", tab)
+    monkeypatch.setattr(Orchestrator, "run_mission", mission_run)
+
+    async def scenario():
+        o = _orchestrator()
+        o.bb.add("positions", {"positions": [{"position": str(i), "requirement_ref": f"A-{i}"} for i in (1, 2, 3)]}, "u")
+        o.bb.add("spec_revisions", {"revisions": [{"revision": "V2", "status_text": "gültig"}]}, "u")
+        o.bb.add("requirements", {"revision": "V2", "requirements": [
+            {"ref": f"A-{i}", "catalog_group": f"G-{i}"} for i in (1, 2, 3)]}, "u")
+        o.done["specification"].set()
+        o.done["tender"].set()
+        began = time.time()
+        await o.erp_phase()
+        return {k: v - began for k, v in started.items()}
+    times = asyncio.run(scenario())
+    assert len(times) == 3 and sorted(times.values())[1] < 1.5     # base + the fast tab start without waiting

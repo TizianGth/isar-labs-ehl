@@ -20,6 +20,18 @@ SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
                 ("read_all_pages", "read_collection", "extract", "extract_urls", "read_document")] + [
     _tool("get_tan", "AFTER you clicked the website's button that requests/sends the signing TAN: fetch the newest "
           "TAN from the bidder's mailbox. Returns the TAN.", {}, []),
+    _tool("steps", "Several form actions in ONE step, done in order (e.g. all product filters of a position, each "
+          "with its apply button, then the position's fields and lead time). Refs are from the CURRENT observation; "
+          "after each action the page may re-render, and later refs are matched to the same controls again. Stops "
+          "at the first error and reports what was done.",
+          {"steps": {"type": "array", "items": {"type": "object", "properties": {
+              "action": {"type": "string", "enum": ["select", "type", "check", "click", "fill_fields"]},
+              "ref": {"type": "string"}, "option": {"type": "string", "description": "select: option text"},
+              "text": {"type": "string", "description": "type: the text"},
+              "checked": {"type": "boolean"}, "then_click": {"type": "string"},
+              "fields": {"type": "array", "description": "fill_fields: [{ref, value}]", "items": {"type": "object",
+                         "properties": {"ref": {"type": "string"}, "value": {"type": "string"}}}}},
+              "required": ["action"]}}}, ["steps"]),
     _tool("submit_bid", "Final binding submission: clicks the given button and confirms the browser dialog. Only on "
           "the final review/sign page with the TAN entered.", {"ref": {"type": "string"}}, ["ref"]),
 ]
@@ -72,8 +84,18 @@ class SubmitExplorer(Explorer):
             return await self._submit(str(args.get("ref", "")))
         return await super()._call(name, args)
 
+    review_prefetch: tuple[str, asyncio.Task] | None = None
+
     async def _get_tan(self) -> str:
         orch = self.orchestrator
+        # The page that requested the TAN is the review page: read it while the TAN arrives (off the critical path).
+        # submit_bid uses this reading only if the page is unchanged apart from the TAN typed into it.
+        if self.review_prefetch is not None and not self.review_prefetch[1].done():
+            self.review_prefetch[1].cancel()
+        text = await self.site.full_text()
+        reading = asyncio.ensure_future(self._read("bid_review", text))
+        reading.add_done_callback(lambda t: t.cancelled() or t.exception())   # an unused failure is no warning
+        self.review_prefetch = (text, reading)
         before = len(orch.bb.items.get("mail_message", []))
 
         def tan_progress() -> tuple[str, bool]:
@@ -109,7 +131,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         orch = self.orchestrator
         answer, skipped = orch.result.answer, orch.result.skipped
         page_text = await self.site.full_text()
-        review = validate_review(answer, await self._read("bid_review", page_text), skipped)
+        review = validate_review(answer, await self._review_reading(page_text), skipped)
         log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
             verified=len(review["verified"]))
         if review["blocking"] and self.review_blocks < 2 and orch.end - time.time() > 150:
@@ -145,6 +167,25 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         log("submit_unknown", outcome=outcome)
         return "The outcome is unclear; not retrying to avoid a double submission. Call finish."
 
+    async def _review_reading(self, page_text: str) -> dict:
+        """The model's reading of the review page: the one made while the TAN arrived if the page has not changed
+        since (except for the TAN now typed in), otherwise a fresh one."""
+        prefetch, self.review_prefetch = self.review_prefetch, None
+        if prefetch is not None:
+            text, task = prefetch
+            if not task.cancelled() and _unchanged(text, page_text, self.tan):
+                try:
+                    data = await task
+                    if data:
+                        log("review_prefetch", used=True)
+                        return data
+                except Exception as error:
+                    log("review_prefetch", used=False, error=f"{type(error).__name__}: {error}"[:200])
+            else:
+                task.cancel()
+                log("review_prefetch", used=False, reason="page changed")
+        return await self._read("bid_review", page_text)
+
     async def _outcome(self) -> dict:
         """Read the page after the final click (twice if the first look is inconclusive)."""
         for attempt in range(2):
@@ -159,6 +200,16 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             if outcome.get("confirmed") or outcome.get("errors"):
                 return outcome
         return outcome
+
+
+def _unchanged(before: str, after: str, tan: str | None) -> bool:
+    """Same page content, ignoring refs (renumbered on every observation) and the TAN typed in meanwhile."""
+    def norm(text: str) -> str:
+        text = re.sub(r"\[(?:f\d+)?e\d+\]", "", text)
+        if tan:
+            text = text.replace(tan, "")
+        return " ".join(text.split())
+    return norm(before) == norm(after)
 
 
 async def submit_bid(orch, result) -> None:
@@ -182,10 +233,11 @@ Procedure and traps:
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
   preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung).
 - Positions may come in any order: read the position number on the page and use THAT position's line of the table.
-  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button,
-  e.g. "Auswahl übernehmen">) — the next filter stays disabled until the choice is applied. When our catalogue number is selectable,
-  use fill_fields once for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges,
-  packaging, project bonus; they may sit in a collapsed section) and the lead time; then go to the next step.
+  Do a whole position with ONE `steps` call: each product filter as a select with then_click=<the form's apply
+  button, e.g. "Auswahl übernehmen"> (the next filter stays disabled until the choice is applied), then a fill_fields
+  for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges, packaging, project
+  bonus; they may sit in a collapsed section) and the lead time, and finally the click that goes to the next step.
+  If `steps` stops early, look at the page and continue from where it stopped.
 - Never use "add position" (extra positions cost points). Use "omit position" only for positions marked SKIP.
 - Discount and NET total: type our values; ignore any displayed gross amount incl. VAT or other suggested totals.
 - Declarations: acknowledge the tender documents; do NOT accept/declare your own terms and conditions (AGB).

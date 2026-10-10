@@ -65,12 +65,10 @@ async def main() -> int:
         sites=[a["siteId"] for a in run["access"]], submission=run.get("submission", {}).get("kind"))
     async with async_playwright() as playwright:
         sites, browsers = await open_sites(playwright, run["access"])
-        # A site that cannot be reached at once must not block the others: missions retry it later.
-        started = await asyncio.gather(*(asyncio.wait_for(site.start(), timeout=100) for site in sites.values()),
-                                       return_exceptions=True)
-        for site, outcome in zip(sites.values(), started):
-            log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
-                error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
+        # The websites load in the background while the brief is read; each mission waits only for its own website,
+        # and one that cannot be reached at once blocks nothing (missions retry it later).
+        for site in sites.values():
+            site.begin_start(timeout=100)
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs

@@ -75,7 +75,12 @@ Ziel des Branches: weniger Ausfälle und Köder-Fehler auf fremden (privaten) Da
 | W08 | teilweise | 401/403 nach Annahme (Token gesperrt) wird nicht 6× wiederholt; Run-Log ergänzt | `test_refused_access_is_not_retried` |
 | neu | erledigt | **Hedging**: Modell-Request nach 12 s (Tools) / 30 s (JSON) ohne Antwort bekommt einen Zwilling, die erste Antwort gewinnt (max. 2 gleichzeitig, adaptiv, nicht bei Thinking/kurz vor Deadline). Lokal gingen in Lauf 12 ≈ 600 s an 7 hängenden Requests verloren | `test_llm_hedging.py` (6 Fälle) |
 | neu | erledigt | **Site-Memory**: Seitentypen, auf denen Fakten gefunden wurden (Werte als `*`), stehen in der Checkliste aller Missionen derselben Website | `test_site_memory_shares_page_types_not_values` |
-| W05/S2, W06/S1, S4 | offen | Abgabe bündeln (≈ 35 Modellschritte), Startbarriere (Sites in der Sandbox nach 34 s bereit), schneller Dokumentpfad | — |
+| W05/S2 | erledigt | Abgabe-Tool `steps`: eine ganze Position (Filter + Übernehmen, Felder, Weiter) in einem Modellschritt; Refs werden nach jedem Re-Render über Art + Name + n-tes Vorkommen neu zugeordnet, Abbruch beim ersten Fehler. Lokal: 21 statt ≈ 47 Abgabeschritte | `test_steps_do_a_whole_form_in_one_action_across_rerenders`, `test_rematch_follows_controls_by_kind_name_and_order` |
+| W06/S1 | erledigt | Startbarriere weg: Sites laden im Hintergrund (`Site.begin_start`), Brief läuft parallel, jede Mission wartet nur auf ihre eigene Site (in Sandbox-Runs 6–102 s Barriere gemessen) | `test_a_slow_website_blocks_only_its_own_missions` |
+| neu | erledigt | Review-Lesung während der TAN-Suche (vorher ≈ 12–17 s direkt vor dem Klick); wiederverwendet nur bei unveränderter Seite (ohne Refs/TAN), sonst neu gelesen | `test_review_read_during_the_tan_wait_is_used_only_for_the_same_page` |
+| neu | erledigt | Hintergrund-Extraktion (ERP, Mail): `extract`/`extract_urls` laufen als Task, das Modell navigiert weiter; Ergebnisse erscheinen im nächsten Schritt, Abschluss/`finish` warten auf offene Tasks. ERP-Tabs öffnen je Gruppe im eigenen Task. Sandbox: Evidenz 221 s statt 287–319 s, Run 5:17 | `test_background_extraction_lets_the_mission_navigate_meanwhile`, `test_finish_waits_for_background_results_and_is_postponed_if_work_remains`, `test_a_slow_new_erp_tab_does_not_hold_up_the_other_groups` |
+| S4 | offen | schneller Dokumentpfad | — |
+| Cache-Layout | verworfen | Probe über den Proxy: Cache wächst bei Navigationsgröße (4–6k Tokens) nicht mit stabiler Historie (bleibt 1.568–3.136) → kein Umbau ohne Beleg | — |
 
 Verifikation: 53 Tests grün, Leak-Check ok; Sandbox-Test-Run `run_56b54d30340a6231` (Commit 6692197) **100 · eligible**,
 11:05 min, $0,113, 10 Hedges; Replay der Evidenz von Lauf 10–12 durch die Regeln liefert identische Antworten.

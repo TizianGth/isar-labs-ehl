@@ -411,6 +411,7 @@ EVERY listed message whose subject contains the reference (skip signing-TAN mess
 to open, they are filtered later). Then switch to the archive folder (and any other folder) and do the same. If a
 search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
+        mail.background_extraction = True
 
         async def tracked(name: str, site: Site, mission: Mission, attempts: int = 2):
             try:
@@ -483,7 +484,16 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         Groups start as soon as they are known; nothing waits for a specification mission that has ended.
         Missions never share a tab at the same time, and all of them end with this phase."""
         base, started = self.site_for("erp"), {}
-        base_chain: asyncio.Task | None = None       # missions that have to run on the base tab, one after another
+        base_free = asyncio.Lock()                    # missions on the base tab run one after another
+
+        async def on_base(mission: Mission):
+            async with base_free:
+                return await self.run_mission(base, mission)
+
+        async def on_new_tab(mission: Mission):
+            # each group opens its own tab in its own task: a tab that loads slowly delays only its group
+            site = await self._tab(base)
+            return await (on_base(mission) if site is base else self.run_mission(site, mission))
         try:
             while time.time() < self.evidence_end - 90:
                 spec_ended, tender_ended = self.done["specification"].is_set(), self.done["tender"].is_set()
@@ -493,13 +503,9 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                         if group in started:
                             continue
                         mission = self.erp_mission(group, reqs)
-                        site = base if base_chain is None else await self._tab(base)
-                        if site is base:
-                            previous = base_chain
-                            started[group] = base_chain = asyncio.create_task(self._after(previous, base, mission))
-                        else:
-                            started[group] = asyncio.create_task(self.run_mission(site, mission))
-                        log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=site is not base)
+                        own_tab = bool(started)
+                        started[group] = asyncio.create_task(on_new_tab(mission) if own_tab else on_base(mission))
+                        log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=own_tab)
                 if spec_ended and tender_ended and all(t.done() for t in started.values()):
                     break
                 await asyncio.sleep(1)
@@ -516,11 +522,6 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         if not started:
             log("erp_no_groups", reason="no requirements with catalogue groups were found")
         return results
-
-    async def _after(self, previous: asyncio.Task | None, site: Site, mission: Mission):
-        if previous is not None:
-            await asyncio.gather(previous, return_exceptions=True)
-        return await self.run_mission(site, mission)
 
     async def _tab(self, base: Site) -> Site:
         try:
@@ -542,7 +543,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                               f"{' (usable stroke; the nominal ERP stroke is longer)' if r.get('usable_stroke') else ''}, "
                               f"pressure {r.get('pressure_bar')}, mounting {r.get('mounting')}, certification "
                               f"{r.get('certification') or 'none'}" for r in reqs)
-        return self.mission(f"erp:{group}", f"""Collect ERP data for catalogue group {group} ({described}).
+        mission = self.mission(f"erp:{group}", f"""Collect ERP data for catalogue group {group} ({described}).
 1. Search the materials with the group key (material search / search help; at most ~20 hits are shown, empty or too
    broad searches show nothing) and extract kind 'materials' from the result list.
 2. For EVERY material of the group (look-alikes differ in one attribute or in status) open its detail views and
@@ -551,6 +552,8 @@ bid submission.""", ["clarifications"], 14, progress=progress)
    may be on a separate tab/view; several records may be paged). Prefer extract_urls with several detail URLs.
 The progress checklist tells you what is still missing per material.""", ["materials"], 35,
                             progress=lambda g=group, rs=reqs: self.erp_progress(g, rs))
+        mission.background_extraction = True      # navigation goes on while detail pages are extracted
+        return mission
 
     # ---------------------------------------------------------------- rules + submission
     def resolve(self) -> Result:

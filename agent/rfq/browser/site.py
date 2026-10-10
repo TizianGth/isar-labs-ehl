@@ -47,6 +47,8 @@ class Site:
         self.hung: dict[str, int] = {}          # address -> navigations that never arrived (do not insist)
         self._recoveries = 0
         self.lock = asyncio.Lock()   # one action at a time per site page
+        self.last_observation = ""
+        self._starting: asyncio.Future | None = None
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self) -> str:
@@ -54,6 +56,21 @@ class Site:
         self._wire(self.page)
         await self.goto(self.url)
         return await self.observe()
+
+    def begin_start(self, timeout: float) -> None:
+        """Start loading the website in the background: work that does not need it (the brief, other websites)
+        goes on meanwhile, and each mission waits only for its own website (`wait_started`)."""
+        async def starting():
+            try:
+                await asyncio.wait_for(self.start(), timeout=timeout)
+                log("site_ready", site=self.site_id, ok=True)
+            except Exception as error:      # a site that cannot be reached at once: missions retry it later
+                log("site_ready", site=self.site_id, ok=False, error=f"{type(error).__name__}: {error}"[:200])
+        self._starting = asyncio.ensure_future(starting())
+
+    async def wait_started(self) -> None:
+        if self._starting is not None:
+            await asyncio.shield(self._starting)
 
     def _wire(self, page: Page) -> None:
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
@@ -303,6 +320,7 @@ class Site:
             for match in re.finditer(r"-> (\S+)|src=(\S+?)[\] ]", result["text"]):
                 self.seen_urls.add(urljoin(frame.url, html.unescape(match.group(1) or match.group(2))))
         text = "\n".join(parts)
+        self.last_observation = text            # refs on the page now match this text (used by `steps`)
         if len(text) > limit:
             text = text[:limit] + f"\n[… observation cut at {limit} chars; use read_all_pages/extract for full text]"
         return text
@@ -479,6 +497,39 @@ class Site:
                 results.append(f"{ref}: ERROR {str(error).splitlines()[0][:150]}")
         return "; ".join(results) + await self._then_click(then_click)
 
+    STEP_ACTIONS = ("click", "type", "select", "check", "fill_fields")
+
+    async def _do_steps(self, steps: list) -> str:
+        """Several form actions in a row, in one model step. A form re-renders after each 'apply', so refs of later
+        actions are matched again by what they are (kind, name, n-th of that kind and name) on the new page. Stops at
+        the first error or at an element that cannot be matched; the result says what was done."""
+        done: list[str] = []
+        steps = [s for s in steps or [] if isinstance(s, dict)][:20]
+        seen = self.last_observation            # the page the model wrote its refs for
+        for index, step in enumerate(steps):
+            action = str(step.get("action", ""))
+            if action not in self.STEP_ACTIONS:
+                done.append(f"{index + 1}. ERROR action {action!r} not allowed here (use {', '.join(self.STEP_ACTIONS)})")
+                break
+            if index:
+                await self.settle()
+                step = _rematch(step, seen, await self.observe())
+                if isinstance(step, str):
+                    done.append(f"{index + 1}. {action}: ERROR {step}")
+                    break
+            method = getattr(self, f"_do_{action}")
+            accepted = inspect.signature(method).parameters
+            try:
+                result = await method(**{k: v for k, v in step.items() if k in accepted and v not in (None, "")})
+            except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
+                result = f"ERROR: {action} failed: {str(error).splitlines()[0][:200]}"
+            done.append(f"{index + 1}. {action}: {result}")
+            if "ERROR" in result:
+                break
+        left = len(steps) - len(done)
+        return "\n".join(done) + (f"\nSTOPPED: {left} later action(s) not done; continue from the current page."
+                                  if left else "")
+
     async def _do_set_slider(self, ref: str, value: str = "max") -> str:
         _, el = await self._element(ref)
         if str(value) == "max":
@@ -618,3 +669,42 @@ async def _close_quietly(page: Page) -> None:
 
 def _short(url: str) -> str:
     return url[:160]
+
+
+_CONTROL = re.compile(r'^\s*\[((f\d+)?e\d+)\] (\S+) "(.*?)"', re.M)
+
+
+def _identities(text: str) -> dict[str, tuple]:
+    """ref -> (frame, kind, name, n-th element with that frame, kind and name) for every control in an observation."""
+    seen: dict[tuple, int] = {}
+    found = {}
+    for match in _CONTROL.finditer(text):
+        key = (match.group(2) or "", match.group(3), match.group(4))
+        seen[key] = seen.get(key, 0) + 1
+        found[match.group(1)] = key + (seen[key],)
+    return found
+
+
+def _rematch(step: dict, before: str, after: str) -> dict | str:
+    """The same action with its refs pointing at the same controls on the re-rendered page (or why that failed)."""
+    old, new = _identities(before), {v: k for k, v in _identities(after).items()}
+
+    def ref(value):
+        value = re.sub(r"[^\w]", "", str(value))
+        identity = old.get(value)
+        if identity is None:
+            return value                       # not a control we know: the action reports it
+        if identity not in new:
+            raise LookupError(f'{identity[1]} "{identity[2]}" is no longer on the page after the previous action')
+        return new[identity]
+
+    try:
+        step = dict(step)
+        for key in ("ref", "then_click"):
+            if step.get(key):
+                step[key] = ref(step[key])
+        if isinstance(step.get("fields"), list):
+            step["fields"] = [dict(f, ref=ref(f.get("ref"))) if isinstance(f, dict) else f for f in step["fields"]]
+        return step
+    except LookupError as error:
+        return str(error)
