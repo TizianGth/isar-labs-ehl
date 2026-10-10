@@ -18,12 +18,12 @@ Experiments remain disabled by default:
 
 | Flag | Behavior | Validation required |
 | --- | --- | --- |
-| `RFQ_ASYNC_EXTRACT=1` | Frozen model-selected snapshots are extracted while navigation continues. Failed and cancelled jobs remain incomplete; calculation waits for selected jobs. | Exact-package platform ablation and synthetic UI matrix |
+| `RFQ_ASYNC_EXTRACT=1` | Frozen model-selected snapshots are extracted while navigation continues. Failed and cancelled jobs remain incomplete; calculation waits for selected jobs. An explicit wait tool avoids navigating in circles while dependent facts are pending. | Exact-package platform ablation and synthetic UI matrix |
 | `RFQ_FORM_PLANS=1` | Model-selected semantic field bindings within this run; values come from computed positions. Plans never click transitions. Changed options, form, position or session cause fallback. | Fresh browser regression and platform ablation; no extra roundtrip saving claimed |
 | `RFQ_CLEF_NAV=1` | Optional hosted Clef chooses observed read links; uncertainty falls back to Qwen. Every resulting page returns to Qwen. Forms, signing and facts remain Qwen work. | Held-out navigation decisions and separate platform experiment; add `clef` to agent.json models for warm-up |
 
-The baseline is three serial official tests of the same frozen main package: quality100/eligible/platform-accepted
-in 523.066, 428.553 and352.427seconds; mean434.682seconds. Atira ends the model token after browser acceptance, so
+The baseline is three serial official tests of the same frozen main package: quality 100 / eligible / platform-accepted
+in 523.066, 428.553 and 352.427 seconds; mean 434.682 seconds. Atira ends the model token after browser acceptance, so
 an expired token during the agent's subsequent receipt-reading call is not itself evidence of a failed submission.
 The report records platform acceptance separately from an agent-readable receipt ID.
 
@@ -40,12 +40,17 @@ python3 dev/eval/profile_jsonl.py ./dev/runs/speed-final/01/run_logs.json --out 
 ```
 
 `atira_series.py` copies one immutable package and runs it serially. It saves every failure, score breakdown,
-platform acceptance, duration, cost, cost×time and model/browser logs. An ambiguous upload is never retried
+platform acceptance, duration, cost, cost×time and model/browser logs. A separate read-only CLI follower saves original log chunks during the run because retrospective logs can be partial. Capture failures are recorded explicitly. An ambiguous upload is never retried
 automatically: recover the run by its persisted label. `--resume RUN_ID` attaches an already started first run.
 
-Release gate: ten consecutive tests of the same package, eachquality100, eligible and confirmed by the platform
-or a receipt, with mean≤300seconds. No failures are removed. Five minutes is a measurement target, never a shorter
+Release gate: ten consecutive tests of the same package, each quality 100, eligible and confirmed by the platform
+or a receipt, with mean ≤ 300 seconds. No failures are removed. Five minutes is a measurement target, never a shorter
 abort deadline. Synthetic UI tests and recorded evidence replays do not prove private-dataset quality.
 
 Timing sums are inclusive and may overlap. Use mission boundaries to understand the critical path; never subtract
 summed parallel queue wait from wall time. The six fake styles remain developer-only and never enter the upload.
+
+Exploratory results (one run each, not a release series): candidate A scored 100 in 460.901 seconds;
+candidate B with asynchronous extraction scored 100 in 392.521 seconds, with 309 rather than 213 model calls.
+Their evidence milestones were essentially unchanged at 274 seconds; the main observed difference was
+submission latency (187 vs 118 seconds). These runs alone do not establish a causal speed improvement.
