@@ -1,5 +1,9 @@
 # 07 · Workstreams, Schnittstellen, Meilensteine
 
+> **Update:** Das MVP (End-to-End inkl. Abgabe) liegt auf `main` in `agent/`. Die Aufteilung unten gilt weiter als
+> Zuständigkeit; die konkreten nächsten Aufgaben stehen in `docs/11-mvp-status.md`. Alle Branches auf `main` rebasen.
+> Die Vertrags-Skizze `facts.py` unten ist durch die Extraktions-Schemata `KINDS` in `agent/rfq/agent/prompts.py` ersetzt.
+
 5 Personen, 5 Branches (von Codex angelegt, aktuell alle = Starter-Kit). Jede Person besitzt einen Bereich; Kontakt
 über die Schnittstellen unten. Kickoff-Prompts zum Einfügen in Codex/Claude: `docs/prompts/<branch>.md`.
 
