@@ -19,6 +19,8 @@ OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
 MAX_OBSERVATION = 14000
 EVAL_TIMEOUT = 12
+NAVIGATION_TIMEOUT_MS = 20000
+RESPONSIVE_TIMEOUT = 4
 
 
 async def _eval(target, script: str, arg, timeout: float | None = None):
@@ -40,6 +42,8 @@ class Site:
         self.collections: dict = {}             # read_all_pages results (shared by all missions on this site)
         self.visual_notes: dict[str, list[str]] = {}   # url -> answers read from screenshots
         self._frames: dict[int, Frame] = {}     # frame index of the last observation -> frame (refs stay valid)
+        self.last_good_url: str | None = None   # last address that was observed successfully
+        self._recoveries = 0
         self.lock = asyncio.Lock()   # one action at a time per site page
 
     # ---------------------------------------------------------------- lifecycle
@@ -52,7 +56,7 @@ class Site:
     def _wire(self, page: Page) -> None:
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
         page.set_default_timeout(8000)
-        page.set_default_navigation_timeout(30000)
+        page.set_default_navigation_timeout(NAVIGATION_TIMEOUT_MS)
 
     accept_next_dialog = False
 
@@ -79,15 +83,46 @@ class Site:
 
     # ---------------------------------------------------------------- navigation + guards
     async def _fresh_page(self) -> None:
-        """Continue in a new tab when the current one is stuck (the old one is left alone, not closed)."""
+        """Continue in a new tab of the same session; the old tab is closed in the background."""
         log("fresh_tab", site=self.site_id)
+        old = self.page
         self.page = await self.context.new_page()
         self._wire(self.page)
+        if old is not None:
+            asyncio.ensure_future(_close_quietly(old))
+
+    async def responsive(self, timeout: float | None = None) -> bool:
+        """Does the tab still execute JavaScript? A hung renderer must be replaced, not waited for."""
+        if self.page is None or self.page.is_closed():
+            return False
+        for _ in range(2):                  # two misses in a row: a page that is merely loading answers in time
+            try:
+                await asyncio.wait_for(self.page.evaluate("1"), timeout or RESPONSIVE_TIMEOUT)
+                return True
+            except Exception:
+                continue
+        return False
+
+    async def recover_tab(self, reason: str) -> None:
+        """The tab stopped responding: continue in a fresh tab at the last good address (the session is shared)."""
+        if self._recoveries >= 8:
+            log("tab_recovery_limit", site=self.site_id, reason=reason)
+            return
+        self._recoveries += 1
+        url = self.last_good_url or self.url
+        log("tab_recovered", site=self.site_id, reason=reason, url=_short(url))
+        await self._fresh_page()
+        try:
+            await self.page.goto(url, wait_until="domcontentloaded")
+        except PlaywrightError as error:
+            log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
+        await self.settle(recover=False)
 
     async def goto(self, url: str, frame: Frame | None = None) -> None:
         target = frame or self.page
         for attempt in range(4):
-            if attempt == 2 and frame is None:      # two failures in this tab: it may be stuck
+            # After a failure, never insist on the same tab: a hung renderer does not come back.
+            if attempt >= 1 and frame is None and (attempt == 1 or not await self.responsive()):
                 await self._fresh_page()
                 target = self.page
             try:
@@ -99,15 +134,17 @@ class Site:
                 break
             except PlaywrightError as error:
                 log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
-                await asyncio.sleep(0.7 * (attempt + 1))
+                await asyncio.sleep(0.5)
         await self.settle()
 
-    async def settle(self, rounds: int = 6) -> None:
+    async def settle(self, rounds: int = 6, recover: bool = True) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
         try:
             await asyncio.wait_for(self._settle(rounds), timeout=45)
         except asyncio.TimeoutError:
             log("settle_timeout", site=self.site_id, url=_short(self.page.url if self.page else ""))
+            if recover and not await self.responsive():
+                await self.recover_tab("settle timed out")
 
     async def _settle(self, rounds: int) -> None:
         page = await self._ensure_page()
@@ -194,7 +231,10 @@ class Site:
 
     # ---------------------------------------------------------------- observation
     async def observe(self, limit: int = MAX_OBSERVATION) -> str:
-        page = await self._ensure_page()
+        await self._ensure_page()
+        if not await self.responsive():
+            await self.recover_tab("tab unresponsive before observing")
+        page = self.page
         parts = [f"URL: {page.url}"]
         self._frames = {}
         for index, frame in enumerate(page.frames):
@@ -212,6 +252,8 @@ class Site:
                 parts.append(f"=== frame {index}: {frame.url} ===")
             else:
                 parts.append(f"TITLE: {result['title']}")
+                if page.url.startswith("http"):
+                    self.last_good_url = page.url
             parts.append(result["text"])
             for match in re.finditer(r"-> (\S+)|src=(\S+?)[\] ]", result["text"]):
                 self.seen_urls.add(urljoin(frame.url, html.unescape(match.group(1) or match.group(2))))
@@ -257,14 +299,18 @@ class Site:
         async with self.lock:
             try:
                 await self._ensure_page()
+                if not await self.responsive():
+                    await self.recover_tab(f"tab unresponsive before {name}")
                 # Delayed popups (surveys, notices) may have opened since the last observation.
                 await self._run_guards_everywhere("close_overlays")
                 method = getattr(self, f"_do_{name}")
                 accepted = inspect.signature(method).parameters
                 message = await asyncio.wait_for(
-                    method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")}), timeout=60)
+                    method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")}), timeout=100)
             except asyncio.TimeoutError:
-                message = f"ERROR: {name} did not finish within 60 s"
+                message = f"ERROR: {name} did not finish within 100 s"
+                if not await self.responsive():
+                    await self.recover_tab(f"{name} hung")
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
             await self.settle()
@@ -510,6 +556,13 @@ class Site:
             except (PlaywrightError, ValueError):
                 pass
         return await self.page.screenshot(type="jpeg", quality=60)
+
+
+async def _close_quietly(page: Page) -> None:
+    try:
+        await asyncio.wait_for(page.close(), timeout=10)
+    except Exception:
+        pass
 
 
 def _short(url: str) -> str:

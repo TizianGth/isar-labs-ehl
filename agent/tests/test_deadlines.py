@@ -83,3 +83,9 @@ def test_duplicate_catalogue_groups_start_one_mission(monkeypatch):
         return o
     o = asyncio.run(scenario())
     assert calls == ["erp:G-7"] and o.erp_complete == {"G-7"}
+
+
+def test_empty_extraction_is_reported_as_wrong_page():
+    from rfq.agent.orchestrator import _summary
+    assert "NOTHING of kind 'spec_revisions'" in _summary("spec_revisions", {"revisions": []})
+    assert "NOTHING" not in _summary("spec_revisions", {"revisions": [{"revision": "V1", "status_text": "gültig"}]})

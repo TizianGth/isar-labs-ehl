@@ -194,6 +194,8 @@ Procedure and traps:
 - If the page reports validation errors, fix them and continue."""
     mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000, max_visual=2)
     site = orch.site_for("tender")
+    if not await site.responsive():          # never start the decisive phase on a hung tab
+        await site.recover_tab("before the submission")
     explorer = SubmitExplorer(site, mission, orch.extract)
     explorer.orchestrator = orch
     explorer.mission.kinds = {}

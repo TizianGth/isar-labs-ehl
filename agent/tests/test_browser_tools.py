@@ -76,7 +76,7 @@ def test_collection_offers_links_and_is_not_reloaded():
             await browser.close()
             return first, second, reloads
     first, second, reloads = asyncio.run(scenario())
-    assert "4 pages" in first and "Lastenheft -> http://shop.test/doc/spec" in first
+    assert "4 pages" in first and re.search(r"Lastenheft( \[[^\]]*\])? -> http://shop.test/doc/spec", first)
     assert "not extracted yet" in first
     assert "already collected" in second and reloads == 0
     assert [c[1] for c in calls] == [f"{BASE}/list?page={n}" for n in range(1, 5)]
@@ -120,7 +120,7 @@ def test_hover_wait_scroll_and_visual_fallback(monkeypatch):
 
 
 def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
-    """Regression (sandbox run_1a09…): a page whose JS never returns must not hang start/observe."""
+    """Regression (sandbox runs run_1a09…, run_f33b…): a tab whose JS never returns must be replaced, not waited for."""
     import time
     import rfq.browser.site as site_module
     monkeypatch.setattr(site_module, "EVAL_TIMEOUT", 1)
@@ -138,10 +138,13 @@ def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
             site = Site("frozen", BASE, {"username": "u", "password": "p"}, context)
             await asyncio.wait_for(site.start(), timeout=40)
             await asyncio.sleep(0.3)                      # now the page's JS never returns
+            frozen = site.page
             started = time.time()
             observation = await asyncio.wait_for(site.observe(), timeout=40)
             took = time.time() - started
+            replaced = site.page is not frozen and site._recoveries == 1
             await browser.close()
-            return observation, took
-    observation, took = asyncio.run(scenario())
-    assert took < 10 and "unreadable" in observation
+            return observation, took, replaced
+    observation, took, replaced = asyncio.run(scenario())
+    # the hung tab is detected and replaced by a fresh tab at the last good address
+    assert replaced and took < 20 and "busy" in observation

@@ -246,6 +246,9 @@ class Explorer:
     async def _extract_collection(self, collection: Collection, kind: str) -> str:
         # one extraction per page, in parallel (much faster than one huge extraction); provenance = real page URL
         results = await asyncio.gather(*(self.extractor(kind, text, url, via="collection") for url, text in collection.pages))
+        if all("NOTHING of kind" in r for r in results):
+            return (f"{collection.id}: NONE of its {len(results)} pages contains '{kind}'. This list is not what you "
+                    f"need; open the relevant item via one of its links instead of extracting this list again.")
         return f"{collection.id}: {len(results)} pages extracted as {kind}: " + " | ".join(results)
 
     def _read_collection(self, collection_id: str, page: int) -> str:
@@ -363,12 +366,24 @@ def _next_link(text: str, label: str) -> str | None:
     return None
 
 
+_LINK = re.compile(r'\[\w+\] link "(.*?)" -> (\S+)(?: \([^)]*\))*')
+
+
 def _links(pages: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Links offered on the collected pages (label, absolute URL), without the pagination itself."""
+    """Links offered on the collected pages (label with its row/line context, absolute URL), without the
+    pagination itself. Context matters: registers often label every link the same ("open", "show document")."""
     found: dict[str, str] = {}
+    page_urls = {u.split("#")[0] for u, _ in pages}
     for url, text in pages:
-        for match in re.finditer(r'\[\w+\] link "(.*?)" -> (\S+)', text):
-            label, href = match.group(1).strip(), urljoin(url, match.group(2))
-            if href.split("#")[0] not in (u.split("#")[0] for u, _ in pages):
-                found.setdefault(href, label)
+        previous = ""
+        for line in text.splitlines():
+            for match in _LINK.finditer(line):
+                label, href = match.group(1).strip(), urljoin(url, match.group(2))
+                if href.split("#")[0] in page_urls:
+                    continue
+                context = re.sub(r"\s+", " ", _LINK.sub(" ", line).replace("|", " ")).strip(" ;") or previous
+                found.setdefault(href, f"{label} [{context[:90]}]" if context and context != label else label)
+            cleaned = re.sub(r"\s+", " ", _LINK.sub(" ", line).replace("|", " ")).strip(" ;")
+            if cleaned and not line.lstrip().startswith("[e") and not line.lstrip().startswith("[f"):
+                previous = cleaned[:90]
     return [(label, href) for href, label in found.items()]

@@ -112,10 +112,10 @@ class Orchestrator:
         return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
                        deadline=self.evidence_end, context=context, progress=progress)
 
-    async def run_mission(self, site: Site, mission: Mission) -> Explorer | None:
-        """Run a mission; if it ends incomplete and time allows, one recovery attempt with its failure context."""
+    async def run_mission(self, site: Site, mission: Mission, attempts: int = 2) -> Explorer | None:
+        """Run a mission; if it ends incomplete and time allows, recovery attempts with the failure context."""
         explorer = None
-        for attempt in range(2):
+        for attempt in range(attempts):
             if mission.deadline - time.time() < 60:
                 break
             explorer = await Explorer(site, mission, self.extract).run()
@@ -287,6 +287,9 @@ Do not start the bid submission, do not ask questions.""", ["tender_overview", "
         spec = self.mission("specification", f"""Find the buyer's technical specification (Lastenheft / technical
 specification / data sheet) for tender {ref} and collect the requirements of the revision MARKED CURRENT
 (status such as "gültig"/"aktuell"; the viewer may open an old revision first; dates may use mixed formats).
+The revision history and the requirement sheets are INSIDE the specification document: find the document (e.g. in
+a document register, possibly paged), then OPEN it via its own link/action. A register or list of documents is not
+the revision list.
 1. Pass any document-release form honestly: choose the binding/reference option (not archive copy, not preview),
    copy the receipt number shown, tick the required acknowledgement, request read access.
 2. Extract the revision list with statuses (kind 'spec_revisions'); statuses may be tooltips ([info: …]).
@@ -303,14 +306,14 @@ to open, they are filtered later). Then switch to the archive folder (and any ot
 search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
 
-        async def tracked(name: str, site: Site, mission: Mission):
+        async def tracked(name: str, site: Site, mission: Mission, attempts: int = 2):
             try:
-                return await self.run_mission(site, mission)
+                return await self.run_mission(site, mission, attempts)
             finally:
                 self.done[name].set()        # an ended mission is an event, whatever its outcome
 
         results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
-                                       tracked("specification", self.site_for("specification"), spec),
+                                       tracked("specification", self.site_for("specification"), spec, attempts=3),
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
@@ -444,8 +447,20 @@ def _url_key(url: str) -> str:
     return (parsed.path + "?" + parsed.query).rstrip("?")
 
 
+MAIN_FIELD = {"positions": "positions", "clarifications": "entries", "spec_revisions": "revisions",
+              "requirements": "requirements", "materials": "materials", "mail_list": "messages"}
+
+
+def _empty(kind: str, data: dict) -> bool:
+    field = MAIN_FIELD.get(kind)
+    return bool(field) and not data.get(field)
+
+
 def _summary(kind: str, data: dict) -> str:
     """A complete but compact confirmation of what was extracted, for the navigating model."""
+    if _empty(kind, data):
+        return (f"NOTHING of kind '{kind}' on this page — it is not the page you need (e.g. a list or register "
+                f"instead of the document itself). Open the relevant document/page via its link instead of repeating this.")
     if kind == "positions":
         return f"{len(data.get('positions') or [])} positions: " + ", ".join(
             f"{p.get('position')} {p.get('quantity')} {p.get('unit')}" for p in data.get("positions") or [])
