@@ -12,22 +12,20 @@ from playwright.async_api import async_playwright
 
 import browsers
 import models  # noqa: F401  models.ask_qwen, models.ask_clef: see models.py
+import research
 import run as contract
 
 
 async def solve(task: dict, page) -> dict | None:
-    """TODO: your agent goes here.
+    """Research phase: let the model select pages and store evidence centrally.
 
     `task` is the run: task["brief"] (the task and its rules), task["access"] (each website's url and login),
     task["submission"] (where the answer goes) and task["answer_schema"]. `page` is a Playwright page in browser 1.
 
-    For an "api" submission, return the answer and main() submits it. For a "site" submission, enter the answer on
-    that website yourself, then return None.
-
-    Mind the clock: a scored run has 20 minutes, and `contract.seconds_left(task)` says how many are left. Every part
-    of the answer scores on its own, so stop and submit your best answer about a minute before the end; an answer
-    that comes too late scores 0.
+    This is the evidence-gathering phase only. It intentionally does not calculate, sign, or submit a bid.
     """
+    evidence = await research.collect(task, page)
+    print(f"Evidence index: {len(evidence.records)} records in {evidence.path}", flush=True)
     return None
 
 

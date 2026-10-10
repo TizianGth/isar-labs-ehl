@@ -29,6 +29,9 @@ blob-report/
 # Logs
 *.log
 
+# Runtime research artifact (may contain tender, supplier, ERP and mail content)
+evidence.json
+
 # OS metadata
 .DS_Store
 Thumbs.db

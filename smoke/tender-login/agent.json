@@ -1,0 +1,5 @@
+{
+  "setup": ["uv", "sync"],
+  "run": ["uv", "run", "--no-sync", "python", "smoke.py"],
+  "models": []
+}
