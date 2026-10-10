@@ -68,7 +68,7 @@ TOOLS = [
     _tool("extract_urls", "Open the given addresses of this website (links you saw) and extract facts of the given "
           "kind from each one. Use it for documents, messages or detail pages you selected.",
           {"urls": {"type": "array", "items": {"type": "string"}}, "kind": _KIND}, ["urls", "kind"]),
-    _tool("read_document", "Open a file the website offers (download link/button, ZIP, PDF, CSV, TXT). For a ZIP, "
+    _tool("read_document", "Open a file the website offers (download link/button, ZIP, PDF, XLSX, DOCX, CSV, TXT). For a ZIP, "
           "first call without member to see its files, then with the member you need. Optional kind extracts it.",
           {"ref": _REF, "url": {"type": "string"}, "member": {"type": "string"}, "kind": _KIND}, []),
     _tool("inspect_visual", "Look at a screenshot when the text view is not enough (picture/canvas without text, "

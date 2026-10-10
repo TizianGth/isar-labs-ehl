@@ -57,3 +57,33 @@ def test_csv_and_html_documents():
     assert parse("a;b\n1;2".encode("cp1252"), "x.csv", "text/csv", "u").text == "a;b\n1;2"
     html = b"<html><body><p>Menge <b>5</b></p><span aria-hidden=\"true\">99</span></body></html>"
     assert parse(html, "x.html", "text/html", "u").text.strip() == "Menge 5"
+
+
+def test_spreadsheet_is_read_as_rows_not_as_an_archive():
+    from openpyxl import Workbook
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Anforderungen"
+    sheet.append(["Referenz", "Bohrung", "Hub"])
+    sheet.append(["R-1", 40, 125.5])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    doc = parse(buffer.getvalue(), "spec.xlsx", "", "u")
+    assert not doc.members and not doc.error
+    assert "## sheet Anforderungen" in doc.text and "Referenz | Bohrung | Hub" in doc.text and "R-1 | 40 | 125.5" in doc.text
+
+
+def test_word_document_is_read_as_text_not_as_an_archive():
+    w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    body = (f'<w:document {w}><w:body><w:p><w:r><w:t>Lastenheft Revision 3</w:t></w:r></w:p>'
+            '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>R-1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>40 mm</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+            '</w:body></w:document>')
+    data = _zip({"[Content_Types].xml": b"<Types/>", "word/document.xml": body.encode()})
+    doc = parse(data, "download", "application/octet-stream", "u")       # no telling name: content decides
+    assert not doc.members and not doc.error
+    assert "Lastenheft Revision 3" in doc.text and "R-1 | 40 mm" in doc.text
+
+
+def test_plain_zip_still_lists_its_members():
+    doc = parse(_zip({"a.csv": b"x;y", "b.txt": b"z"}), "bundle.zip", "", "u")
+    assert sorted(name for name, _ in doc.members) == ["a.csv", "b.txt"]

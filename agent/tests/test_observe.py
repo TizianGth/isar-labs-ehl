@@ -55,3 +55,32 @@ def test_logical_order_and_controls(text):
     assert 'link "Versteckter Menüpunkt" -> /x (hidden-until-hover/open)' in text
     assert 'input[text] "Menge" value="3"' in text
     assert "*Neben*" in text
+
+
+def _serialize(html: str) -> str:
+    async def run():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            await page.set_content(html)
+            result = await page.evaluate(JS, {"prefix": "e"})
+            await browser.close()
+            return result["text"]
+    return asyncio.run(run())
+
+
+def test_native_tooltips_surface_like_aria_tooltips():
+    """Other software shows hover texts with title / aria-description instead of role=tooltip."""
+    text = _serialize("""<html><body>
+    <table><tr><td>V7</td><td><span title="gültig">Freigabestand</span></td></tr>
+           <tr><td>V6</td><td><span aria-description="ersetzt">Freigabestand</span></td></tr></table>
+    <button title="Schlüssel: 01 aktiv · 03 gesperrt">Legende</button>
+    <a href="/doc" title="Dokument öffnen">Dokument öffnen</a>
+    <button title="Nur Titel"></button>
+    <p style="display:none" title="Köder 999">versteckt</p>
+    </body></html>""")
+    assert "[info: gültig]" in text and "[info: ersetzt]" in text
+    assert 'button "Legende" [info: Schlüssel: 01 aktiv · 03 gesperrt]' in text
+    assert "[info: Dokument öffnen]" not in text and "[info: Nur Titel]" not in text   # no echo of the own name
+    assert 'button "Nur Titel"' in text
+    assert "Köder" not in text and "versteckt" not in text

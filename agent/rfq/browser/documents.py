@@ -1,4 +1,4 @@
-"""Files the model chose on a website: download links/buttons, ZIP archives, PDF, CSV/TXT, HTML documents.
+"""Files the model chose on a website: download links/buttons, ZIP archives, PDF, XLSX, DOCX, CSV/TXT, HTML documents.
 
 Only what the model selected is read: a ZIP is first listed, then the member the model asks for is read. Session
 cookies of the site are used; size limits keep the run safe; a login page instead of a file is reported as such.
@@ -100,7 +100,8 @@ def _limit(data: bytes) -> bytes:
 def _guess_mime(name: str) -> str:
     ext = name.lower().rsplit(".", 1)[-1] if "." in name else ""
     return {"zip": "application/zip", "pdf": "application/pdf", "csv": "text/csv", "txt": "text/plain",
-            "html": "text/html", "htm": "text/html", "json": "application/json", "xml": "text/xml"}.get(ext, "")
+            "html": "text/html", "htm": "text/html", "json": "application/json", "xml": "text/xml",
+            "xlsx": XLSX_MIME, "docx": DOCX_MIME}.get(ext, "")
 
 
 def parse(data: bytes, name: str, mime: str, source: str, member: str | None = None) -> Document:
@@ -125,6 +126,10 @@ def parse(data: bytes, name: str, mime: str, source: str, member: str | None = N
         return doc
     if kind == "pdf":
         return Document(source, name, mime or "application/pdf", text=_pdf_text(data))
+    if kind == "xlsx":
+        return Document(source, name, mime or XLSX_MIME, text=_xlsx_text(data))
+    if kind == "docx":
+        return Document(source, name, mime or DOCX_MIME, text=_docx_text(data))
     text = _decode(data)
     if kind == "html":
         if re.search(r'<input[^>]+type=["\']?password', text, re.I):
@@ -145,8 +150,8 @@ def _member_name(info: zipfile.ZipInfo) -> str:
 
 
 def _kind(data: bytes, name: str, mime: str) -> str:
-    if data[:4] == b"PK\x03\x04" or "zip" in mime:
-        return "zip"
+    if data[:4] == b"PK\x03\x04" or "zip" in mime or "officedocument" in mime:
+        return _office_kind(data) or "zip"   # spreadsheets and Word files are ZIP containers: read their content
     if data[:5] == b"%PDF-" or "pdf" in mime:
         return "pdf"
     head = data[:600].lower()
@@ -186,3 +191,52 @@ def _pdf_text(data: bytes) -> str:
         return f"(PDF could not be read: {type(error).__name__})"
     text = "\n\n".join(f"--- page {i + 1} ---\n{t}" for i, t in enumerate(pages))
     return text if text.strip() else "(the PDF has no text layer; it is probably scanned: use inspect_visual)"
+
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _office_kind(data: bytes) -> str | None:
+    try:
+        names = set(zipfile.ZipFile(io.BytesIO(data)).namelist())
+    except zipfile.BadZipFile:
+        return None
+    return "xlsx" if "xl/workbook.xml" in names else "docx" if "word/document.xml" in names else None
+
+
+def _xlsx_text(data: bytes) -> str:
+    """Every sheet as rows of cells (the values the file shows, not formulas)."""
+    try:
+        from openpyxl import load_workbook
+        book = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    except Exception as error:   # missing library or malformed file
+        return f"(spreadsheet could not be read: {type(error).__name__})"
+    parts = []
+    for sheet in book.worksheets[:20]:
+        rows = []
+        for row in sheet.iter_rows(values_only=True, max_row=3000):
+            cells = ["" if v is None else str(v) for v in row]
+            while cells and not cells[-1]:
+                cells.pop()
+            if cells:
+                rows.append(" | ".join(cells))
+        parts.append(f"## sheet {sheet.title}\n" + "\n".join(rows))
+    return "\n\n".join(parts) or "(the spreadsheet is empty)"
+
+
+def _docx_text(data: bytes) -> str:
+    """Paragraphs as lines, table rows as 'cell | cell' (only the document body, no tracked deletions)."""
+    import html as html_lib
+    try:
+        xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode("utf-8", errors="replace")
+    except (zipfile.BadZipFile, KeyError) as error:
+        return f"(Word document could not be read: {type(error).__name__})"
+    xml = re.sub(r"<w:del\b.*?</w:del>", "", xml, flags=re.S)
+    xml = re.sub(r"<w:tc\b.*?</w:tc>", lambda cell: cell.group(0).replace("</w:p>", " "), xml, flags=re.S)
+    xml = re.sub(r"</w:tc>", " | ", xml)
+    xml = re.sub(r"</w:p>|</w:tr>|<w:br\s*/>", "\n", xml)
+    text = html_lib.unescape(re.sub(r"<[^>]+>", "", xml))
+    lines = [re.sub(r"\s*\|\s*$", "", re.sub(r"[ \t]+", " ", line)).strip() for line in text.splitlines()]
+    return "\n".join(re.sub(r"(\s*\|\s*)+", " | ", line) for line in lines if line.strip(" |"))
+

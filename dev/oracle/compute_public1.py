@@ -108,7 +108,9 @@ def main():
                               surcharge_per_unit=float(r2(mass + setup / q)),
                               packaging_per_unit=float(r2(pack / q)), rebate_total=float(b)))
     answer = dict(tender_reference="VG-2027-7093", decision="bid", currency="EUR",
-                  discount_percent=float(DISCOUNT if d else 0), positions=positions, total_net=float(r2(total)))
+                  discount_percent=float(DISCOUNT if d else 0), positions=positions, total_net=float(r2(total)),
+                  # scored checks present in this scenario (confirmed by run_ed06b2d2e8a71fac: withdrawn_answer 5, index_window 5)
+                  checks=dict(withdrawn_position="01.05", metal_index=True))
     out = Path(__file__).with_name("public-1.json")
     out.write_text(json.dumps(answer, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(answer, indent=2, ensure_ascii=False))

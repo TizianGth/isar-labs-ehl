@@ -23,7 +23,7 @@ Rules:
 - Lists that span several pages: `read_all_pages(next_ref=<the 'next page' link or 'load more' button>, kind=...)`
   reads AND extracts all pages in one step and lists the links found on them; never repeat it for the same list.
 - Detail pages, documents or messages whose links you can see: `extract_urls` (several at once). Files (download
-  buttons, ZIP, PDF): `read_document`. Extraction keeps raw values; extract every relevant page exactly once.
+  buttons, ZIP, PDF, spreadsheets, Word files): `read_document`. Extraction keeps raw values; extract every relevant page exactly once.
 - If the text view is not enough (picture/canvas without text, content seems hidden, a click keeps failing), use
   `inspect_visual` with a precise question. Menus that open on hover: `hover`. Keys: `press_key`. Inner scroll areas:
   `scroll` with their ref. Something loads slowly: `wait_for`.

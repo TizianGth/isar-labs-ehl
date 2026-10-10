@@ -144,4 +144,38 @@ def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
             await browser.close()
             return observation, took
     observation, took = asyncio.run(scenario())
-    assert took < 10 and "unreadable" in observation
+    assert took < 10 and ("unreadable" in observation or "stopped responding" in observation)   # replaced, never stuck
+
+
+def test_a_wedged_tab_is_replaced_and_work_continues_where_it_last_worked(monkeypatch):
+    """Regression (sandbox run_f33ba429…): one navigation wedged the tender tab; every later action, including the
+    whole submission, timed out on that dead tab. The next action or observation must continue in a fresh tab."""
+    import rfq.browser.site as site_module
+    monkeypatch.setattr(site_module, "EVAL_TIMEOUT", 1)
+    monkeypatch.setattr(site_module, "NAV_TIMEOUT", 2)
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):                 # /broken never finishes loading: its script never returns
+                path = re.sub(r"^https?://[^/]+", "", route.request.url)
+                body = ("<html><body><p>busy</p><script>while (true) {}</script><p>never parsed</p></body></html>"
+                        if path.startswith("/broken") else
+                        "<html><body><h1>Unterlagen</h1><a href='/broken'>Bieterfragen</a></body></html>")
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("tp", BASE, {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=40)
+            first = await site.observe()
+            await asyncio.wait_for(site.act("click", {"ref": _ref(first, "Bieterfragen")}), timeout=90)
+            after = await asyncio.wait_for(site.observe(), timeout=60)   # the tab froze on /broken
+            again = await asyncio.wait_for(site.observe(), timeout=60)
+            await browser.close()
+            return after, again
+    after, again = asyncio.run(scenario())
+    assert "Unterlagen" in after and "unreadable" not in after          # continued where it last worked
+    assert "stopped responding" in after and "/broken" in after          # and the model is told why
+    assert "stopped responding" not in again                             # told once

@@ -139,3 +139,35 @@ def test_missing_end_reserve_never_causes_no_bid():
     assert result.answer["decision"] == "bid"
     assert result.answer["positions"][0]["material_number"] == "M-1"
     assert any("WARNING end reserve" in line for line in result.trace)
+
+
+def test_overlapping_conditions_pick_the_latest_start_whatever_the_extraction_order():
+    newer = {"valid_from": "2030-03-01", "valid_to": "2030-12-31", "currency": "EUR", "price_unit_qty": "1",
+             "number_format": "de-DE", "scales": [{"from_qty": "1", "price": "90,00"}, {"from_qty": "10", "price": "80,00"}]}
+    for order in ("newer_last", "newer_first"):
+        bb = _evidence()
+        m1 = bb["materials"][0]["data"]["materials"][0]
+        m1["conditions"] = m1["conditions"] + [newer] if order == "newer_last" else [newer] + m1["conditions"]
+        result = build(CTX, bb)
+        assert result.answer["positions"][0]["base_unit_price"] == 80.0, order
+        assert any("2 price conditions valid" in line for line in result.trace), order
+
+
+def test_money_locale_inferred_from_an_untagged_price_table():
+    from rfq.rules.parse import money_locale
+    assert money_locale(["1.234", "987,50"]) == "de-DE"          # comma decimals; dot groups thousands
+    assert money_locale(["1.234"]) == "de-DE"                    # amounts have at most two decimals
+    assert money_locale(["1,234.00", "12.50"]) == "en-US"
+    assert money_locale(["0.125"]) == "en-US"                    # a leading zero is never a thousands group
+    assert money_locale(["1.234", "12.50"]) is None              # contradicting table: no guess
+    assert money_locale(["100", None]) is None
+
+
+def test_untagged_scale_prices_are_read_in_the_table_s_own_format():
+    bb = _evidence()
+    cond = bb["materials"][0]["data"]["materials"][0]["conditions"][0]
+    cond["number_format"] = None
+    cond["scales"] = [{"from_qty": "1", "price": "1.200"}, {"from_qty": "10", "price": "1.000"}]   # German page
+    result = build(CTX, bb)
+    assert result.answer["positions"][0]["base_unit_price"] == 1000.0
+    assert any("number format inferred: de-DE" in line for line in result.trace)

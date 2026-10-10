@@ -60,5 +60,9 @@
       "rebate_total": 11683.58
     }
   ],
-  "total_net": 356949.62
+  "total_net": 356949.62,
+  "checks": {
+    "withdrawn_position": "01.05",
+    "metal_index": true
+  }
 }

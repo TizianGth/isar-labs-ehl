@@ -50,6 +50,29 @@ def number(raw, locale: str | None = None) -> Decimal | None:
         return None
 
 
+def money_locale(raws) -> str | None:
+    """The number format of one table of money amounts that carries no locale tag, or None if it cannot be told or
+    the table contradicts itself. Amounts have at most two decimals, so a separator followed by exactly three digits
+    groups thousands ('1.234' on a German page is 1234) unless the part before it is 0."""
+    votes = set()
+    for raw in raws:
+        token = re.search(r"\d[\d.,]*\d|\d", re.sub(r"\(.*?\)", "", clean(raw)))
+        token = token.group(0) if token else ""
+        seps = [i for i, ch in enumerate(token) if ch in ".,"]
+        if not seps:
+            continue
+        last = token[seps[-1]]
+        if len({token[i] for i in seps}) > 1:                  # both kinds: the last one is the decimal separator
+            votes.add("de-DE" if last == "," else "en-US")
+            continue
+        head, tail = token[:seps[-1]], token[seps[-1] + 1:]
+        if len(tail) == 3 and head.lstrip(".,") not in ("0", ""):
+            votes.add("de-DE" if last == "." else "en-US")     # thousands separator
+        else:
+            votes.add("de-DE" if last == "," else "en-US")     # decimal separator
+    return votes.pop() if len(votes) == 1 else None
+
+
 def integer(raw) -> int | None:
     value = number(raw)
     return int(value) if value is not None else None

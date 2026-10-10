@@ -1,13 +1,14 @@
 """One website in one browser: login, guards, observation and actions.
 
 The model decides what to do; this class only makes each action robust: overlays are closed, cookie walls and
-gates handled, expired sessions re-logged, flaky error pages retried, popups folded back into the tab, and every
-action answers with a fresh observation instead of raising.
+gates handled, expired sessions re-logged, flaky error pages retried, popups folded back into the tab, a tab that
+stopped answering replaced by a fresh one, and every action answers with a fresh observation instead of raising.
 """
 import asyncio
 import html
 import inspect
 import re
+import weakref
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -19,6 +20,9 @@ OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
 MAX_OBSERVATION = 14000
 EVAL_TIMEOUT = 12
+NAV_TIMEOUT = 15                  # seconds per navigation attempt (pages here load in well under a second)
+MAX_TAB_REPLACEMENTS = 8          # per site and run
+_STUCK: "weakref.WeakSet[Page]" = weakref.WeakSet()   # tabs whose document stopped answering
 
 
 async def _eval(target, script: str, arg, timeout: float | None = None):
@@ -27,6 +31,9 @@ async def _eval(target, script: str, arg, timeout: float | None = None):
     try:
         return await asyncio.wait_for(target.evaluate(script, arg), timeout)
     except asyncio.TimeoutError:
+        page = target if isinstance(target, Page) else target.page
+        if target is page or target is page.main_frame:     # the document itself, not just a slow iframe
+            _STUCK.add(page)
         raise PlaywrightError(f"evaluate timed out after {timeout}s")
 
 
@@ -41,6 +48,9 @@ class Site:
         self.visual_notes: dict[str, list[str]] = {}   # url -> answers read from screenshots
         self._frames: dict[int, Frame] = {}     # frame index of the last observation -> frame (refs stay valid)
         self.lock = asyncio.Lock()   # one action at a time per site page
+        self.last_good_url = self.url           # the last page whose document answered
+        self.replaced_tabs = 0
+        self._notice = ""                        # told to the model with the next observation
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self) -> str:
@@ -52,7 +62,7 @@ class Site:
     def _wire(self, page: Page) -> None:
         page.on("dialog", lambda dialog: asyncio.ensure_future(self._on_dialog(dialog)))
         page.set_default_timeout(8000)
-        page.set_default_navigation_timeout(30000)
+        page.set_default_navigation_timeout(NAV_TIMEOUT * 1000)
 
     accept_next_dialog = False
 
@@ -75,7 +85,24 @@ class Site:
             self.page = await self.context.new_page()
             self._wire(self.page)
             await self.goto(self.url)
+        elif self.page in _STUCK and self.replaced_tabs < MAX_TAB_REPLACEMENTS:
+            await self._replace_stuck_tab()
         return self.page
+
+    async def _replace_stuck_tab(self) -> None:
+        """The tab stopped answering (a navigation that never completes, a frozen script). Every later action on it
+        would time out too, so continue in a fresh tab at the last page that worked, and tell the model."""
+        stuck_url = self.page.url
+        self.replaced_tabs += 1
+        log("tab_replaced", site=self.site_id, stuck_url=_short(stuck_url), resume=_short(self.last_good_url))
+        self._notice = (f"NOTE: the tab stopped responding at {stuck_url} and was replaced by a fresh one at "
+                        f"{self.last_good_url}. That page may be temporarily broken: retry it once or take another route.")
+        await self._fresh_page()
+        try:                                     # one attempt: an outage must not turn into minutes of retries
+            await self.page.goto(self.last_good_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT * 1000)
+        except PlaywrightError as error:
+            log("goto_error", site=self.site_id, url=_short(self.last_good_url), error=str(error)[:200])
+        await self.settle()
 
     # ---------------------------------------------------------------- navigation + guards
     async def _fresh_page(self) -> None:
@@ -84,23 +111,30 @@ class Site:
         self.page = await self.context.new_page()
         self._wire(self.page)
 
-    async def goto(self, url: str, frame: Frame | None = None) -> None:
-        target = frame or self.page
-        for attempt in range(4):
-            if attempt == 2 and frame is None:      # two failures in this tab: it may be stuck
+    async def goto(self, url: str, frame: Frame | None = None) -> bool:
+        """Navigate, retrying flaky errors (a fresh tab after a failed attempt). False if the page never loaded: the
+        tab is then marked stuck and continues at the last page that worked on the next step."""
+        target, failed = frame or self.page, False
+        for attempt in range(3):
+            if attempt == 1 and frame is None:      # a failed navigation may leave the tab stuck: use a fresh one
                 await self._fresh_page()
                 target = self.page
             try:
-                response = await target.goto(url, wait_until="domcontentloaded")
+                response = await target.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT * 1000)
+                failed = False
                 if response is not None and response.status >= 500:
                     log("http_error", site=self.site_id, status=response.status, url=_short(url))
                     await asyncio.sleep(0.7 * (attempt + 1))
                     continue
                 break
             except PlaywrightError as error:
+                failed = True
                 log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
                 await asyncio.sleep(0.7 * (attempt + 1))
+        if failed and frame is None and self.page:
+            _STUCK.add(self.page)
         await self.settle()
+        return not failed
 
     async def settle(self, rounds: int = 6) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
@@ -108,6 +142,8 @@ class Site:
             await asyncio.wait_for(self._settle(rounds), timeout=45)
         except asyncio.TimeoutError:
             log("settle_timeout", site=self.site_id, url=_short(self.page.url if self.page else ""))
+            if self.page:
+                _STUCK.add(self.page)            # the guards could not get an answer from this tab
 
     async def _settle(self, rounds: int) -> None:
         page = await self._ensure_page()
@@ -193,7 +229,7 @@ class Site:
             return False
 
     # ---------------------------------------------------------------- observation
-    async def observe(self, limit: int = MAX_OBSERVATION) -> str:
+    async def observe(self, limit: int = MAX_OBSERVATION, _retried: bool = False) -> str:
         page = await self._ensure_page()
         parts = [f"URL: {page.url}"]
         self._frames = {}
@@ -212,9 +248,16 @@ class Site:
                 parts.append(f"=== frame {index}: {frame.url} ===")
             else:
                 parts.append(f"TITLE: {result['title']}")
+                if urlparse(page.url).netloc == self.origin:
+                    self.last_good_url = page.url
             parts.append(result["text"])
             for match in re.finditer(r"-> (\S+)|src=(\S+?)[\] ]", result["text"]):
                 self.seen_urls.add(urljoin(frame.url, html.unescape(match.group(1) or match.group(2))))
+        if page in _STUCK and not _retried and self.replaced_tabs < MAX_TAB_REPLACEMENTS:
+            return await self.observe(limit, _retried=True)     # replaced now instead of showing a dead tab
+        if self._notice:
+            parts.insert(0, self._notice)
+            self._notice = ""
         text = "\n".join(parts)
         if len(text) > limit:
             text = text[:limit] + f"\n[… observation cut at {limit} chars; use read_all_pages/extract for full text]"
@@ -265,6 +308,7 @@ class Site:
                     method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")}), timeout=60)
             except asyncio.TimeoutError:
                 message = f"ERROR: {name} did not finish within 60 s"
+                _STUCK.add(self.page)                # replaced on the next action or observation
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
             await self.settle()
@@ -282,8 +326,9 @@ class Site:
         tag = await el.evaluate("e => e.tagName")
         href = await el.get_attribute("href") if tag == "A" else None
         if href and not href.startswith(("#", "javascript:")):
-            await self.goto(urljoin(frame.url, href), frame=None if frame == self.page.main_frame else frame)
-            return f"opened {href}"
+            if await self.goto(urljoin(frame.url, href), frame=None if frame == self.page.main_frame else frame):
+                return f"opened {href}"
+            return f"ERROR: {href} did not load (the website did not answer in time); retry once or take another route"
         pages_before = set(self.context.pages)
         try:
             await el.click(timeout=5000)
@@ -403,8 +448,9 @@ class Site:
             return "ERROR: only URLs of this website can be opened"
         if not self.was_seen(url):
             return "ERROR: this address was not offered on any page you saw; navigate via the links shown instead"
-        await self.goto(url)
-        return f"opened {url}"
+        if await self.goto(url):
+            return f"opened {url}"
+        return f"ERROR: {url} did not load (the website did not answer in time); retry once or take another route"
 
     async def _do_scroll(self, ref: str | None = None, direction: str = "down", amount: int = 600) -> str:
         delta = abs(int(amount or 600)) * (-1 if direction == "up" else 1)

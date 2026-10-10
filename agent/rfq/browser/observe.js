@@ -1,6 +1,7 @@
 // Serializes one frame's DOM into compact text for the model, with refs for interactive elements.
 // Rules (docs/05-browser-playbook.md): drop aria-hidden decoys and closed dialogs; keep tooltips (via
-// aria-describedby), collapsed <details> content, canvas/role=img labels, ::before data-labels, <time datetime>;
+// aria-describedby, title, aria-description), collapsed <details> content, canvas/role=img labels, ::before
+// data-labels, <time datetime>;
 // restore logical order (aria-posinset / CSS order); strip zero-width characters.
 (opts) => {
   const prefix = opts.prefix || "e";
@@ -16,7 +17,14 @@
   const byId = (id) => (id ? document.getElementById(id) : null);
   const describedTexts = (el) => {
     const ids = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
-    return ids.map((id) => clean(byId(id)?.textContent)).filter(Boolean);
+    const texts = ids.map((id) => clean(byId(id)?.textContent)).filter(Boolean);
+    // Native hover texts (title, aria-description) are what a person sees too; skip mere repeats of the own text.
+    const own = clean(el.textContent);
+    for (const extra of [el.getAttribute("aria-description"), el.getAttribute("title")]) {
+      const s = clean(extra);
+      if (s && s !== own && !texts.includes(s)) texts.push(s);
+    }
+    return texts;
   };
   const referencedTooltip = new Set();
   document.querySelectorAll("[aria-describedby]").forEach((el) =>
@@ -70,7 +78,7 @@
     const flags = [];
     if (el.disabled || el.closest("[inert]") || el.closest("fieldset[disabled]")) flags.push("disabled");
     if (hiddenCtx) flags.push("hidden-until-hover/open");
-    const info = describedTexts(el);
+    const info = describedTexts(el).filter((s) => s !== nameOf(el));   // a title used as the name is not extra info
     let s;
     if (t === "A") {
       const href = el.getAttribute("href");
@@ -126,10 +134,9 @@
     if (t === "DIALOG" && !el.open) return;                               // closed popups
     const role = el.getAttribute("role");
     if (role === "tooltip" && el.id && referencedTooltip.has(el.id)) return; // shown as [info: …] on its trigger
-    const hidden = hiddenCtx || cssHidden(el);
-    // Content of collapsed <details> is not rendered but is real content: keep it.
-    const inClosedDetails = !!el.closest("details:not([open])") && t !== "SUMMARY";
-    const effHidden = hidden && !(inClosedDetails && !el.hidden && styleOf(el)?.display !== "none");
+    // Content of collapsed <details> is not rendered but computes as visible, so it is kept as real content. An
+    // element hidden explicitly (hidden, display:none, visibility:hidden) stays hidden there too: that is where decoys sit.
+    const effHidden = hiddenCtx || cssHidden(el);
     const block = BLOCK.has(t);
     if (block) flush();
     if (t === "IFRAME" || t === "FRAME") {

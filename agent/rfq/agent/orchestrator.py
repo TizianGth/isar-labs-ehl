@@ -28,6 +28,7 @@ RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own 
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
+REDISPATCH = ("tender", "specification")       # missions whose evidence other software may keep on another website
 
 
 class Blackboard:
@@ -86,7 +87,12 @@ class Orchestrator:
             return "extraction returned nothing"
         self.bb.add(kind, data, url, via)
         log("extracted", kind=kind, url=url[:160], via=via, data=data)
-        self._cache[key] = summary = _summary(kind, data)
+        if _is_empty(kind, data):    # say it plainly, or the model keeps extracting the same list page
+            summary = (f"NOTHING of kind '{kind}' on this page. If it is a list, register or menu, do not extract it "
+                       "again: open the entry you need (one of its links) and extract that page.")
+        else:
+            summary = _summary(kind, data)
+        self._cache[key] = summary
         return summary
 
     # ---------------------------------------------------------------- brief
@@ -132,6 +138,56 @@ class Orchestrator:
                                  f"Still missing per checklist:\n{checklist}\nIts last steps:\n"
                                  + "\n".join(explorer.history[-8:]) + "\nDo NOT repeat what failed; take a different route."})
         return explorer
+
+    async def run_role(self, role: str, mission: Mission) -> Explorer | None:
+        """The mission on the website the brief assigns to it. If its checklist is still incomplete, the same mission
+        briefly on each other website, in a fresh tab: other software splits the information differently (e.g. the
+        specification attached to the tender, the bidder Q&A on the supplier portal). Approvals stay in the mailbox
+        (the brief defines their authority by sender) and materials in the ERP, so those missions stay home."""
+        home = self.site_for(role)
+        explorer = await self.run_mission(home, mission)
+        if role not in REDISPATCH or not mission.progress:
+            return explorer
+        for site in self.other_sites(home):
+            if mission.progress()[1] or self.evidence_end - time.time() < 120:
+                break
+            elsewhere = Mission(**{**mission.__dict__, "name": f"{mission.name}@{site.site_id}", "max_steps": 12,
+                                   "context": mission.context + f"\n\nNOT FOUND COMPLETELY ON THE WEBSITE '{home.site_id}'. "
+                                   f"Still missing:\n{mission.progress()[0]}\nLook for exactly this on THIS website: it may "
+                                   "be a document, an attachment, a message or a notice here. If this website does not "
+                                   "have it, finish at once and list it as missing."})
+            try:
+                tab = await site.spawn()
+            except Exception as error:   # never share a tab another mission is using
+                log("redispatch_tab_failed", mission=mission.name, site=site.site_id, error=str(error)[:200])
+                continue
+            log("mission_redispatch", mission=mission.name, site=site.site_id)
+            try:
+                explorer = await self.explore_once(tab, elsewhere) or explorer
+            finally:
+                try:
+                    await tab.page.close()
+                except Exception:
+                    pass
+        if mission.progress()[1]:
+            self.status[mission.name] = "complete"
+        return explorer
+
+    def other_sites(self, home: Site) -> list[Site]:
+        """Every other website once, in the brief's role order (portals first), then any without a role."""
+        seen, others = {home.site_id}, []
+        for site in [self.site_for(r) for r in ("tender", "specification", "mail", "erp")] + list(self.sites.values()):
+            if site.site_id not in seen:
+                seen.add(site.site_id)
+                others.append(site)
+        return others
+
+    async def explore_once(self, site: Site, mission: Mission) -> Explorer | None:
+        try:
+            return await Explorer(site, mission, self.extract).run()
+        except Exception as error:
+            log("mission_crashed", mission=mission.name, error=f"{type(error).__name__}: {error}"[:300])
+            return None
 
     # ---------------------------------------------------------------- progress checklists (from the blackboard)
     def positions(self) -> list[dict]:
@@ -209,17 +265,26 @@ class Orchestrator:
                         target[k] = v
         return merged
 
+    def material_fields(self) -> list[str]:
+        """What an ERP mission must collect per material. The carton size only matters when the Q&A assigns a
+        packaging tariff; until the Q&A has been read completely that is unknown, so it stays required."""
+        qa = self.bb.get("clarifications")
+        qa_read = any(i.get("via") == "collection" and i["data"].get("entries") for i in qa)
+        packaging = any(f.get("type") == "assignment" and f.get("packaging_key")
+                        for i in qa for e in i["data"].get("entries") or [] for f in e.get("facts") or [])
+        return [f for f in MATERIAL_REQUIRED if f != "pieces_per_carton" or packaging or not qa_read]
+
     def erp_progress(self, group: str, reqs: list[dict] | None = None) -> tuple[str, bool]:
         mats = [m for m in self.materials().values() if parse.norm_id(m.get("catalog_group")) == parse.norm_id(group)]
         if not mats:
             return f"[ ] no materials of group {group} found yet (search for the group key)", False
-        lines, complete = [], True
+        lines, complete, required = [], True, self.material_fields()
         for m in mats:
             mismatch = _mismatch(m, reqs or [])
             if mismatch:
                 lines.append(f"[x] {m['material_number']}: does not fit the requirement ({mismatch}); no more data needed")
                 continue
-            missing = [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
+            missing = [f for f in required if m.get(f) in (None, "", [])]
             if m.get("status_meaning") != "blocked":
                 records = len({json.dumps(c.get("valid_from")) + json.dumps(c.get("currency")) for c in m["conditions"]})
                 if not records:
@@ -303,15 +368,14 @@ to open, they are filtered later). Then switch to the archive folder (and any ot
 search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
 
-        async def tracked(name: str, site: Site, mission: Mission):
+        async def tracked(role: str, mission: Mission):
             try:
-                return await self.run_mission(site, mission)
+                return await self.run_role(role, mission)
             finally:
-                self.done[name].set()        # an ended mission is an event, whatever its outcome
+                self.done[role].set()        # an ended mission is an event, whatever its outcome
 
-        results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
-                                       tracked("specification", self.site_for("specification"), spec),
-                                       tracked("mail", self.site_for("mail"), mail), self.erp_phase())
+        results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec),
+                                       tracked("mail", mail), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()})
@@ -435,6 +499,15 @@ def _mismatch(m: dict, reqs: list[dict]) -> str:
             return ""
         reasons.append(", ".join(why))
     return "; ".join(reasons)
+
+
+LIST_FIELD = {"positions": "positions", "clarifications": "entries", "spec_revisions": "revisions",
+              "requirements": "requirements", "materials": "materials", "mail_list": "messages"}
+
+
+def _is_empty(kind: str, data: dict) -> bool:
+    """An extraction of a list kind that found no item at all (e.g. revisions read from a document register)."""
+    return kind in LIST_FIELD and not data.get(LIST_FIELD[kind])
 
 
 def _url_key(url: str) -> str:

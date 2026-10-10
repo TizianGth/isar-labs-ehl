@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, norm_id, number, revision_is_current, same_text, when
+from .parse import cert, clean, day, integer, money_locale, norm_id, number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -301,8 +301,18 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         if not valid:
             note(f"{pid}: no price condition valid on {T.date()}")
             return None
+        if len(valid) > 1:   # the latest record wins (then the narrower window), never the extraction order
+            far = datetime.max.replace(tzinfo=T.tzinfo)
+            valid.sort(key=lambda c: (when(c.get("valid_from")) or datetime.min.replace(tzinfo=T.tzinfo),
+                                      -((when(c.get("valid_to")) or far) - T).total_seconds()))
+            note(f"{pid}: WARNING {len(valid)} price conditions valid on {T.date()}; using the one from "
+                 f"{valid[-1].get('valid_from')}")
         c = valid[-1]
         fmt = c.get("number_format")
+        if not fmt:   # an untagged table is read in its own consistent format, never number by number
+            fmt = money_locale([s.get("price") for s in c.get("scales") or []])
+            if fmt:
+                note(f"{pid}: number format inferred: {fmt} (prices {[s.get('price') for s in c.get('scales') or []]})")
         scales = sorted(((number(s.get("from_qty"), fmt), number(s.get("price"), fmt)) for s in c.get("scales") or []),
                         key=lambda s: s[0] or 0)
         usable = [s for s in scales if s[0] is not None and s[1] is not None and s[0] <= q] or scales[:1]
