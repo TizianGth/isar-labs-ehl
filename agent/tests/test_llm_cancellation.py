@@ -109,3 +109,22 @@ def test_release_uses_acquired_semaphore_instance(monkeypatch):
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(replacement.acquire(), timeout=0.02)
     asyncio.run(scenario())
+
+
+def test_refused_access_is_not_retried(monkeypatch):
+    """After an accepted answer the platform revokes the run token: 401 must end the call at once."""
+    calls = []
+
+    class Refused(Exception):
+        status_code = 401
+
+    async def create(**kwargs):
+        calls.append(1)
+        raise Refused("token revoked")
+
+    monkeypatch.setattr(llm, '_slots', asyncio.Semaphore(1))
+    monkeypatch.setattr(llm, '_run_deadline', float('inf'))
+    monkeypatch.setattr(llm, 'client', lambda: _client(create))
+    with pytest.raises(llm.DeadlineExceeded):
+        asyncio.run(llm.chat([], deadline=time.time() + 30))
+    assert len(calls) == 1

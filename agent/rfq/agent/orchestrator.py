@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import parse_qsl, urlparse
 
 from .. import llm
 from ..browser.site import Site
@@ -26,6 +27,7 @@ from .submit import submit_bid
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
+CHUNK_CHARS, MAX_CHUNKS = 45000, 4                                    # long selected documents: up to ~180k chars
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -68,6 +70,7 @@ class Orchestrator:
         self.done = {name: asyncio.Event() for name in ("tender", "specification", "mail")}
         self.erp_complete: set[str] = set()               # catalogue groups whose ERP mission completed its checklist
         self._cache: dict[str, str] = {}
+        self._inflight: dict[str, asyncio.Future] = {}
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
@@ -78,16 +81,46 @@ class Orchestrator:
         key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
         if key in self._cache:
             return "already extracted earlier: " + self._cache[key]
-        prompt = (f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
-                  f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
-                  f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}\n<<<PAGE TEXT>>>\n{text[:60000]}\n<<<END>>>")
-        data = await llm.ask_json(EXTRACT_SYSTEM, prompt, thinking=THINKING_EXTRACT, tag=f"extract:{kind}")
+        if key in self._inflight:                    # the same page is being extracted right now: share the result
+            return "already extracted earlier: " + await asyncio.shield(self._inflight[key])
+        future = asyncio.get_running_loop().create_future()
+        self._inflight[key] = future
+        try:
+            summary = await self._extract_new(kind, spec, text, url, via)
+            if not summary.startswith("extraction returned nothing"):
+                self._cache[key] = summary            # empty/failed results are not cached as facts
+            future.set_result(summary)
+            return summary
+        except BaseException as error:
+            future.set_exception(error) if not isinstance(error, asyncio.CancelledError) else future.cancel()
+            raise
+        finally:
+            self._inflight.pop(key, None)
+            if future.done() and not future.cancelled():
+                future.exception()                    # mark retrieved: no "never retrieved" warnings
+
+    async def _extract_new(self, kind: str, spec: dict, text: str, url: str, via: str) -> str:
+        # Long documents are read in parts (not silently cut): each part is extracted, list fields are merged.
+        parts = _chunks(text, CHUNK_CHARS)
+        skipped = 0
+        if len(parts) > MAX_CHUNKS:              # keep the beginning and the end (closing sections matter too)
+            skipped = len(parts) - MAX_CHUNKS
+            parts = parts[:MAX_CHUNKS - 1] + parts[-1:]
+            log("extract_parts_skipped", kind=kind, url=url[:160], skipped=skipped)
+        results = await asyncio.gather(*(llm.ask_json(EXTRACT_SYSTEM, (
+            f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
+            f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
+            f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}"
+            + (f" (part {i + 1} of {len(parts)})" if len(parts) > 1 else "")
+            + f"\n<<<PAGE TEXT>>>\n{part}\n<<<END>>>"), thinking=THINKING_EXTRACT, tag=f"extract:{kind}")
+            for i, part in enumerate(parts)))
+        data = _merge_parts(kind, [r for r in results if r])
         if not data:
             return "extraction returned nothing"
         self.bb.add(kind, data, url, via)
-        log("extracted", kind=kind, url=url[:160], via=via, data=data)
-        self._cache[key] = summary = _summary(kind, data)
-        return summary
+        log("extracted", kind=kind, url=url[:160], via=via, parts=len(parts), data=data)
+        note = f" (very long document: {skipped} middle parts were not read)" if skipped else ""
+        return _summary(kind, data) + note
 
     # ---------------------------------------------------------------- brief
     async def read_brief(self) -> None:
@@ -112,8 +145,41 @@ class Orchestrator:
         return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
                        deadline=self.evidence_end, context=context, progress=progress)
 
+    def site_memory(self, site) -> str:
+        """What this run has learned about a website (no fixed knowledge): the kinds of pages where facts of each kind
+        were found, and addresses that never loaded. Shared by all missions on that site, at no model cost."""
+        origin = urlparse(site.url).netloc
+        found: dict[str, set[str]] = {}
+        for kind, items in self.bb.items.items():
+            for item in items:
+                url = urlparse(str(item["url"]).split("#")[0])
+                if url.netloc == origin and not _empty(kind, item["data"]):
+                    found.setdefault(kind, set()).add(_page_pattern(url))
+        lines = [f"- {kind}: {', '.join(sorted(patterns)[:6])}" for kind, patterns in sorted(found.items())]
+        hung = [url for url, times in getattr(site, "hung", {}).items() if times]
+        if hung:
+            lines.append("- did not load (avoid, use another route): " + ", ".join(_page_pattern(urlparse(u)) for u in hung[:5]))
+        return ("LEARNED IN THIS RUN ABOUT THIS WEBSITE (page types where facts were found; '*' = any value):\n"
+                + "\n".join(lines)) if lines else ""
+
+    def _remembering(self, site, mission: Mission) -> Mission:
+        """The mission's checklist also shows the site memory (updated every step)."""
+        progress = mission.progress
+        if progress is None or getattr(progress, "with_memory", False):
+            return mission
+
+        def with_memory():
+            text, complete = progress()
+            memory = self.site_memory(site)
+            return (f"{text}\n\n{memory}" if memory else text), complete
+
+        with_memory.with_memory = True
+        mission.progress = with_memory
+        return mission
+
     async def run_mission(self, site: Site, mission: Mission, attempts: int = 2) -> Explorer | None:
         """Run a mission; if it ends incomplete and time allows, recovery attempts with the failure context."""
+        mission = self._remembering(site, mission)
         explorer = None
         for attempt in range(attempts):
             if mission.deadline - time.time() < 60:
@@ -248,8 +314,7 @@ class Orchestrator:
                 if ref and ref in subject and "TAN" not in subject and m.get("url"):
                     listed[_url_key(m["url"])] = parse.clean(m.get("subject"))
         done = {_url_key(i["url"]) for i in self.bb.get("mail_message")}
-        found = {i["data"].get("topic") for i in self.bb.get("mail_message")
-                 if i["data"].get("topic") and parse.norm_id(i["data"].get("reference")) == ref}
+        found = {i["data"].get("topic") for i in self.bb.get("mail_message") if self._valid_mail(i["data"], ref)}
         wanted = {"discount": "Rabatt / discount approval"} | {
             r.get("topic"): r.get("subject_keyword") for r in self.brief.get("authorized_records") or [] if r.get("topic")}
         absent = {topic: keyword for topic, keyword in wanted.items() if topic not in found}
@@ -267,6 +332,24 @@ class Orchestrator:
         if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
         return "\n".join(lines), not absent and not missing and not unread_pages
+
+    def _valid_mail(self, m: dict, ref: str) -> bool:
+        """A mail satisfies its topic only if the rules would use it: exact reference, not a draft, dated no later
+        than the scenario date, from the authorized sender (local part + bidder mailbox domain) when known."""
+        topic = m.get("topic")
+        if not topic or parse.norm_id(m.get("reference")) != ref or m.get("is_draft_or_preview"):
+            return False
+        at, scenario = parse.when(m.get("datetime_utc")), parse.when(self.brief.get("scenario_datetime_utc"))
+        if at is not None and scenario is not None and at > scenario:
+            return False
+        local = self.brief.get("director_localpart") if topic == "discount" else next(
+            (r.get("sender_localpart") for r in self.brief.get("authorized_records") or [] if r.get("topic") == topic), None)
+        sender = parse.clean(m.get("sender")).lower()
+        if local and not sender.startswith(str(local).lower() + "@"):
+            return False
+        domain = next((parse.clean(i["data"].get("mailbox_address")).split("@", 1)[1].lower()
+                       for i in self.bb.get("mail_list") if "@" in parse.clean(i["data"].get("mailbox_address"))), None)
+        return not domain or sender.endswith("@" + domain)
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
@@ -321,28 +404,47 @@ search says there are too many results, add the subject keyword.""",
 
     async def erp_phase(self) -> list:
         """One ERP mission per needed catalogue group, in parallel tabs of the ERP browser (shared session).
-        Groups start as soon as they are known; nothing waits for a specification mission that has ended."""
-        base, started, tasks = self.site_for("erp"), {}, []
-        while time.time() < self.evidence_end - 90:
-            spec_ended, tender_ended = self.done["specification"].is_set(), self.done["tender"].is_set()
-            known_positions = bool(self.positions()) or tender_ended
-            if known_positions:
-                for group, reqs in self.erp_groups().items():
-                    if group in started:
-                        continue
-                    site = base if not started else await self._tab(base)
-                    started[group] = asyncio.create_task(self.run_mission(site, self.erp_mission(group, reqs)))
-                    log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs])
-            if spec_ended and tender_ended and all(t.done() for t in started.values()):
-                break
-            await asyncio.sleep(1)
-        results = list(await asyncio.gather(*started.values())) if started else []
-        for group, task in started.items():
+        Groups start as soon as they are known; nothing waits for a specification mission that has ended.
+        Missions never share a tab at the same time, and all of them end with this phase."""
+        base, started = self.site_for("erp"), {}
+        base_chain: asyncio.Task | None = None       # missions that have to run on the base tab, one after another
+        try:
+            while time.time() < self.evidence_end - 90:
+                spec_ended, tender_ended = self.done["specification"].is_set(), self.done["tender"].is_set()
+                known_positions = bool(self.positions()) or tender_ended
+                if known_positions:
+                    for group, reqs in self.erp_groups().items():
+                        if group in started:
+                            continue
+                        mission = self.erp_mission(group, reqs)
+                        site = base if base_chain is None else await self._tab(base)
+                        if site is base:
+                            previous = base_chain
+                            started[group] = base_chain = asyncio.create_task(self._after(previous, base, mission))
+                        else:
+                            started[group] = asyncio.create_task(self.run_mission(site, mission))
+                        log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=site is not base)
+                if spec_ended and tender_ended and all(t.done() for t in started.values()):
+                    break
+                await asyncio.sleep(1)
+            results = list(await asyncio.gather(*started.values())) if started else []
+        finally:   # never leave research running into the submission phase
+            pending = [t for t in started.values() if not t.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        for group in started:
             if self.status.get(f"erp:{group}") == "complete":
                 self.erp_complete.add(parse.norm_id(group))
         if not started:
             log("erp_no_groups", reason="no requirements with catalogue groups were found")
         return results
+
+    async def _after(self, previous: asyncio.Task | None, site: Site, mission: Mission):
+        if previous is not None:
+            await asyncio.gather(previous, return_exceptions=True)
+        return await self.run_mission(site, mission)
 
     async def _tab(self, base: Site) -> Site:
         try:
@@ -416,6 +518,44 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
         return result
+
+
+def _page_pattern(url) -> str:
+    """'/vk13?material=X-1&view=scales' -> '/vk13?material=*&view=scales': keeps the page type, hides record values."""
+    query = "&".join(f"{k}={v if v.isalpha() and len(v) <= 16 else '*'}" for k, v in parse_qsl(url.query, keep_blank_values=True))
+    return url.path + (f"?{query}" if query else "")
+
+
+def _chunks(text: str, size: int) -> list[str]:
+    """Split at line boundaries into parts of about `size` characters (a small overlap keeps rows intact)."""
+    if len(text) <= size:
+        return [text]
+    lines, parts, current = text.splitlines(), [], []
+    length = 0
+    for line in lines:
+        if length + len(line) > size and current:
+            parts.append("\n".join(current))
+            current, length = current[-3:], sum(len(x) for x in current[-3:])
+        current.append(line)
+        length += len(line) + 1
+    parts.append("\n".join(current))
+    return parts
+
+
+def _merge_parts(kind: str, results: list[dict]) -> dict:
+    """Combine the extractions of several parts of one document: list fields are concatenated, other fields keep
+    the first non-empty value."""
+    if len(results) <= 1:
+        return results[0] if results else {}
+    merged: dict = {}
+    for result in results:
+        for key, value in result.items():
+            if isinstance(value, list):
+                merged.setdefault(key, [])
+                merged[key] += [v for v in value if v not in merged[key]]
+            elif merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+    return merged
 
 
 def _mismatch(m: dict, reqs: list[dict]) -> str:

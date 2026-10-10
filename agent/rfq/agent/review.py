@@ -3,6 +3,7 @@
 Pure functions, unit-tested. Values on the page are raw strings in the page's number format; the default locale is
 German (the portals' format), explicit locale tags win.
 """
+import re
 from decimal import Decimal
 
 from ..rules.parse import clean, norm_id, number
@@ -12,7 +13,16 @@ OPTIONAL = ("base_unit_price", "surcharge_per_unit", "packaging_per_unit", "reba
 
 
 def _num(raw) -> Decimal | None:
-    return number(raw, "de-DE") if isinstance(raw, str) else number(raw)
+    """JSON numbers as they are; explicit locale tags win; '1234.50' (decimal point with cents) is a plain decimal;
+    everything else is read in the portals' German format ('1.234,50', '1.234' = 1234)."""
+    if not isinstance(raw, str):
+        return number(raw)
+    if re.search(r"\((?:de|en|fr)-[A-Z]{2}\)", raw):
+        return number(raw)
+    core = re.sub(r"[^\d.,-]", "", raw)
+    if re.fullmatch(r"-?\d+\.\d{1,2}", core):
+        return number(core, "en-US")
+    return number(raw, "de-DE")
 
 
 def _same_number(expected, observed) -> bool:

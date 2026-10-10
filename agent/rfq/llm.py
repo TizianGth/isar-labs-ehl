@@ -73,6 +73,9 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
                 slots.release()
         except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
+            if getattr(error, "status_code", None) in (401, 403):
+                # the run token is revoked once the answer is accepted (or the key is wrong): retrying cannot help
+                raise DeadlineExceeded(f"{tag}: access refused ({error.status_code})")
             await asyncio.sleep(max(0.0, min(delay, end - time.time() - 3)))
             delay = min(delay * 2, 8)
             continue

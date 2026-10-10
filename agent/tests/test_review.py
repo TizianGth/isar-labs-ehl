@@ -53,3 +53,18 @@ def test_optional_field_only_warns_and_own_terms_block():
     result = validate_review(EXPECTED, page)
     assert result["mismatches"] and not result["blocking"]
     assert validate_review(EXPECTED, _page(own_terms_declared=True))["blocking"]
+
+
+def test_number_formats_on_the_review_page():
+    from decimal import Decimal
+    from rfq.agent.review import _num
+    assert _num("4.321,09 EUR") == Decimal("4321.09")
+    assert _num("1234.50") == Decimal("1234.50")          # decimal point from a normalising extraction
+    assert _num(1234.5) == Decimal("1234.5")              # JSON number
+    assert _num("1,234.50 (en-US)") == Decimal("1234.50")
+    assert _num("1.234") == Decimal("1234")               # German thousands, not 1.234
+    assert _num("5 %") == Decimal("5")
+    page = _page(total_net="1234.50")
+    assert not validate_review(EXPECTED, page)["blocking"]
+    page = _page(total_net="1234.60")                     # a genuinely wrong amount is still caught
+    assert validate_review(EXPECTED, page)["blocking"]

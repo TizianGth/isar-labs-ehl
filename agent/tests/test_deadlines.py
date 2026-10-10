@@ -89,3 +89,115 @@ def test_empty_extraction_is_reported_as_wrong_page():
     from rfq.agent.orchestrator import _summary
     assert "NOTHING of kind 'spec_revisions'" in _summary("spec_revisions", {"revisions": []})
     assert "NOTHING" not in _summary("spec_revisions", {"revisions": [{"revision": "V1", "status_text": "gültig"}]})
+
+
+def test_erp_missions_end_with_the_phase_and_never_share_a_tab(monkeypatch):
+    """W02: cancelling the phase cancels its missions; without an own tab, missions wait instead of sharing."""
+    running, finished = [], []
+
+    async def slow_mission(self, site, mission):
+        running.append((id(site), mission.name))
+        try:
+            await asyncio.sleep(30)
+        finally:
+            finished.append(mission.name)
+
+    async def no_tab(self, base):
+        return base
+
+    monkeypatch.setattr(Orchestrator, "run_mission", slow_mission)
+    monkeypatch.setattr(Orchestrator, "_tab", no_tab)
+
+    async def scenario():
+        o = _orchestrator()
+        o.bb.add("positions", {"positions": [{"position": "1", "requirement_ref": "A-1"},
+                                             {"position": "2", "requirement_ref": "A-2"}]}, "u")
+        o.bb.add("spec_revisions", {"revisions": [{"revision": "V2", "status_text": "gültig"}]}, "u")
+        o.bb.add("requirements", {"revision": "V2", "requirements": [{"ref": "A-1", "catalog_group": "G-1"},
+                                                                     {"ref": "A-2", "catalog_group": "G-2"}]}, "u")
+        o.done["specification"].set()
+        o.done["tender"].set()
+        phase = asyncio.create_task(o.erp_phase())
+        await asyncio.sleep(1.5)
+        phase.cancel()
+        try:
+            await phase
+        except asyncio.CancelledError:
+            pass
+        await asyncio.sleep(0.1)
+        return [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    leftover = asyncio.run(scenario())
+    assert len(running) == 1                 # the second group waited for the base tab instead of sharing it
+    assert finished == ["erp:G-1"]           # and the running mission was cancelled with the phase
+    assert not leftover
+
+
+def test_decoy_mails_do_not_satisfy_a_topic():
+    """W03: a topic counts as found only with a record the rules would use."""
+    o = _orchestrator()
+    o.brief.update({"scenario_datetime_utc": "2030-03-10T09:00:00Z", "director_localpart": "boss",
+                    "authorized_records": [{"topic": "packaging", "subject_keyword": "Pack", "sender_localpart": "log"}]})
+    o.bb.add("mail_list", {"mailbox_address": "sales@bidder.example", "folder": "inbox", "messages": []}, "u")
+    mail = lambda **kw: {"topic": "packaging", "reference": "XT-1", "sender": "log@bidder.example",
+                         "datetime_utc": "2030-03-09T10:00:00Z", "is_draft_or_preview": False, **kw}
+    for i, decoy in enumerate([mail(sender="log@other.example"), mail(datetime_utc="2030-03-11T10:00:00Z"),
+                               mail(is_draft_or_preview=True), mail(reference="XT-1-A"), mail(sender="boss@bidder.example")]):
+        o.bb.add("mail_message", decoy, f"u{i}")
+    text, _ = o.mail_progress()
+    assert "packaging ('Pack')" in text                     # still missing: only decoys so far
+    o.bb.add("mail_message", mail(), "u-valid")
+    text, _ = o.mail_progress()
+    assert "packaging ('Pack')" not in text
+
+
+def test_concurrent_identical_extractions_share_one_call(monkeypatch):
+    from rfq import llm as llm_module
+    calls = []
+
+    async def fake_ask_json(system, user, **kwargs):
+        calls.append(1)
+        await asyncio.sleep(0.2)
+        return {"positions": [{"position": "1", "quantity": "2"}]}
+
+    monkeypatch.setattr(llm_module, "ask_json", fake_ask_json)
+
+    async def scenario():
+        o = _orchestrator()
+        page = "URL: x\nPos 1: 2 Stk"
+        return await asyncio.gather(o.extract("positions", page, "u1"), o.extract("positions", page, "u2")), o
+    (first, second), o = asyncio.run(scenario())
+    assert len(calls) == 1 and "already extracted" in second and len(o.bb.get("positions")) == 1
+
+
+def test_long_documents_are_read_in_parts_not_cut(monkeypatch):
+    from rfq import llm as llm_module
+    from rfq.agent import orchestrator as orch
+
+    async def fake_ask_json(system, user, **kwargs):
+        found = [{"position": m} for m in ("A", "B") if f"Position {m} hier" in user]
+        return {"positions": found}
+
+    monkeypatch.setattr(llm_module, "ask_json", fake_ask_json)
+    monkeypatch.setattr(orch, "CHUNK_CHARS", 1000)
+    text = "URL: x\nPosition A hier\n" + "\n".join("füllzeile " * 8 for _ in range(300)) + "\nPosition B hier"
+
+    async def scenario():
+        o = _orchestrator()
+        summary = await o.extract("positions", text, "u")
+        return summary, o.bb.get("positions")[0]["data"]
+    summary, data = asyncio.run(scenario())
+    assert [p["position"] for p in data["positions"]] == ["A", "B"]     # the end of the document is not lost
+
+
+def test_site_memory_shares_page_types_not_values():
+    from types import SimpleNamespace
+    o = _orchestrator()
+    site = SimpleNamespace(url="http://erp.test", hung={"http://erp.test/slow?id=9": 2})
+    o.bb.add("materials", {"materials": [{"material_number": "M-1"}]}, "http://erp.test/cond?material=M-1&view=scales")
+    o.bb.add("materials", {"materials": [{"material_number": "M-2"}]}, "http://erp.test/cond?material=M-2&view=scales")
+    o.bb.add("materials", {"materials": []}, "http://erp.test/empty")                     # empty pages teach nothing
+    o.bb.add("positions", {"positions": [{"position": "1"}]}, "http://other.test/lv")        # other website
+    memory = o.site_memory(site)
+    assert "/cond?material=*&view=scales" in memory and "M-1" not in memory
+    assert "/empty" not in memory and "other.test" not in memory and "/lv" not in memory
+    assert "/slow?id=*" in memory
