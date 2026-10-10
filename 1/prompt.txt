@@ -1,0 +1,310 @@
+<pasted_content id="756e">
+ate our options for integrating Cloudflare Clef into this repository to reduce end-to-end runtime and simulated inference cost while preserving eligibility, answer quality, and robustness on the private dataset.
+
+This is an investigation and recommendation task. Do not implement changes yet. Do not submit or cancel anything on the platform.
+
+Read AGENTS.md fully. Then inspect the actual implementation, relevant documentation, and available run logs. Treat code and measured runs as evidence of current behavior; distinguish them from architectural aspirations and outdated documentation.
+
+Start with:
+- docs/01-challenge.md
+- docs/02-architecture.md
+- docs/06-testing.md
+- docs/10-risks-error-handling.md
+- docs/11-mvp-status.md
+- docs/reference/atira-challenge-rfq.md and relevant platform snapshots
+- agent/agent.json
+- agent/rfq/llm.py
+- agent/rfq/agent/{explorer,orchestrator,prompts,submit}.py
+- Relevant browser, review, extraction, and logging code
+- dev/runs/ and available profiling or evaluation tools
+
+Verify current Clef capabilities, API constraints, pricing, and relevant benchmarks using authoritative platform and Cloudflare sources where accessible. Clearly identify anything that remains unverified. Do not assume Clef is faster, cheaper, calibrated, or sufficiently accurate merely because it is a decision model.
+
+Our priorities are:
+1. Eligibility and correct signed submission before the deadline.
+2. Quality and generalization to unfamiliar sites and differently distributed information.
+3. Lower simulated cost × elapsed time.
+4. Implementation simplicity and maintainability.
+
+Evaluate all materially distinct integration strategies, including:
+- Keeping the current Qwen-only architecture.
+- Clef for narrow classification and relevance checks.
+- Clef choosing navigation actions from candidates grounded in the current observation.
+- Qwen planning with Clef executing bounded decisions.
+- Clef-first decisions with Qwen fallback or escalation.
+- Qwen proposing candidates and Clef ranking or checking them.
+- Clef as a parallel verifier, including whether verification adds useful accuracy or unnecessary overhead.
+- Clef for document/mail triage, revision relevance, page-state recognition, and visual decisions.
+- Clef for recovery decisions and loop detection.
+- Clef in submission workflows, with explicit boundaries around consequential actions and final verification.
+- Any other plausible use supported by its actual API.
+
+Compare text-only and screenshot-assisted variants where relevant. Include viable combinations, not just isolated use cases. Explain which tasks Clef cannot reasonably replace, especially structured extraction, free-form interpretation, and arithmetic.
+
+For every option, assess:
+- Exact insertion points in our current code.
+- Inputs, candidate construction, output interpretation, and control flow.
+- Which existing calls it replaces versus which new calls it adds.
+- Expected effects on total input/output tokens, caching, latency, and simulated cost.
+- Critical-path impact versus work that already runs in parallel.
+- Candidate-generation overhead, screenshot overhead, extra round trips, and context transfer.
+- Concurrency limits, timeouts, retries, hedging, cancellation, and model warm-up/manifest implications.
+- Error propagation, missed evidence, misleading confidence, fallback behavior, and private-dataset generalization.
+- Fair-play compliance: model-decided navigation, no hardcoded scenario values or site paths, no indiscriminate crawling, proxy-only inference.
+- Implementation effort, testing effort, observability, and reversibility.
+
+Pay particular attention to whether bounded candidate generation preserves useful navigation choices on unfamiliar layouts. A cheaper selector is of little value if generating its candidates requires the same Qwen call it supposedly replaces.
+
+Ground the analysis in our run logs:
+- Identify where time and cost actually go.
+- Separate model waiting, browser work, extraction, submission, retries, and hedges where the logs permit.
+- Analyze cached versus uncached tokens and existing Qwen optimizations.
+- Identify the current critical path and likely bottleneck shifts.
+- Label missing measurements rather than inventing numbers.
+
+Build a quantitative comparison using consistent accounting:
+- Baseline versus projected total run cost, elapsed time, and cost × time.
+- Include added calls, fallback frequency, retries, and any duplicated inference.
+- Show break-even conditions for Clef-first and verifier strategies.
+- Use optimistic, central, and pessimistic scenarios when measurements are unavailable.
+- Treat eligibility and quality as gates; do not trade them away inside a weighted score.
+- Distinguish microbenchmark improvements from end-to-end gains.
+
+Also compare Clef integration against competing optimizations available in this codebase, such as shorter observations, reduced repeated context, batching selected-document extraction, fewer submission steps, improved caching, and concurrency changes. Explain the opportunity cost of spending engineering time on Clef.
+
+Return:
+1. An evidence-based description of the current bottlenecks.
+2. A comparison table covering all materially distinct options and useful combinations.
+3. A ranked recommendation: what to try first, what to defer, and what to reject, with reasons and uncertainty.
+4. A concrete design for the strongest option, including code locations, pseudocode, fallback rules, and feature flags.
+5. A minimal experimental plan to decide whether to adopt it:
+   - Representative synthetic and perturbed cases.
+   - Offline decision replay where valid.
+   - Paired end-to-end runs with controlled settings and repeated measurements.
+   - Quality, eligibility, latency distribution, total cost, fallback rate, and cost × time.
+   - Explicit acceptance and rollback criteria.
+6. The measurements or facts that could change your recommendation.
+
+Do not assume integration is the right answer. Recommend retaining Qwen-only if the evidence supports it. Make a clear decision rather than ending with an unranked list of possibilities.
+
+Cite repository files and line numbers for implementation claims, identify the run logs behind measured claims, and link authoritative sources for external claims. Keep observed facts, estimates, and hypotheses clearly distinguishable.
+</pasted_content id="756e">
+
+---
+
+<task-notification>
+<task-id>bh13a6tmp</task-id>
+<tool-use-id>toolu_01PGc3x4PWLpVaHH74yoSWGp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bh13a6tmp.output</output-file>
+<status>completed</status>
+<summary>Background command "Follow test run logs until it ends, reconnecting on drops" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+build the qwen only optimization
+
+---
+
+<task-notification>
+<task-id>bob9ajfw6</task-id>
+<tool-use-id>toolu_01Hgq2v33Bo5msNMduwEMZmT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bob9ajfw6.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until the evidence phase ends" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bd6k9ca59</task-id>
+<tool-use-id>toolu_0166xrEYEoLTko9dfcJCmg4i</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bd6k9ca59.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full local dry run against scouting sites" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bczb6yldr</task-id>
+<tool-use-id>toolu_01NhDAAqxRRptjBRpRbDm7DA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bczb6yldr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until the submission phase ends" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>kyk9o3zfh</task-id>
+<status>failed</status>
+<summary>MCP task kyk9o3zf (atira/wait_for_run) failed.</summary>
+<result>
+Task failed: Cannot reach https://ehl-challenge.atira.ai: read ETIMEDOUT
+</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>km1hgt356</task-id>
+<status>failed</status>
+<summary>MCP task km1hgt35 (atira/wait_for_run) failed.</summary>
+<result>
+Task failed: Cannot reach https://ehl-challenge.atira.ai: read ETIMEDOUT
+</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b07l5pcci</task-id>
+<summary>Monitor event: "dry-run milestones and failures"</summary>
+<event>[Monitor expired after 30m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
+
+---
+
+the run failed
+
+---
+
+try another run
+
+---
+
+<task-notification>
+<task-id>k7w87d091</task-id>
+<status>completed</status>
+<summary>MCP task k7w87d09 (atira/wait_for_run) completed.</summary>
+<result>
+run_08a1efee7266fc54 · test run on the public dataset · package 96cfe31c9b11 (33 files) "qwen-only: steps tool, review prefetch, start overlap"
+Status failed, phase done · Failure: Run exited with code 0 without submitting an answer (no answer)
+Started 2026-10-10 21:15 UTC · finished 2026-10-10 21:33 UTC · ran 18:16
+Phases: queued -01:05 · provisioning -01:00 · setup -00:51 · running 00:00 · scoring 17:45 · done 18:16
+Score: quality 0, not eligible, cost $0.1071, time 18:16
+Next: diagnose_run for why it failed.
+Run page: https://ehl-challenge.atira.ai/runs/run_08a1efee7266fc54
+</result>
+</task-notification>
+
+---
+
+Der vorherige Run ist getimeouted. Versuche einen neuen test run
+
+---
+
+<task-notification>
+<task-id>bx5u173v4</task-id>
+<tool-use-id>toolu_0164bDQHXf3pebo8frQ2KCGU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bx5u173v4.output</output-file>
+<status>killed</status>
+<summary>Background command "Start local model proxy for the cache probe" was stopped after reaching its background time limit</summary>
+<note>If the work in progress still needs it, start it again with `run_in_background` and a longer `timeout`. If it already had the longest `timeout` allowed, do not restart it. Either way, report that it was stopped.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>kg2l0bcr7</task-id>
+<status>failed</status>
+<summary>MCP task kg2l0bcr (atira/wait_for_run) failed.</summary>
+<result>
+Task failed: Cannot reach https://ehl-challenge.atira.ai: read ETIMEDOUT
+</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>kxnm4adak</task-id>
+<status>completed</status>
+<summary>MCP task kxnm4ada (atira/wait_for_run) completed.</summary>
+<result>
+run_ab2f9cfa8bff8ff6 · test run on the public dataset · package 96cfe31c9b11 (33 files) "qwen-only: steps tool, review prefetch, start overlap (retry)"
+Status finished, phase done
+Started 2026-10-10 21:43 UTC · finished 2026-10-10 21:51 UTC · ran 07:15
+Phases: queued -01:10 · provisioning -01:03 · setup -00:54 · running 00:00 · done 07:15 · scoring 07:23
+Score: quality 100, eligible, cost $0.0890, time 07:15
+Next: get_run for its score and points per field; run_profile for where the time went.
+Run page: https://ehl-challenge.atira.ai/runs/run_ab2f9cfa8bff8ff6
+</result>
+</task-notification>
+
+---
+
+versuche noch einen test run
+
+---
+
+restart, the platform failed
+
+---
+
+<task-notification>
+<task-id>kivkfyc8b</task-id>
+<status>failed</status>
+<summary>MCP task kivkfyc8 (atira/wait_for_run) failed.</summary>
+<result>
+Task failed: Cannot reach https://ehl-challenge.atira.ai: Connect Timeout Error (attempted addresses: 172.67.136.125:443, 104.21.7.151:443, timeout: 10000ms)
+</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b97gjcqpg</task-id>
+<tool-use-id>toolu_015gbFxLfdZ2sLEBvQfm3JgV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/b97gjcqpg.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll test run status until it ends" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2mz8tg4e</task-id>
+<tool-use-id>toolu_015DyZ6Js4Zab7GL2CGWviyu</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/b2mz8tg4e.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll test run status with corrected end match" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b31go3gjz</task-id>
+<tool-use-id>toolu_01E2YS7AdEhYGT2deTRnjnhd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/b31go3gjz.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll new test run status until it ends" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+wie können wir die evidenzphase optimieren?
+
+---
+
+<task-notification>
+<task-id>bqnodv7zu</task-id>
+<tool-use-id>toolu_01X3AACtfZRkUoao81MTETtm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bqnodv7zu.output</output-file>
+<status>failed</status>
+<summary>Background command "Start local model proxy for the dry run" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bliui63xo</task-id>
+<tool-use-id>toolu_01Sez8W45W2pTHCdNwZePthd</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-korbi-Documents-coding-isar-labs-ehl/4ea7f72b-f9ae-4b4e-8784-7404c283169e/tasks/bliui63xo.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll sandbox test run until it ends" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+starte noch drei testruns
