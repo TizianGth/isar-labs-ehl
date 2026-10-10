@@ -65,13 +65,19 @@ async def main() -> int:
         sites=[a["siteId"] for a in run["access"]], submission=run.get("submission", {}).get("kind"))
     async with async_playwright() as playwright:
         sites, browsers = await open_sites(playwright, run["access"])
-        started = await asyncio.gather(*(site.start() for site in sites.values()), return_exceptions=True)
+        # A site that cannot be reached at once must not block the others: missions retry it later.
+        started = await asyncio.gather(*(asyncio.wait_for(site.start(), timeout=100) for site in sites.values()),
+                                       return_exceptions=True)
         for site, outcome in zip(sites.values(), started):
             log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
                 error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
-        result = await orchestrator.run_all(replay)
+        try:   # last line of defence: the run ends in time even if something hangs
+            result = await asyncio.wait_for(orchestrator.run_all(replay), timeout=max(60, orchestrator.end - time.time() + 45))
+        except asyncio.TimeoutError:
+            log("watchdog_timeout")
+            result = orchestrator.result
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,

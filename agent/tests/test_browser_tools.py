@@ -117,3 +117,31 @@ def test_hover_wait_scroll_and_visual_fallback(monkeypatch):
     assert "inspect_visual" in hint
     assert "4711" in visual and "Belegnummer 4711" in text and "(visual)" in text
     assert any(isinstance(u, list) and any(part.get("type") == "image_url" for part in u) for u in seen_parts)
+
+
+def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
+    """Regression (sandbox run_1a09…): a page whose JS never returns must not hang start/observe."""
+    import time
+    import rfq.browser.site as site_module
+    monkeypatch.setattr(site_module, "EVAL_TIMEOUT", 1)
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8",
+                                    body="<html><body><p>busy</p><script>setTimeout(() => { while (true) {} }, 50)</script></body></html>")
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("frozen", BASE, {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=40)
+            await asyncio.sleep(0.3)                      # now the page's JS never returns
+            started = time.time()
+            observation = await asyncio.wait_for(site.observe(), timeout=40)
+            took = time.time() - started
+            await browser.close()
+            return observation, took
+    observation, took = asyncio.run(scenario())
+    assert took < 10 and "unreadable" in observation

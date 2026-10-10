@@ -43,6 +43,23 @@ Wichtig: Das Oracle ist **unser** Soll und noch nicht durch einen Sandbox-Test-R
 | 9 | Deadline-Wächter feinjustieren: wenn Evidenz > 9 min → sofort mit Teildaten abgeben | orchestrator |
 | 10 | Prompt-Härtung gegen andere Site-Layouts (SPA, Tabs statt Menüs, englische Labels) | alle |
 
+## Backlog von Codex (B01–B09) — Stand nach Commit 7ce4c30
+
+| ID | Status | Umsetzung | Test |
+| --- | --- | --- | --- |
+| B01 | erledigt | `read_all_pages(next_ref, kind)` sammelt **und** extrahiert in einem Schritt, listet Links der Seiten, Wiederholung = Cache (`site.collections`), `read_collection`; Provenienz mit echten Seiten-URLs (`via=collection`) | `test_browser_tools.py::test_collection_offers_links_and_is_not_reloaded` |
+| B02 | erledigt | Missionsende = `asyncio.Event`; ERP startet je Kataloggruppe sobald bekannt, wartet nie auf eine beendete Spezifikation; je Mission max. 1 Recovery mit Fehlerkontext | `test_deadlines.py` (Abbruch weckt ERP, doppelte Gruppen) |
+| B03 | erledigt | `review.py::validate_review` (Feld für Feld, kritisch vs. optional) vor dem Signieren; Zustände prepared/attempted/confirmed/failed/unknown; Dialogfreigabe wird immer zurückgesetzt; Erfolg nur mit Bestätigung | `test_review.py` |
+| B04 | erledigt | `inspect_visual(question, ref?)`: Element-/Viewport-Screenshot + Textansicht an Qwen (Live-Smoke: Canvas-Text korrekt in 1,9 s), Budget 3/Mission, Antwort fließt als „visual“ in den Seitentext | `test_browser_tools.py::test_hover_wait_scroll_and_visual_fallback` |
+| B05 | erledigt | `hover`, `press_key`, `scroll` (innere Bereiche/iframes), `wait_for` (max. 10 s), Load-more-Buttons in `read_all_pages`, stabile Frame-Refs | dito |
+| B06 | erledigt | `read_document` (Link/Download-Button, ZIP-Liste → gewähltes Mitglied, PDF via pypdf, CSV/TXT/HTML, Login-Seite erkannt, Größenlimits) | `test_documents.py` |
+| B07 | erledigt | „ungültig/invalid/ersetzt“ ≠ aktuell, `is_current=False` gewinnt; `no_bid` nur nach nachweislich vollständiger ERP-Suche; unbekannter Status = UNCERTAIN | `test_evidence_gaps.py` |
+| B08 | erledigt | eigenes Run-Budget 18 min (`RFQ_RUN_BUDGET`), Deadline begrenzt Slot-Wartezeit, Call-Timeout und Retries; Abgabe mit harter Obergrenze | `test_deadlines.py` (hängender Client, belegte Slots) |
+| B09 | teilweise | Paket-Manifest geprüft (31 Dateien, keine Caches), Runs in `dev/runs/LOG.md`; Pipeline-PR #1 (Codex) noch auf pytest/`agent/` anzupassen | — |
+
+Zusätzlich: Mail-Checkliste nach Themen des Briefs (nicht nur Ordner), kürzere Schritt-Historie (−Tokens).
+Lokal (Run 7, Commit vor Mail-Fix): Oracle-Schätzung 96,1/100, 6,5 min, 964 k Input-Tokens (516 k gecacht) ≈ $0,09.
+
 ## So testet man schnell
 
 ```bash

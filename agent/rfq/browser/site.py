@@ -18,6 +18,16 @@ from ..log import log
 OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
 MAX_OBSERVATION = 14000
+EVAL_TIMEOUT = 12
+
+
+async def _eval(target, script: str, arg, timeout: float | None = None):
+    """page/frame.evaluate with a time limit: a page stuck in navigation must never block the agent."""
+    timeout = timeout or EVAL_TIMEOUT
+    try:
+        return await asyncio.wait_for(target.evaluate(script, arg), timeout)
+    except asyncio.TimeoutError:
+        raise PlaywrightError(f"evaluate timed out after {timeout}s")
 
 
 class Site:
@@ -50,7 +60,9 @@ class Site:
         log("native_dialog", site=self.site_id, type=dialog.type, message=dialog.message[:200],
             accept=self.accept_next_dialog)
         try:
-            if self.accept_next_dialog:
+            if dialog.type == "beforeunload":   # dismissing it would block every navigation
+                await dialog.accept()
+            elif self.accept_next_dialog:
                 self.accept_next_dialog = False
                 await dialog.accept()
             else:
@@ -66,10 +78,18 @@ class Site:
         return self.page
 
     # ---------------------------------------------------------------- navigation + guards
+    async def _fresh_page(self) -> None:
+        """Continue in a new tab when the current one is stuck (the old one is left alone, not closed)."""
+        log("fresh_tab", site=self.site_id)
+        self.page = await self.context.new_page()
+        self._wire(self.page)
+
     async def goto(self, url: str, frame: Frame | None = None) -> None:
-        page = self.page
-        target = frame or page
+        target = frame or self.page
         for attempt in range(4):
+            if attempt == 2 and frame is None:      # two failures in this tab: it may be stuck
+                await self._fresh_page()
+                target = self.page
             try:
                 response = await target.goto(url, wait_until="domcontentloaded")
                 if response is not None and response.status >= 500:
@@ -84,6 +104,12 @@ class Site:
 
     async def settle(self, rounds: int = 6) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
+        try:
+            await asyncio.wait_for(self._settle(rounds), timeout=45)
+        except asyncio.TimeoutError:
+            log("settle_timeout", site=self.site_id, url=_short(self.page.url if self.page else ""))
+
+    async def _settle(self, rounds: int) -> None:
         page = await self._ensure_page()
         for _ in range(rounds):
             try:
@@ -120,13 +146,13 @@ class Site:
 
     async def _guard_state(self) -> dict:
         try:
-            return await self.page.evaluate(GUARDS_JS, {"op": "state"}) or {}
+            return await _eval(self.page, GUARDS_JS, {"op": "state"}) or {}
         except PlaywrightError:
             return {}
 
     async def _click_js(self, op: str) -> bool:
         try:
-            return bool(await self.page.evaluate(GUARDS_JS, {"op": op}))
+            return bool(await _eval(self.page, GUARDS_JS, {"op": op}))
         except PlaywrightError:
             return False
 
@@ -134,7 +160,7 @@ class Site:
         count = 0
         for frame in self.page.frames:
             try:
-                count += int(await frame.evaluate(GUARDS_JS, {"op": op}) or 0)
+                count += int(await _eval(frame, GUARDS_JS, {"op": op}) or 0)
             except PlaywrightError:
                 pass
         return count
@@ -176,7 +202,7 @@ class Site:
                 continue
             self._frames[index] = frame
             try:
-                result = await frame.evaluate(OBSERVE_JS, {"prefix": "e" if index == 0 else f"f{index}e"})
+                result = await _eval(frame, OBSERVE_JS, {"prefix": "e" if index == 0 else f"f{index}e"})
             except PlaywrightError as error:
                 parts.append(f"=== frame {index} {frame.url}: unreadable ({str(error)[:80]})")
                 continue
@@ -235,7 +261,10 @@ class Site:
                 await self._run_guards_everywhere("close_overlays")
                 method = getattr(self, f"_do_{name}")
                 accepted = inspect.signature(method).parameters
-                message = await method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")})
+                message = await asyncio.wait_for(
+                    method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")}), timeout=60)
+            except asyncio.TimeoutError:
+                message = f"ERROR: {name} did not finish within 60 s"
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
             await self.settle()
@@ -414,7 +443,7 @@ class Site:
         """Short, bounded wait for an observable condition (never a blind sleep)."""
         condition = str(condition or "change").strip()
         limit = asyncio.get_running_loop().time() + max(0.5, min(float(timeout_s or 6), 10))
-        before = await self.page.evaluate("() => document.body ? document.body.innerText.length : 0")
+        before = await _eval(self.page, "() => document.body ? document.body.innerText.length : 0", None)
         while asyncio.get_running_loop().time() < limit:
             try:
                 if condition in ("enabled", "visible") and ref:
@@ -423,10 +452,10 @@ class Site:
                         return f"condition '{condition}' met"
                 elif condition.startswith("text:"):
                     words = condition[5:].strip().lower()
-                    if words and words in (await self.page.evaluate("() => document.body.innerText")).lower():
+                    if words and words in (await _eval(self.page, "() => document.body.innerText", None)).lower():
                         return f"text '{words}' appeared"
                 elif condition == "change":
-                    now = await self.page.evaluate("() => document.body ? document.body.innerText.length : 0")
+                    now = await _eval(self.page, "() => document.body ? document.body.innerText.length : 0", None)
                     if now != before:
                         return "the page changed"
             except (PlaywrightError, ValueError):
