@@ -185,3 +185,17 @@ Only fill fields that are on this page; leave others null and conditions [] if n
 }""",
     },
 }
+
+# X-4 (RFQ_SCHEMA_TRIM): materials without the `description` prose the rules never read. Output tokens make an
+# extraction slow (about 21 ms each). Offline replay on 11 saved pages x 3: same facts, 16 % fewer output tokens.
+# Mail stays as it is: without the copied body the model marked valid approvals as drafts (8 of 27 replays).
+KINDS_TRIM: dict[str, dict] = {
+    **KINDS,
+    "materials": {**KINDS["materials"], "schema": KINDS["materials"]["schema"].replace('"description": "...", ', "")},
+}
+
+
+def kinds() -> dict[str, dict]:
+    """The extraction kinds in use (see flags.SCHEMA_TRIM)."""
+    from .. import flags
+    return KINDS_TRIM if flags.SCHEMA_TRIM else KINDS

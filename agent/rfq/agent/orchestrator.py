@@ -20,7 +20,7 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
-from .prompts import BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM
+from .prompts import BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM, kinds
 from .submit import submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
@@ -79,7 +79,7 @@ class Orchestrator:
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
     async def extract(self, kind: str, text: str, url: str, via: str = "page") -> str:
-        spec = KINDS.get(kind)
+        spec = kinds().get(kind)
         if spec is None:
             return f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"
         key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()

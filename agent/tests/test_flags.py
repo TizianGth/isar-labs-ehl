@@ -64,3 +64,14 @@ def test_split_brief_starts_with_the_core_and_keeps_it(monkeypatch):
     assert merged["tender_reference"] == "XT-1" and merged["director_localpart"] == "boss" and merged["sites"] == core["sites"]
     (seconds, first), merged = asyncio.run(scenario(False))
     assert seconds >= 0.5 and first["director_localpart"] == "boss" and first["tender_reference"] == "XT-1"
+
+
+def test_trimmed_schema_only_drops_the_material_description(monkeypatch):
+    """X-4: the mail body stays (dropping it flipped is_draft_or_preview in offline replays)."""
+    from rfq.agent import prompts
+    monkeypatch.setattr(flags, "SCHEMA_TRIM", True)
+    trimmed = prompts.kinds()
+    assert '"description"' not in trimmed["materials"]["schema"] and '"description"' in prompts.KINDS["materials"]["schema"]
+    assert trimmed["mail_message"] == prompts.KINDS["mail_message"]
+    monkeypatch.setattr(flags, "SCHEMA_TRIM", False)
+    assert prompts.kinds() is prompts.KINDS
