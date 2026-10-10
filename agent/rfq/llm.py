@@ -60,20 +60,22 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             log("llm_deadline", tag=tag, attempt=attempt)
             raise DeadlineExceeded(tag)
         started = time.monotonic()
+        slots = _slots
         try:
-            await asyncio.wait_for(_slots.acquire(), timeout=left - 2)
+            await asyncio.wait_for(slots.acquire(), timeout=left - 2)
         except asyncio.TimeoutError:
             log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
             raise DeadlineExceeded(tag)
         try:
-            response = await client().chat.completions.create(**kwargs, timeout=max(2.0, min(per_call, end - time.time())))
-        except Exception as error:  # network, 5xx, timeouts, queue: retry with backoff
+            try:
+                response = await client().chat.completions.create(**kwargs, timeout=max(2.0, min(per_call, end - time.time())))
+            finally:
+                slots.release()
+        except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
-            _slots.release()
             await asyncio.sleep(max(0.0, min(delay, end - time.time() - 3)))
             delay = min(delay * 2, 8)
             continue
-        _slots.release()
         seconds = time.monotonic() - started
         message = response.choices[0].message
         tokens = response.usage
