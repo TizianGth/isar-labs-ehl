@@ -24,8 +24,11 @@ _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
 # would have answered is probably stuck in a queue, so an identical twin is sent and the first answer wins.
 # Measured over 3,000+ calls of our runs: tool calls p50 2.2 s / p99 9.7 s, JSON extractions p50 7.9 s / p99 30 s;
-# a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s).
-HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
+# a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s). Healthy tool calls with long
+# arguments (a form's `steps`, many URLs) take up to ~18 s, and a twin is billed in full even when it loses: tool calls
+# are hedged after 20 s, not earlier.
+HEDGE_AFTER = {True: float(os.environ.get("RFQ_HEDGE_TOOLS_S", "20")),     # tools / no tools; slower when recent
+               False: float(os.environ.get("RFQ_HEDGE_JSON_S", "30"))}    # calls are slower (3x their median)
 MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
 _hedging = 0
 QUIET_CALLS = bool(os.environ.get("CHALLENGE_RUN_TOKEN"))   # in a run the platform keeps only the end of the log

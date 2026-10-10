@@ -99,3 +99,12 @@ def test_thinking_calls_are_not_hedged(monkeypatch, fast_hedge):
     started, _ = _install(monkeypatch, ("answer", 0.3))
     asyncio.run(llm.chat([], thinking=True, deadline=time.time() + 60))
     assert started == [0]
+
+
+def test_healthy_long_tool_calls_are_not_hedged(monkeypatch):
+    """P-1: the slowest healthy tool call measured in 584 sandbox calls took 18 s (long `steps`/URL arguments); a
+    twin is billed in full even when it loses, so tool calls get a twin only after 20 s."""
+    monkeypatch.setattr(llm, "_recent", {True: [], False: []})
+    assert llm._hedge_after(True) >= 20 and llm._hedge_after(False) >= 30
+    monkeypatch.setattr(llm, "_recent", {True: [8.0] * 10, False: []})     # slow phase: 3x the typical latency
+    assert llm._hedge_after(True) == 24.0
