@@ -146,3 +146,14 @@ def test_mail_address_forms():
     assert mail_address("Anna Berg <A.Berg@Firma.example>") == "a.berg@firma.example"
     assert mail_address(" a.berg@firma.example ") == "a.berg@firma.example"
     assert mail_address(None) == ""
+
+
+def test_a_withdrawal_dated_after_the_scenario_has_no_effect_yet():
+    """A Q&A answer published after the scenario date cannot withdraw anything today."""
+    bb = _evidence()
+    entries = bb["clarifications"][0]["data"]["entries"]
+    entries.append({"number": "15", "datetime_utc": "2030-04-20T10:00:00Z",
+                    "facts": [{"type": "withdrawal", "withdrawn_number": "5"}]})
+    result = build(CTX, bb)
+    assert result.answer["positions"][0]["quantity"] == 10          # #5 stays valid; #12 stays withdrawn (by #13)
+    assert any("no effect" in line for line in result.trace)

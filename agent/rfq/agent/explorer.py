@@ -394,10 +394,12 @@ def _body(text: str) -> str:
 
 
 def _next_link(text: str, label: str) -> str | None:
+    """Address of the link labelled like the chosen next-page link, wherever it sits: table rows and pagers
+    often put several links in one line ("Vorherige Seite ; Nächste Seite")."""
     for line in text.splitlines():
-        match = re.match(r'\[\w+\] link "(.*?)" -> (\S+)', line.strip())
-        if match and match.group(1).strip() == label:
-            return match.group(2)
+        for match in _LINK.finditer(line):
+            if match.group(1).strip() == label:
+                return match.group(2)
     return None
 
 

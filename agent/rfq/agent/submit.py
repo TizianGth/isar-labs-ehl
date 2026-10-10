@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from .. import llm
 from ..log import log
+from ..rules import parse
 from .explorer import TOOLS, Explorer, Mission, _tool
 from .prompts import EXTRACT_SYSTEM, KINDS
 from .review import validate_review
@@ -76,9 +77,13 @@ class SubmitExplorer(Explorer):
         orch = self.orchestrator
         before = len(orch.bb.items.get("mail_message", []))
 
+        def ours(m: dict) -> bool:                    # a TAN for another tender must never sign this bid
+            return not m.get("reference") or _mentions(m.get("reference"), orch.brief.get("tender_reference"))
+
         def tan_progress() -> tuple[str, bool]:
-            found = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:] if (i["data"].get("data") or {}).get("tan")]
-            return (f"TAN messages extracted since the request: {len(found)}", bool(found))
+            found = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:]
+                     if (i["data"].get("data") or {}).get("tan") and ours(i["data"])]
+            return (f"TAN messages for {orch.brief.get('tender_reference')} extracted since the request: {len(found)}", bool(found))
 
         mission = Mission("tan", f"""A signing TAN for tender {orch.brief.get('tender_reference')} was just requested and
 arrives as a new message in the inbox (no search needed, maybe reload the inbox). Find the NEWEST TAN message
@@ -89,11 +94,14 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         site.fresh_start()
         await site.goto(site.url)
         await Explorer(site, mission, orch.extract).run()
-        tans = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:]
-                if (i["data"].get("data") or {}).get("tan")]
-        if not tans:
+        best, problem = pick_tan([i["data"] for i in orch.bb.items.get("mail_message", [])[before:]],
+                                 orch.brief.get("tender_reference"))
+        if problem == "foreign":
+            log("tan_foreign")
+            return (f"ERROR: the new TAN messages belong to other tenders, not {orch.brief.get('tender_reference')}; "
+                    "reload the inbox and call get_tan again")
+        if best is None:
             return "ERROR: no TAN message found yet; wait a moment and call get_tan again"
-        best = max(tans, key=lambda m: int(re.sub(r"\D", "", str((m.get("data") or {}).get("request_number") or 0)) or 0))
         self.tan = str(best["data"]["tan"]).strip()
         log("tan", tan_found=True)
         return f"TAN: {self.tan} (valid for a few minutes; type it into the TAN field now, then submit_bid)"
@@ -112,7 +120,11 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         review = validate_review(answer, await self._read("bid_review", page_text), skipped)
         log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
             verified=len(review["verified"]))
-        if review["blocking"] and self.review_blocks < 2 and orch.end - time.time() > 150:
+        left = orch.end - time.time()
+        wrong_reference = any(m.startswith("tender_reference") for m in review["mismatches"])
+        # A wrong reference makes the bid ineligible anyway: keep fixing it until the last minute. Other critical
+        # mismatches get three fixing rounds while time allows; afterwards a partial bid beats no bid.
+        if review["blocking"] and ((wrong_reference and left > 60) or (self.review_blocks < 3 and left > 150)):
             self.review_blocks += 1
             return ("ERROR: the review page does not match our bid; fix before signing (use the form's back/edit "
                     "functions, keep the TAN step for last):\n- " + "\n- ".join(review["mismatches"] + review["missing"]))
@@ -159,6 +171,24 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             if outcome.get("confirmed") or outcome.get("errors"):
                 return outcome
         return outcome
+
+
+def _mentions(text, reference) -> bool:
+    """'Ausschreibung VG-1' mentions VG-1; 'VG-11' does not."""
+    t, r = parse.clean(text).upper(), parse.clean(reference).upper()
+    return bool(r) and re.search(rf"(?<![A-Z0-9]){re.escape(r)}(?![A-Z0-9])", t) is not None
+
+
+def pick_tan(messages: list[dict], reference) -> tuple[dict | None, str]:
+    """The newest TAN message (highest request number) for our tender. A TAN of another tender never signs this
+    bid; a TAN message that names no tender counts as ours. Returns (message, "") or (None, "none" | "foreign")."""
+    tans = [m for m in messages if (m.get("data") or {}).get("tan")]
+    mine = ([m for m in tans if parse.norm_id(m.get("reference")) == parse.norm_id(reference)]
+            or [m for m in tans if _mentions(m.get("reference"), reference)]
+            or [m for m in tans if not m.get("reference")])
+    if not mine:
+        return None, "foreign" if tans else "none"
+    return max(mine, key=lambda m: int(re.sub(r"\D", "", str((m.get("data") or {}).get("request_number") or 0)) or 0)), ""
 
 
 async def submit_bid(orch, result) -> None:

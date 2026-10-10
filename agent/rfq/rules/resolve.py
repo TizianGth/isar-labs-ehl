@@ -84,8 +84,16 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         for e in item["data"].get("entries") or []:
             if e.get("number"):
                 entries[norm_id(e["number"])] = e
-    withdrawn = {norm_id(f.get("withdrawn_number")) for e in entries.values() for f in e.get("facts") or []
+    def in_force(e: dict) -> bool:            # dated after the scenario date: no effect yet, nor its withdrawals
+        at = when(e.get("datetime_utc"))
+        return at is None or at <= T
+
+    withdrawn = {norm_id(f.get("withdrawn_number")) for e in entries.values() if in_force(e) for f in e.get("facts") or []
                  if f.get("type") == "withdrawal" and f.get("withdrawn_number")}
+    later = sorted({norm_id(f.get("withdrawn_number")) for e in entries.values() if not in_force(e)
+                    for f in e.get("facts") or [] if f.get("type") == "withdrawal" and f.get("withdrawn_number")})
+    if later:
+        note(f"withdrawals dated after the scenario date (no effect): {later}")
     if withdrawn:
         note(f"withdrawn Q&A answers: {sorted(withdrawn)}")
     facts = []                                                   # (datetime, number, fact)

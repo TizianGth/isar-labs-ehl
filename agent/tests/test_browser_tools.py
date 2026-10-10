@@ -207,3 +207,56 @@ def test_decisive_steps_get_a_fresh_start_on_a_site():
     site._recoveries = 8
     site.fresh_start()
     assert site.hung == {} and site._recoveries == 0
+
+
+def test_next_page_link_inside_a_table_row():
+    """Pagers in table rows hold several links in one line; the next page must still be found."""
+    from rfq.agent.explorer import _next_link
+    row = ('| Seite 2 von 3 ; [e6] link "Vorherige Seite" -> /qa?page=1 ; [e7] link "Nächste Seite" -> /qa?page=3 ; '
+           '[e8] link "Drucken" -> /qa/print |')
+    assert _next_link(row, "Nächste Seite") == "/qa?page=3"
+    assert _next_link('[e1] link "Nächste Seite" -> /next', "Nächste Seite") == "/next"
+    assert _next_link('| [e6] link "Vorherige Seite" -> /qa?page=2 |', "Nächste Seite") is None   # the last page
+
+
+def test_a_click_folds_only_its_own_popup(monkeypatch):
+    """Another mission's tab in the same browser context is neither closed nor loaded into our tab."""
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                url = route.request.url
+                if url.endswith("/opener"):
+                    body = ("<html><body><p>Start page of the test portal</p><button onclick=\"window.open('/target')\">Open</button>"
+                            "<button onclick=\"window.otherMission()\">Mark</button></body></html>")
+                elif url.endswith("/target"):
+                    body = "<html><body><p>Target window with its own readable content</p></body></html>"
+                else:
+                    body = "<html><body><p>A page another mission works on right now</p></body></html>"
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("popups", BASE + "/opener", {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=40)
+            others = []
+
+            async def other_mission():          # another mission opens a tab exactly while our click is handled
+                others.append(await context.new_page())
+                await others[0].goto(BASE + "/elsewhere")
+
+            await site.page.expose_function("otherMission", other_mission)
+            # 1) our click opens nothing while another mission opens a tab: that tab is not ours to fold
+            marked = await site.act("click", {"ref": _ref(await site.observe(), "Mark")})
+            await asyncio.sleep(0.5)
+            other = others[0]
+            first = (marked, other.is_closed(), site.page.url)
+            # 2) our click opens a window: it is loaded in our tab
+            opened = await site.act("click", {"ref": _ref(await site.observe(), "Open")})
+            state = (first, opened, site.page.url, other.is_closed())
+            await browser.close()
+            return state
+    (marked, other_closed, url_after_mark), opened, url_after_open, other_closed_later = asyncio.run(scenario())
+    assert marked == "clicked" and not other_closed and url_after_mark.endswith("/opener")
+    assert "popup window opened" in opened and url_after_open.endswith("/target") and not other_closed_later

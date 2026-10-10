@@ -377,22 +377,32 @@ class Site:
                 return f"opened {href}"
             return (f"ERROR: {href} did not load (the page keeps hanging). Use another route: e.g. a 'load more' "
                     f"button, another link to the same content, or continue with other work and come back later.")
-        pages_before = set(self.context.pages)
+        popups = self._watch_popups()
         try:
-            await el.click(timeout=5000)
-        except PlaywrightError:
-            await self._run_guards_everywhere("close_overlays")
             try:
-                await el.click(timeout=4000)
+                await el.click(timeout=5000)
             except PlaywrightError:
-                await el.dispatch_event("click")
-        await asyncio.sleep(0.3)
-        folded = await self._fold_popups(pages_before)
+                await self._run_guards_everywhere("close_overlays")
+                try:
+                    await el.click(timeout=4000)
+                except PlaywrightError:
+                    await el.dispatch_event("click")
+            await asyncio.sleep(0.3)
+        finally:
+            self._unwatch_popups(popups)
+        folded = await self._fold_popups(popups)
         return "clicked" + (f"; {folded}" if folded else "")
 
-    async def _fold_popups(self, pages_before: set) -> str:
+    def _watch_popups(self) -> "_Popups":
+        """Windows opened by THIS tab from now on (other missions open tabs in the same browser context)."""
+        return _Popups(self.page)
+
+    def _unwatch_popups(self, popups: "_Popups") -> None:
+        popups.stop()
+
+    async def _fold_popups(self, popups: list) -> str:
         """A new window (window.open, target=_blank) is loaded in our tab instead, so the model keeps one view."""
-        for popup in set(self.context.pages) - pages_before:
+        for popup in list(popups):
             try:
                 await popup.wait_for_load_state("domcontentloaded", timeout=8000)
                 url = popup.url
@@ -523,14 +533,17 @@ class Site:
         return "hovering (menus/tooltips that open on hover are now shown)"
 
     async def _do_press_key(self, key: str, ref: str | None = None) -> str:
-        pages_before = set(self.context.pages)
-        if ref:
-            _, el = await self._element(ref)
-            await el.press(str(key), timeout=4000)
-        else:
-            await self.page.keyboard.press(str(key))
-        await asyncio.sleep(0.4)
-        folded = await self._fold_popups(pages_before)
+        popups = self._watch_popups()
+        try:
+            if ref:
+                _, el = await self._element(ref)
+                await el.press(str(key), timeout=4000)
+            else:
+                await self.page.keyboard.press(str(key))
+            await asyncio.sleep(0.4)
+        finally:
+            self._unwatch_popups(popups)
+        folded = await self._fold_popups(popups)
         return f"pressed {key}" + (f"; {folded}" if folded else "")
 
     async def _do_wait_for(self, condition: str, ref: str | None = None, timeout_s: float = 6) -> str:
@@ -607,6 +620,25 @@ class Site:
             except (PlaywrightError, ValueError):
                 pass
         return await self.page.screenshot(type="jpeg", quality=60)
+
+
+class _Popups(list):
+    """The windows one tab opens while it acts (window.open, target=_blank): the page's own popup events, so a
+    helper tab another mission opens meanwhile in the same browser context is never taken for one."""
+
+    def __init__(self, page: Page):
+        super().__init__()
+        self.page = page
+        page.on("popup", self._opened)
+
+    def _opened(self, popup: Page) -> None:
+        self.append(popup)
+
+    def stop(self) -> None:
+        try:
+            self.page.remove_listener("popup", self._opened)
+        except Exception:
+            pass
 
 
 async def _close_quietly(page: Page) -> None:
