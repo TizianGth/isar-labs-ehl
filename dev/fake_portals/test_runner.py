@@ -69,7 +69,7 @@ class RunnerCancellationTests(unittest.IsolatedAsyncioTestCase):
             folder = root / 'run'; folder.mkdir()
             args = SimpleNamespace(agent=source, python=Path(sys.executable), budget=480,
                 submit_reserve=180, parallel=2, model_base='http://127.0.0.1:8765/qwen/v1',
-                model_key='local', visible=False, browsers_path=None, case='baseline')
+                model_key='local', visible=False, browsers_path=None, case='baseline', profile='classic')
             with PortalCluster('baseline', 'classic') as cluster:
                 code = await execute(args, cluster, folder)
             report = json.loads((folder / 'report.json').read_text())
@@ -93,7 +93,7 @@ class RunnerCancellationTests(unittest.IsolatedAsyncioTestCase):
             folder = root / 'run'; folder.mkdir()
             args = SimpleNamespace(agent=source, python=Path(sys.executable), budget=480,
                 submit_reserve=180, parallel=2, model_base='http://127.0.0.1:8765/qwen/v1',
-                model_key='local', visible=False, browsers_path=None, case='baseline')
+                model_key='local', visible=False, browsers_path=None, case='baseline', profile='classic')
             with PortalCluster('baseline', 'classic') as cluster:
                 task = asyncio.create_task(execute(args, cluster, folder))
                 for _ in range(100):
