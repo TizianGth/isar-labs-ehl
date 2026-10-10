@@ -40,6 +40,11 @@ Voraussetzungen: [`uv`](https://docs.astral.sh/uv/), die Atira-CLI (`atira login
 
 ## Wichtig
 
+Synthetische Tests gegen sechs unterschiedliche lokale Portal-UIs:
+`make fake-test`, `make fake-browser`, `make fake-serve` und `make fake-matrix`.
+Details und Grenzen: [dev/fake_portals/README.md](dev/fake_portals/README.md).
+Die Fixtures und Goldens liegen ausschließlich in `dev/`, außerhalb des Uploads.
+
 - **Paket ist immer `agent/`.** `atira test-run .` im Root ist absichtlich nicht möglich (kein `agent.json` im Root):
   es würde `dev/` mit der Public-Lösung und `docs/` hochladen — bei einer Submission ein Fair-Play-Verstoß.
   Alternativ direkt: `cd agent && atira test-run .`

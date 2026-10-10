@@ -6,10 +6,12 @@ AGENT := agent
 RUNS  := dev/runs
 OUT   ?= $(RUNS)/local.json
 
+include dev/fake_portals/Makefile.inc
+
 .PHONY: help setup test leaks manifest check test-run run-local score replay status clean
 
 help: ## Diese Übersicht
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  make %-10s %s\n", $$1, $$2}'
+	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  make %-10s %s\n", $$1, $$2}'
 
 setup: ## Einmalig: Abhängigkeiten und Chromium für lokale Läufe installieren
 	cd $(AGENT) && uv sync && uv run --no-sync playwright install chromium

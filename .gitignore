@@ -28,6 +28,7 @@ blob-report/
 
 # Logs
 *.log
+dev/runs/fake-portals/
 
 # Runtime research artifact (may contain tender, supplier, ERP and mail content)
 evidence.json
