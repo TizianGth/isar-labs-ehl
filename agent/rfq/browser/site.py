@@ -670,15 +670,18 @@ class Site:
         return await self.page.screenshot(type="jpeg", quality=60), "the visible part of the page"
 
     async def _largest_picture(self, frame):
-        """The largest visible canvas/image without text (a scanned document, a drawn price table), or None."""
+        """The largest visible canvas (else image) of at least 200x200 px: a scanned document or a drawn price table,
+        labelled or not (labels like 'scanned document' do not carry the content); None when there is none."""
         handle = await frame.evaluate_handle("""() => {
-            let best = null, area = 40000;
-            for (const e of document.querySelectorAll('canvas, img')) {
-                if (e.getAttribute('aria-label') || e.getAttribute('alt')) continue;
-                const b = e.getBoundingClientRect(), a = b.width * b.height;
-                if (a > area && getComputedStyle(e).visibility !== 'hidden') { best = e; area = a; }
+            for (const kind of ['canvas', 'img']) {
+                let best = null, area = 40000;
+                for (const e of document.querySelectorAll(kind)) {
+                    const b = e.getBoundingClientRect(), a = b.width * b.height;
+                    if (a > area && getComputedStyle(e).visibility !== 'hidden') { best = e; area = a; }
+                }
+                if (best) return best;
             }
-            return best; }""")
+            return null; }""")
         element = handle.as_element()
         return element
 

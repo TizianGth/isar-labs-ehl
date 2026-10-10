@@ -159,12 +159,15 @@
     if (t === "CANVAS" || t === "IMG" || t === "SVG" || role === "img") {
       const label = clean(el.getAttribute("aria-label") || el.getAttribute("alt") || el.getAttribute("title") || (t === "CANVAS" ? el.textContent : ""));
       if (label) emit(`[${t === "IMG" || t === "CANVAS" ? t.toLowerCase() : "img"}: ${label}]`);
-      else if (t === "CANVAS" || t === "IMG") {
+      if (t === "CANVAS" || t === "IMG") {
         const box = el.getBoundingClientRect();
         const size = `${Math.round(box.width)}x${Math.round(box.height)} px`;
         if (box.width * box.height >= 2500) {        // real pictures, not icons: targetable by inspect_visual
-          flush(); out.push(`[${ref(el)}] ${t === "CANVAS" ? "canvas without text: needs screenshot" : "image without text"} (${size})`);
-        } else if (t === "IMG") emit("[image without text]");
+          // a label may be generic ("scanned document") and not carry the content: the picture keeps a ref
+          flush(); out.push(`[${ref(el)}] ${t === "CANVAS" ? "canvas" : "image"}${label ? "" : " without text"}` +
+                            `${t === "CANVAS" && !label ? ": needs screenshot" : ""} (${size})`);
+        } else if (!label && t === "IMG") emit("[image without text]");
+        else if (!label) emit("[canvas without text: needs screenshot]");
       }
       if (block) flush();
       return;

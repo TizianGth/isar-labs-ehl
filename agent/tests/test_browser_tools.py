@@ -377,3 +377,35 @@ def test_a_chain_stops_when_the_form_changes_under_it():
             return result, stroke
     result, stroke = asyncio.run(scenario())
     assert "STOPPED, the form changed" in result and stroke == "" and "Observe the page and continue" in result
+
+
+def test_a_labelled_scan_is_still_a_picture_to_read(monkeypatch):
+    """Fake portal scanned/future-withdrawal: the canvas said only 'Scanned document attachment', got no ref, and
+    the screenshots showed the tab button next to it."""
+    async def fake_ask_json(system, user, **kwargs):
+        return {"answer": "Staffel ab 10: 9,50", "uncertain": None}
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask_json)
+    page = ("<html><body><button>3. Conditions and quantity tiers</button>"
+            "<canvas aria-label='Scanned document attachment' width='500' height='300'></canvas></body></html>")
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=page)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("scan2", BASE + "/cond", {"username": "u", "password": "p"}, context)
+            await asyncio.wait_for(site.start(), timeout=40)
+            observation = await site.observe()
+            explorer = Explorer(site, Mission("t", "goal", {}, deadline=10**10), None)
+            seen = await explorer._inspect_visual("Welche Staffeln?", _ref(observation, "3. Conditions"))
+            await browser.close()
+            return observation, seen
+    observation, seen = asyncio.run(scenario())
+    assert "[canvas: Scanned document attachment]" in observation
+    assert re.search(r"\[\w+\] canvas \(500x300 px\)", observation) and "inspect_visual" in _hints(observation, True)
+    assert "largest picture" in seen and "9,50" in seen

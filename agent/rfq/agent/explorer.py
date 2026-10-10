@@ -393,7 +393,7 @@ def _content_lines(text: str) -> set[str]:
 
 def _hints(observation: str, vision_left: bool) -> str:
     hints = []
-    if vision_left and re.search(r"(?:canvas|image) without text", observation):
+    if vision_left and re.search(r"(?:canvas|image) without text|\[(?:f\d+)?e\d+\] canvas", observation):
         hints.append("This page shows a picture without text alternative. If you need its content, use inspect_visual "
                      "with the picture's ref ([eN] canvas/image line), not the ref of a tab or button.")
     return "\n".join(hints)
