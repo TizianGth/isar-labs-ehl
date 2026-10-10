@@ -41,10 +41,13 @@ TOOLS = [
           "button to press right after (e.g. the form's apply/update button).",
           {"ref": _REF, "option": {"type": "string"}, "then_click": _REF}, ["ref", "option"]),
     _tool("check", "Tick or untick a checkbox/radio.", {"ref": _REF, "checked": {"type": "boolean"}}, ["ref"]),
-    _tool("fill_fields", "Fill several form fields at once (text inputs, selects by option text, checkboxes with "
-          "true/false), optionally pressing a button afterwards.",
+    _tool("fill_fields", "Fill several form fields at once, in order (text inputs, selects by option text, "
+          "checkboxes with true/false), optionally pressing a button afterwards. Dependent selects (a choice must be "
+          "applied before the next field opens): give each such field \"apply\": <ref of the apply/übernehmen "
+          "button>; it is pressed right after that field, so a whole chain of choices takes one step.",
           {"fields": {"type": "array", "items": {"type": "object", "properties": {"ref": {"type": "string"},
-           "value": {"type": "string"}}, "required": ["ref", "value"]}}, "then_click": _REF}, ["fields"]),
+           "value": {"type": "string"}, "apply": {"type": "string"}}, "required": ["ref", "value"]}},
+           "then_click": _REF}, ["fields"]),
     _tool("set_slider", "Move a range slider (value 'max' for fully right).",
           {"ref": _REF, "value": {"type": "string"}}, ["ref"]),
     _tool("hover", "Move the mouse over an element (menus or tooltips that open on hover).", {"ref": _REF}, ["ref"]),

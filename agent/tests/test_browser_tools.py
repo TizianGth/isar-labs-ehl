@@ -300,3 +300,77 @@ def test_vision_targets_the_document_and_never_looks_twice(monkeypatch):
     assert not re.search(r"\[\w+\] image without text", observation)       # a 16 px icon is no document
     assert "largest picture" in first and "12,50" in first
     assert again.startswith("ERROR: this screenshot is identical") and used == 1 and len(calls) == 1
+
+
+CASCADE = """<html><body><form id="f"></form><script>
+const state = {bore: "", extra: false, stroke: "", mount: "", level: 1};
+function render() {
+  const opt = (vals, sel) => vals.map((v) => `<option${v === sel ? " selected" : ""}>${v}</option>`).join("");
+  document.getElementById("f").innerHTML =
+    `<label>Bohrung <select name="bore">${opt(["", "40", "50"], state.bore)}</select></label>` +
+    (state.extra ? `<label>Variante <select name="variant"><option></option><option>A</option></select></label>` : "") +
+    `<label>Hub <select name="stroke" ${state.level < 2 ? "disabled" : ""}>${opt(["", "500", "600"], state.stroke)}</select></label>` +
+    `<label>Befestigung <select name="mount" ${state.level < 3 ? "disabled" : ""}>${opt(["", "Flansch", "Fuss"], state.mount)}</select></label>` +
+    `<button type="button" onclick="apply()">Auswahl übernehmen</button>`;
+}
+function apply() {
+  const f = document.getElementById("f");
+  state.bore = f.bore.value; state.stroke = f.stroke.value; state.mount = f.mount.value;
+  state.level = Math.min(3, state.level + 1);
+  state.extra = location.hash === "#insert";
+  render();                 // the whole form again: earlier element handles are gone
+}
+render();
+</script></body></html>"""
+
+
+def _cascade_site(p, fragment=""):
+    async def make():
+        browser = await p.chromium.launch()
+        context = await browser.new_context()
+
+        async def handle(route):
+            await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=CASCADE)
+
+        await context.route(f"{BASE}/**", handle)
+        site = Site("form", BASE + "/form" + fragment, {"username": "u", "password": "p"}, context)
+        await asyncio.wait_for(site.start(), timeout=40)
+        return browser, site
+    return make()
+
+
+def _select_ref(observation: str, name: str) -> str:
+    return re.search(r'\[(\w+)\] select "' + name, observation).group(1)
+
+
+def test_a_chain_of_dependent_selects_takes_one_step():
+    async def scenario():
+        async with async_playwright() as p:
+            browser, site = await _cascade_site(p)
+            seen = await site.observe()
+            apply = _ref(seen, "Auswahl übernehmen")
+            result = await site.act("fill_fields", {"fields": [
+                {"ref": _select_ref(seen, "Bohrung"), "value": "50", "apply": apply},
+                {"ref": _select_ref(seen, "Hub"), "value": "600", "apply": apply},
+                {"ref": _select_ref(seen, "Befestigung"), "value": "Flansch"}]})
+            values = await site.page.evaluate("() => { const f = document.getElementById('f'); return [f.bore.value, f.stroke.value, f.mount.value]; }")
+            await browser.close()
+            return result, values
+    result, values = asyncio.run(scenario())
+    assert values == ["50", "600", "Flansch"] and "STOPPED" not in result and "ERROR" not in result
+
+
+def test_a_chain_stops_when_the_form_changes_under_it():
+    async def scenario():
+        async with async_playwright() as p:
+            browser, site = await _cascade_site(p, "#insert")
+            seen = await site.observe()
+            apply = _ref(seen, "Auswahl übernehmen")
+            result = await site.act("fill_fields", {"fields": [
+                {"ref": _select_ref(seen, "Bohrung"), "value": "50", "apply": apply},
+                {"ref": _select_ref(seen, "Hub"), "value": "600", "apply": apply}]})
+            stroke = await site.page.evaluate("() => document.getElementById('f').stroke.value")
+            await browser.close()
+            return result, stroke
+    result, stroke = asyncio.run(scenario())
+    assert "STOPPED, the form changed" in result and stroke == "" and "Observe the page and continue" in result

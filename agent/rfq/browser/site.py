@@ -475,22 +475,48 @@ class Site:
         return "; then " + await self._do_click(str(ref))
 
     async def _do_fill_fields(self, fields: list, then_click: str | None = None) -> str:
-        """Several form fields in one step: text inputs, selects and checkboxes, each verified."""
-        results = []
-        for field in fields or []:
-            ref, value = str(field.get("ref")), field.get("value")
+        """Several form fields in one step: text inputs, selects and checkboxes, each verified. A field with "apply"
+        is followed by a click on that button (dependent selects: a choice must be applied before the next field
+        opens); then the form is observed again and every remaining field must still be the same field (name, id,
+        label). On an error or a changed form the step stops and says how far it got."""
+        fields = [f for f in fields or [] if isinstance(f, dict)]
+        identity = {}
+        for field in fields:
+            try:
+                _, el = await self._element(str(field.get("ref")))
+                identity[str(field.get("ref"))] = await el.evaluate(_FIELD_ID)
+            except (PlaywrightError, ValueError):
+                pass
+        results, stopped = [], False
+        for index, field in enumerate(fields):
+            ref, value, apply = str(field.get("ref")), field.get("value"), field.get("apply")
             try:
                 _, el = await self._element(ref)
+                if ref in identity and await el.evaluate(_FIELD_ID) != identity[ref]:
+                    results.append(f"{ref}: STOPPED, the form changed and {ref} is another field now")
+                    stopped = True
+                    break
                 tag, kind = await el.evaluate("e => [e.tagName, e.type]")
                 if tag == "SELECT":
-                    results.append(f"{ref}: " + await self._select(ref, str(value)))
+                    result = await self._select(ref, str(value))
                 elif kind in ("checkbox", "radio"):
-                    on = str(value).lower() not in ("false", "0", "no", "nein", "")
-                    results.append(f"{ref}: " + await self._do_check(ref, on))
+                    result = await self._do_check(ref, str(value).lower() not in ("false", "0", "no", "nein", ""))
                 else:
-                    results.append(f"{ref}: " + await self._do_type(ref, str(value)))
+                    result = await self._do_type(ref, str(value))
             except (PlaywrightError, ValueError) as error:
-                results.append(f"{ref}: ERROR {str(error).splitlines()[0][:150]}")
+                result = f"ERROR {str(error).splitlines()[0][:150]}"
+            results.append(f"{ref}: {result}")
+            if apply:
+                if result.startswith("ERROR"):
+                    stopped = True
+                    break
+                results.append(f"applied ({apply}): " + await self._do_click(str(apply)))
+                await self.settle(rounds=3)
+                await self.observe()          # the form may have been rendered again: refs in page order again
+        if stopped:
+            done = [str(f.get("ref")) for f in fields[:index]]
+            return ("; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "
+                    "with the remaining fields.")
         return "; ".join(results) + await self._then_click(then_click)
 
     async def _do_set_slider(self, ref: str, value: str = "max") -> str:
@@ -644,6 +670,11 @@ class Site:
             return best; }""")
         element = handle.as_element()
         return element
+
+
+_FIELD_ID = """e => { const l = e.labels && e.labels[0];       // the label's own words, not the options inside it
+    const own = l ? [...l.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' ').trim() : '';
+    return [e.tagName, e.name || '', e.id || '', own || e.getAttribute('aria-label') || e.getAttribute('placeholder') || ''].join('|'); }"""
 
 
 class _Popups(list):

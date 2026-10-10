@@ -212,10 +212,12 @@ Procedure and traps:
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
   preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung).
 - Positions may come in any order: read the position number on the page and use THAT position's line of the table.
-  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button,
-  e.g. "Auswahl übernehmen">) — the next filter stays disabled until the choice is applied. When our catalogue number is selectable,
-  use fill_fields once for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges,
-  packaging, project bonus; they may sit in a collapsed section) and the lead time; then go to the next step.
+  The product filters of a position depend on each other (the next one stays disabled until the choice is applied):
+  set ALL of them in ONE fill_fields step, one field per filter in page order, each with "apply": <ref of the form's
+  apply button, e.g. "Auswahl übernehmen">. If that step stops, continue from where it stopped. When our catalogue
+  number is selectable, use ONE fill_fields for catalogue number, quantity, unit price, the price breakdown fields
+  (base, surcharges, packaging, project bonus; they may sit in a collapsed section) and the lead time, with
+  then_click on the button that saves the position / goes to the next one.
 - Never use "add position" (extra positions cost points). Use "omit position" only for positions marked SKIP.
 - Discount and NET total: type our values; ignore any displayed gross amount incl. VAT or other suggested totals.
 - Declarations: acknowledge the tender documents; do NOT accept/declare your own terms and conditions (AGB).
