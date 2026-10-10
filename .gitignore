@@ -1,6 +1,35 @@
-.venv/
+# Python bytecode and test/type-check caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments and local configuration/secrets
+.venv/
+venv/
+env/
 .env
 .env.*
+!.env.example
+
+# Build outputs and local run artifacts
+build/
+dist/
+*.egg-info/
 *.tar.gz
+test-results/
+playwright-report/
+blob-report/
+
+# Logs
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
