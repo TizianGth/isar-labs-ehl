@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01L6oo2xaFaffr5TCDMMu7pP",
+  "agent_id": "ae5a302f830352302",
+  "subagent_type": "Explore",
+  "task_description": "Explore submit flow and WT diff",
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 199052,
+    "cache_read_tokens": 4473121,
+    "output_tokens": 12198,
+    "api_call_count": 41
+  },
+  "started_at": "2026-10-11T01:31:43.325125+02:00",
+  "completed_at": "2026-10-11T01:40:27.58588+02:00"
+}

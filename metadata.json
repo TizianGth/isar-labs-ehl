@@ -3,13 +3,14 @@
   "checkpoint_id": "01M4M3FCQJ0TBRP1RVYTRKBS0H",
   "strategy": "manual-commit",
   "branch": "perf/master",
-  "checkpoints_count": 4,
+  "checkpoints_count": 7,
   "files_touched": [
     "agent/rfq/agent/explorer.py",
     "agent/rfq/agent/orchestrator.py",
     "agent/rfq/agent/submit.py",
     "agent/rfq/browser/site.py",
-    "agent/rfq/llm.py"
+    "agent/rfq/llm.py",
+    "agent/rfq/rules/resolve.py"
   ],
   "sessions": [
     {
@@ -18,13 +19,27 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 220,
-    "cache_creation_tokens": 517621,
-    "cache_read_tokens": 39337561,
-    "output_tokens": 225461,
-    "api_call_count": 112
+    "input_tokens": 346,
+    "cache_creation_tokens": 741197,
+    "cache_read_tokens": 49118219,
+    "output_tokens": 276378,
+    "api_call_count": 172,
+    "subagent_tokens": {
+      "input_tokens": 184,
+      "cache_creation_tokens": 499766,
+      "cache_read_tokens": 8909971,
+      "output_tokens": 25108,
+      "api_call_count": 92
+    }
   }
 }

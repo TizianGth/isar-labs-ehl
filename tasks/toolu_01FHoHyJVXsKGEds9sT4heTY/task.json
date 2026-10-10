@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01FHoHyJVXsKGEds9sT4heTY",
+  "agent_id": "a6d921dbdea17ac55",
+  "subagent_type": "Explore",
+  "task_description": "Explore best package internals",
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 154264,
+    "cache_read_tokens": 1698911,
+    "output_tokens": 5995,
+    "api_call_count": 20
+  },
+  "started_at": "2026-10-11T01:31:43.323755+02:00",
+  "completed_at": "2026-10-11T01:41:24.270985+02:00"
+}
