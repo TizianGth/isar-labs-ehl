@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4KT8BFARKXMXZD8FQEQFJA1",
+  "strategy": "manual-commit",
+  "branch": "wip/batch-cascade",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 33063,
+    "cache_read_tokens": 8604055,
+    "output_tokens": 22889,
+    "api_call_count": 16
+  }
+}
