@@ -3,9 +3,10 @@
   "checkpoint_id": "01M4KB6TCC29KSTAH7T8GDP8WM",
   "strategy": "manual-commit",
   "branch": "feat/agent-orchestrator",
-  "checkpoints_count": 1,
+  "checkpoints_count": 5,
   "files_touched": [
-    "agent/rfq/contract.py"
+    "agent/rfq/contract.py",
+    "agent/tests/test_contract.py"
   ],
   "sessions": [
     {
@@ -14,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 284,
-    "cache_creation_tokens": 487652,
-    "cache_read_tokens": 17181479,
-    "output_tokens": 117205,
-    "api_call_count": 142
+    "input_tokens": 334,
+    "cache_creation_tokens": 520341,
+    "cache_read_tokens": 30454213,
+    "output_tokens": 130675,
+    "api_call_count": 167
   }
 }
