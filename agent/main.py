@@ -49,6 +49,9 @@ async def open_sites(playwright, access: list[dict]) -> tuple[dict[str, Site], l
     return sites, browsers
 
 
+STARTED = time.time()
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
@@ -66,13 +69,14 @@ async def main() -> int:
         for site, outcome in zip(sites.values(), started):
             log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
                 error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
-        orchestrator = Orchestrator(run, sites)
+        orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         result = await orchestrator.run_all(replay)
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
                            "trace": result.trace if result else None, "brief": orchestrator.brief,
+                           "status": orchestrator.status, "erp_complete": sorted(orchestrator.erp_complete),
                            "evidence": orchestrator.bb.dump()}, handle, ensure_ascii=False, indent=2, default=str)
         if not cdp_urls():
             for browser in browsers:

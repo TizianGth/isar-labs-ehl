@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, norm_id, number, same_text, when
+from .parse import cert, clean, day, integer, norm_id, number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -26,6 +26,7 @@ class Context:
     director_localpart: str | None = None
     authorized: dict[str, str] = field(default_factory=dict)      # topic -> sender local part
     mailbox_domain: str | None = None
+    searched_groups: set[str] = field(default_factory=set)        # catalogue groups whose ERP search is complete
 
 
 @dataclass
@@ -108,9 +109,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
 
     # ---------------------------------------------------------------- specification
     revisions = [r for item in bb.get("spec_revisions", []) for r in item["data"].get("revisions") or []]
-    current = [r for r in revisions if r.get("is_current") is True] or \
-              [r for r in revisions if any(w in clean(r.get("status_text")).lower() for w in ("gültig", "aktuell", "current", "valid"))]
+    current = [r for r in revisions if revision_is_current(r)]
     current_rev = norm_id(current[-1]["revision"]) if current else None
+    if len({norm_id(r.get("revision")) for r in current}) > 1:
+        note(f"WARNING several revisions look current: {[r.get('revision') for r in current]}; using {current_rev}")
     note(f"current specification revision: {current_rev}")
     requirements: dict[str, dict] = {}
     for item in bb.get("requirements", []):
@@ -264,9 +266,14 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         if not active:
             if fitting and all(m.get("status_meaning") is None for m in fitting):
                 active = fitting
-                note(f"{pid}: status unknown, using fitting material")
-            elif candidates and not uncertain:
-                no_material.append(pid)
+                note(f"{pid}: UNCERTAIN status unknown for {[m['material_number'] for m in fitting]}; best guess, not proof")
+            elif candidates and not uncertain and group and group in ctx.searched_groups:
+                no_material.append(pid)      # proven: the complete search found no active matching material
+                continue
+            elif candidates:
+                note(f"{pid}: no fitting active material among {[m['material_number'] for m in candidates]}, but the "
+                     f"search of group {group} is not proven complete: position skipped, no no_bid")
+                skipped.append(pid)
                 continue
             else:
                 skipped.append(pid)

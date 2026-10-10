@@ -1,7 +1,10 @@
 """Submission: the model fills the bid form on the website with the computed answer, signs with the TAN from the
-mailbox and confirms the browser dialog. Code checks the summary against the answer before the final click.
-Set RFQ_DRY_RUN=1 to stop before the binding submission (local tests).
+mailbox and confirms the browser dialog. Before the final click the model-read review page is compared field by
+field with our answer (review.py); afterwards success is only reported when the website confirms the receipt.
+States: prepared (dry run) / attempted / confirmed / failed / unknown. Set RFQ_DRY_RUN=1 to stop before the binding
+submission (local tests).
 """
+import asyncio
 import os
 import re
 import time
@@ -10,8 +13,11 @@ from decimal import Decimal
 from .. import llm
 from ..log import log
 from .explorer import TOOLS, Explorer, Mission, _tool
+from .prompts import EXTRACT_SYSTEM, KINDS
+from .review import validate_review
 
-SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in ("read_all_pages", "extract", "extract_urls")] + [
+SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
+                ("read_all_pages", "read_collection", "extract", "extract_urls", "read_document")] + [
     _tool("get_tan", "AFTER you clicked the website's button that requests/sends the signing TAN: fetch the newest "
           "TAN from the bidder's mailbox. Returns the TAN.", {}, []),
     _tool("submit_bid", "Final binding submission: clicks the given button and confirms the browser dialog. Only on "
@@ -51,7 +57,13 @@ def _plain(value) -> str:
 class SubmitExplorer(Explorer):
     orchestrator = None
     tan: str | None = None
-    submitted = False
+    state = "not_started"           # prepared | attempted | confirmed | failed | unknown
+    receipt: str | None = None
+    review_blocks = 0
+
+    @property
+    def submitted(self) -> bool:
+        return self.state in ("confirmed", "prepared")
 
     async def _call(self, name: str, args: dict) -> str:
         if name == "get_tan":
@@ -63,6 +75,7 @@ class SubmitExplorer(Explorer):
     async def _get_tan(self) -> str:
         orch = self.orchestrator
         before = len(orch.bb.items.get("mail_message", []))
+
         def tan_progress() -> tuple[str, bool]:
             found = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:] if (i["data"].get("data") or {}).get("tan")]
             return (f"TAN messages extracted since the request: {len(found)}", bool(found))
@@ -70,8 +83,8 @@ class SubmitExplorer(Explorer):
         mission = Mission("tan", f"""A signing TAN for tender {orch.brief.get('tender_reference')} was just requested and
 arrives as a new message in the inbox (no search needed, maybe reload the inbox). Find the NEWEST TAN message
 (highest request number / most recent) and extract it with extract_urls kind 'mail_message'.""",
-                          {"mail_message": "one opened e-mail message"}, max_steps=10, deadline=orch.end - 20,
-                          progress=tan_progress)
+                          {"mail_message": "one opened e-mail message"}, max_steps=10,
+                          deadline=min(orch.end - 20, time.time() + 120), progress=tan_progress)
         site = orch.site_for("mail")
         await site.goto(site.url)
         await Explorer(site, mission, orch.extract).run()
@@ -84,29 +97,67 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         log("tan", tan_found=True)
         return f"TAN: {self.tan} (valid for a few minutes; type it into the TAN field now, then submit_bid)"
 
+    async def _read(self, kind: str, text: str) -> dict:
+        spec = KINDS[kind]
+        return await llm.ask_json(EXTRACT_SYSTEM, f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n"
+                                  f"{spec['schema']}\n<<<PAGE TEXT>>>\n{text[:40000]}\n<<<END>>>", tag=f"submit:{kind}")
+
     async def _submit(self, ref: str) -> str:
-        if self.submitted:
-            return "ERROR: already submitted"
-        answer = self.orchestrator.result.answer
+        if self.state in ("confirmed", "prepared", "unknown"):
+            return f"ERROR: submission already {self.state}; call finish"
+        orch = self.orchestrator
+        answer, skipped = orch.result.answer, orch.result.skipped
         page_text = await self.site.full_text()
-        problems = []
-        if answer["tender_reference"] not in page_text:
-            problems.append(f"the page does not show the reference {answer['tender_reference']}")
-        if answer["decision"] == "bid" and de(answer["total_net"]) not in page_text:
-            problems.append(f"the page does not show the net total {de(answer['total_net'])}")
-        if problems:
-            return "ERROR: check before submitting failed: " + "; ".join(problems) + ". Go to the review/sign page or fix the values."
+        review = validate_review(answer, await self._read("bid_review", page_text), skipped)
+        log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
+            verified=len(review["verified"]))
+        if review["blocking"] and self.review_blocks < 2 and orch.end - time.time() > 150:
+            self.review_blocks += 1
+            return ("ERROR: the review page does not match our bid; fix before signing (use the form's back/edit "
+                    "functions, keep the TAN step for last):\n- " + "\n- ".join(review["mismatches"] + review["missing"]))
         if os.environ.get("RFQ_DRY_RUN") == "1":
-            self.submitted = self.stop = True
-            log("dry_run_stop", page=page_text[:3000])
+            self.state, self.stop = "prepared", True
+            log("dry_run_stop", review=review, page=page_text[:2000])
             return "DRY RUN: everything is ready; not submitted. Call finish."
         self.site.accept_next_dialog = True
-        result = await self.site.act("click", {"ref": ref})
-        self.submitted = True
-        self.stop = True
-        after = await self.site.observe()
-        log("submitted", result=result, page=after[:2000])
-        return f"{result}. Page now:\n{after[:1500]}"
+        try:
+            result = await self.site.act("click", {"ref": ref})
+        finally:
+            await asyncio.sleep(0.5)
+            self.site.accept_next_dialog = False     # never leave the next dialog pre-approved
+        if result.startswith("ERROR"):
+            self.state = "failed"
+            log("submit_click_failed", result=result)
+            return f"{result}. Nothing was submitted; fix it and call submit_bid again."
+        self.state = "attempted"
+        outcome = await self._outcome()
+        if outcome.get("confirmed"):
+            self.state, self.receipt, self.stop = "confirmed", outcome.get("receipt"), True
+            log("submitted", state=self.state, receipt=self.receipt)
+            return f"CONFIRMED: the website confirmed the bid (receipt {self.receipt}). Call finish."
+        if outcome.get("errors"):
+            self.state = "failed"
+            log("submit_rejected", errors=outcome.get("errors"))
+            return "ERROR: the website did not accept the bid: " + "; ".join(map(str, outcome["errors"])) + \
+                   ". Fix it and call submit_bid again."
+        self.state, self.stop = "unknown", True
+        log("submit_unknown", outcome=outcome)
+        return "The outcome is unclear; not retrying to avoid a double submission. Call finish."
+
+    async def _outcome(self) -> dict:
+        """Read the page after the final click (twice if the first look is inconclusive)."""
+        for attempt in range(2):
+            try:
+                await self.site.act("wait_for", {"condition": "change", "timeout_s": 4})
+                text = await self.site.observe(limit=6000)
+            except Exception as error:     # the run may end right after acceptance (logins stop working)
+                log("submit_observe_failed", error=str(error)[:200])
+                return {}
+            outcome = await self._read("submission_result", text)
+            log("submit_outcome", attempt=attempt + 1, outcome=outcome, page=text[:1500])
+            if outcome.get("confirmed") or outcome.get("errors"):
+                return outcome
+        return outcome
 
 
 async def submit_bid(orch, result) -> None:
@@ -138,13 +189,15 @@ Procedure and traps:
 - Discount and NET total: type our values; ignore any displayed gross amount incl. VAT or other suggested totals.
 - Declarations: acknowledge the tender documents; do NOT accept/declare your own terms and conditions (AGB).
 - On the final review page compare everything with the table above. Then click the button that requests the TAN,
-  call get_tan, type the TAN, and call submit_bid with the ref of the final binding submit button.
+  call get_tan, type the TAN, and call submit_bid with the ref of the final binding submit button. submit_bid checks
+  the review page against our bid and only reports success when the website confirms the receipt.
 - If the page reports validation errors, fix them and continue."""
-    mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000)
+    mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000, max_visual=2)
     site = orch.site_for("tender")
     explorer = SubmitExplorer(site, mission, orch.extract)
     explorer.orchestrator = orch
     explorer.mission.kinds = {}
     started = time.time()
     await explorer.run(SUBMIT_TOOLS)
-    log("submit_phase_done", seconds=round(time.time() - started, 1), submitted=explorer.submitted)
+    log("submit_phase_done", seconds=round(time.time() - started, 1), state=explorer.state, receipt=explorer.receipt,
+        mission_status=explorer.status)

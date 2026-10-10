@@ -123,10 +123,11 @@ def test_conditional_discount_fails_below_threshold():
     assert build(CTX, bb).answer["discount_percent"] == 0.0
 
 
-def test_no_bid_when_only_blocked_material():
+def test_no_bid_when_only_blocked_material_and_search_complete():
     bb = _evidence()
     bb["materials"][0]["data"]["materials"][0]["status_meaning"] = "blocked"
-    answer = build(CTX, bb).answer
+    ctx = Context(**{**CTX.__dict__, "searched_groups": {"G1", "G2"}})
+    answer = build(ctx, bb).answer
     assert answer["decision"] == "no_bid" and answer["positions"] == [] and answer["total_net"] == 0
 
 

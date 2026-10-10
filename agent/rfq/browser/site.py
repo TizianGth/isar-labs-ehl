@@ -6,6 +6,7 @@ action answers with a fresh observation instead of raising.
 """
 import asyncio
 import html
+import inspect
 import re
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -26,6 +27,9 @@ class Site:
         self.origin = urlparse(self.url).netloc
         self.logins = 0
         self.seen_urls: set[str] = set()
+        self.collections: dict = {}             # read_all_pages results (shared by all missions on this site)
+        self.visual_notes: dict[str, list[str]] = {}   # url -> answers read from screenshots
+        self._frames: dict[int, Frame] = {}     # frame index of the last observation -> frame (refs stay valid)
         self.lock = asyncio.Lock()   # one action at a time per site page
 
     # ---------------------------------------------------------------- lifecycle
@@ -166,9 +170,11 @@ class Site:
     async def observe(self, limit: int = MAX_OBSERVATION) -> str:
         page = await self._ensure_page()
         parts = [f"URL: {page.url}"]
+        self._frames = {}
         for index, frame in enumerate(page.frames):
             if frame.is_detached():
                 continue
+            self._frames[index] = frame
             try:
                 result = await frame.evaluate(OBSERVE_JS, {"prefix": "e" if index == 0 else f"f{index}e"})
             except PlaywrightError as error:
@@ -201,12 +207,23 @@ class Site:
                 continue
             extra = await self.read_url(url, follow_iframes=False)
             text += f"\n=== content of iframe source {url} ===\n{extra}"
+        notes = self.visual_notes.get(self.page.url.split("#")[0])
+        if notes:
+            text += "\n=== read from a screenshot of this page (visual) ===\n" + "\n".join(notes)
         return text
+
+    def note_visual(self, url: str, note: str) -> None:
+        self.visual_notes.setdefault(url.split("#")[0], []).append(note)
 
     def _locate(self, ref: str):
         page = self.page
         match = re.fullmatch(r"f(\d+)e\d+", ref)
-        frame = page.frames[int(match.group(1))] if match and int(match.group(1)) < len(page.frames) else page.main_frame
+        frame = page.main_frame
+        if match:
+            index = int(match.group(1))
+            frame = self._frames.get(index)
+            if frame is None or frame.is_detached():
+                frame = page.frames[index] if index < len(page.frames) else page.main_frame
         return frame, frame.locator(f'[data-agent-ref="{ref}"]')
 
     # ---------------------------------------------------------------- actions (never raise)
@@ -216,7 +233,9 @@ class Site:
                 await self._ensure_page()
                 # Delayed popups (surveys, notices) may have opened since the last observation.
                 await self._run_guards_everywhere("close_overlays")
-                message = await getattr(self, f"_do_{name}")(**args)
+                method = getattr(self, f"_do_{name}")
+                accepted = inspect.signature(method).parameters
+                message = await method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")})
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
             await self.settle()
@@ -246,17 +265,22 @@ class Site:
             except PlaywrightError:
                 await el.dispatch_event("click")
         await asyncio.sleep(0.3)
-        for popup in set(self.context.pages) - pages_before:   # fold popups back into our tab
+        folded = await self._fold_popups(pages_before)
+        return "clicked" + (f"; {folded}" if folded else "")
+
+    async def _fold_popups(self, pages_before: set) -> str:
+        """A new window (window.open, target=_blank) is loaded in our tab instead, so the model keeps one view."""
+        for popup in set(self.context.pages) - pages_before:
             try:
                 await popup.wait_for_load_state("domcontentloaded", timeout=8000)
                 url = popup.url
                 await popup.close()
                 if url and url != "about:blank":
                     await self.goto(url)
-                    return f"clicked; a popup window opened {url} and was loaded here instead"
+                    return f"a popup window opened {url} and was loaded here instead"
             except PlaywrightError:
                 pass
-        return "clicked"
+        return ""
 
     async def _ready(self, el) -> str | None:
         """Make a form control usable (open collapsed <details> around it); explain why it is not."""
@@ -353,19 +377,68 @@ class Site:
         await self.goto(url)
         return f"opened {url}"
 
-    async def _do_scroll(self, ref: str | None = None) -> str:
+    async def _do_scroll(self, ref: str | None = None, direction: str = "down", amount: int = 600) -> str:
+        delta = abs(int(amount or 600)) * (-1 if direction == "up" else 1)
+        if ref:
+            frame, el = await self._element(ref)
+            if await el.evaluate("e => e.tagName") in ("IFRAME", "FRAME"):
+                inner = await el.content_frame()
+                if inner:
+                    await inner.evaluate(f"window.scrollBy(0, {delta})")
+                    return f"scrolled inside the frame by {delta}px"
+            moved = await el.evaluate(f"e => {{ const before = e.scrollTop; e.scrollBy(0, {delta}); return e.scrollTop - before; }}")
+            if not moved:
+                await el.scroll_into_view_if_needed()
+            return f"scrolled the element by {moved}px" if moved else "scrolled the element into view"
+        await self.page.mouse.wheel(0, delta)
+        return f"scrolled the page by {delta}px"
+
+    async def _do_hover(self, ref: str) -> str:
+        _, el = await self._element(ref)
+        await el.hover(timeout=4000)
+        await asyncio.sleep(0.3)
+        return "hovering (menus/tooltips that open on hover are now shown)"
+
+    async def _do_press_key(self, key: str, ref: str | None = None) -> str:
+        pages_before = set(self.context.pages)
         if ref:
             _, el = await self._element(ref)
-            await el.scroll_into_view_if_needed()
+            await el.press(str(key), timeout=4000)
         else:
-            await self.page.mouse.wheel(0, 700)
-        return "scrolled"
+            await self.page.keyboard.press(str(key))
+        await asyncio.sleep(0.4)
+        folded = await self._fold_popups(pages_before)
+        return f"pressed {key}" + (f"; {folded}" if folded else "")
+
+    async def _do_wait_for(self, condition: str, ref: str | None = None, timeout_s: float = 6) -> str:
+        """Short, bounded wait for an observable condition (never a blind sleep)."""
+        condition = str(condition or "change").strip()
+        limit = asyncio.get_running_loop().time() + max(0.5, min(float(timeout_s or 6), 10))
+        before = await self.page.evaluate("() => document.body ? document.body.innerText.length : 0")
+        while asyncio.get_running_loop().time() < limit:
+            try:
+                if condition in ("enabled", "visible") and ref:
+                    _, el = await self._element(ref)
+                    if (condition == "enabled" and await el.is_enabled()) or (condition == "visible" and await el.is_visible()):
+                        return f"condition '{condition}' met"
+                elif condition.startswith("text:"):
+                    words = condition[5:].strip().lower()
+                    if words and words in (await self.page.evaluate("() => document.body.innerText")).lower():
+                        return f"text '{words}' appeared"
+                elif condition == "change":
+                    now = await self.page.evaluate("() => document.body ? document.body.innerText.length : 0")
+                    if now != before:
+                        return "the page changed"
+            except (PlaywrightError, ValueError):
+                pass
+            await asyncio.sleep(0.3)
+        return f"condition '{condition}' not met within the time limit"
 
     # ---------------------------------------------------------------- helpers for model-selected content
     async def spawn(self) -> "Site":
         """Another tab of this website in the same browser context (shares the login session)."""
         twin = Site(self.site_id, self.url, self.credentials, self.context)
-        twin.seen_urls = self.seen_urls
+        twin.seen_urls, twin.collections, twin.visual_notes = self.seen_urls, self.collections, self.visual_notes
         twin.page = await self.context.new_page()
         twin._wire(twin.page)
         await twin.goto(self.url)
@@ -397,7 +470,16 @@ class Site:
         finally:
             await helper.page.close()
 
-    async def screenshot(self) -> bytes:
+    async def screenshot(self, ref: str | None = None) -> bytes:
+        """JPEG of an element (if it has a size) or of the viewport."""
+        if ref:
+            try:
+                _, el = await self._element(ref)
+                box = await el.bounding_box()
+                if box and box["width"] > 4 and box["height"] > 4:
+                    return await el.screenshot(type="jpeg", quality=70, timeout=5000)
+            except (PlaywrightError, ValueError):
+                pass
         return await self.page.screenshot(type="jpeg", quality=60)
 
 

@@ -20,13 +20,24 @@ Rules:
 - Drafts, previews ("Vorschau", "Entwurf", "nicht versandt"), archive copies and superseded revisions are not binding.
 - Do not change data on the websites, do not ask questions to the buyer, do not start the bid submission unless the
   mission says so.
-- Prefer `extract_urls` for documents/messages/detail pages whose links you can see, and `read_all_pages` +
-  `extract(source='collected')` for paginated lists. Extract every relevant page; extraction keeps raw values.
+- Lists that span several pages: `read_all_pages(next_ref=<the 'next page' link or 'load more' button>, kind=...)`
+  reads AND extracts all pages in one step and lists the links found on them; never repeat it for the same list.
+- Detail pages, documents or messages whose links you can see: `extract_urls` (several at once). Files (download
+  buttons, ZIP, PDF): `read_document`. Extraction keeps raw values; extract every relevant page exactly once.
+- If the text view is not enough (picture/canvas without text, content seems hidden, a click keeps failing), use
+  `inspect_visual` with a precise question. Menus that open on hover: `hover`. Keys: `press_key`. Inner scroll areas:
+  `scroll` with their ref. Something loads slowly: `wait_for`.
 - Login, cookie walls, "unlock" sliders and "kein Roboter" checkboxes are mostly handled automatically. If a form asks
   you to copy a number shown on the page (Belegnummer, Empfangsnummer), type it exactly and tick required boxes.
 - Be fast: one tool per step, no unnecessary navigation. Call `finish` when the mission is complete, and list what
   you could not find in `missing`.
 """
+
+VISION_SYSTEM = """You look at a screenshot of a business web page together with its text view. Answer the
+question precisely from what is visible; copy numbers and identifiers exactly. If the screenshot shows something the
+text view does not (hidden menu, overlay, picture with text), say so and name the text-view ref to use next, if any.
+Return JSON: {"answer": "...", "uncertain": "what you could not read or null", "suggested_action": "... or null",
+"refs": ["e12", ...]}"""
 
 BRIEF_SYSTEM = """You read the task brief of a tender-response challenge and return a JSON object. Copy values exactly
 as written in the brief (keep reference strings verbatim). Return:
@@ -54,6 +65,22 @@ asks for normalized values. Never invent values: use null when something is not 
 previews ("Vorschau", "Entwurf", "nicht versandt") and decoy elements. Return one JSON object only."""
 
 KINDS: dict[str, dict] = {
+    "bid_review": {
+        "describe": "the bid summary/review page before signing (what the portal recorded)",
+        "schema": """{"tender_reference": "as shown", "offer_type": "main|alternative|no_bid|unknown (as recorded)",
+ "discount_percent": "raw", "total_net": "raw net total as shown (NOT a gross amount incl. VAT)",
+ "positions": [{"position": "...", "material_number": "...", "quantity": "raw", "unit_price": "raw",
+   "base_unit_price": "raw or null", "surcharge_per_unit": "raw or null", "packaging_per_unit": "raw or null",
+   "rebate_total": "raw or null", "lead_time_weeks": "raw or null"}],
+ "omitted_positions": ["position numbers listed as omitted/skipped"],
+ "documents_acknowledged": true|false|null, "own_terms_declared": true|false|null}
+Raw values exactly as displayed (keep the page's number format).""",
+    },
+    "submission_result": {
+        "describe": "the page shown after the final binding submission",
+        "schema": """{"confirmed": true if the page confirms that the bid was received/submitted, false if it shows an
+ error or the form again, "receipt": "receipt/confirmation number or null", "errors": ["visible error messages"]}""",
+    },
     "tender_overview": {
         "describe": "tender detail/overview page: reference, buyer, deadline, participation status",
         "schema": """{"tender_reference": "exact", "title": "...", "buyer": "...", "deadline_text": "...",

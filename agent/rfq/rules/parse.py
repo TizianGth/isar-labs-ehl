@@ -91,3 +91,20 @@ NO_CERT = {"", "NONE", "KEINE", "KEINEGEFORDERT", "OHNE", "OHNEZERTIFIZIERUNG", 
 def cert(raw) -> str:
     value = norm_id(raw)
     return "" if value in NO_CERT else value
+
+
+_NOT_CURRENT = re.compile(r"\b(un|nicht\s*)g[üu]ltig|\binvalid|ersetzt|superseded|veraltet|obsolet|zur[üu]ckgezogen|"
+                          r"withdrawn|archiv|entwurf|draft|vorschau|preview|outdated|replaced", re.I)
+_CURRENT = re.compile(r"(?<![a-zäöü])(g[üu]ltig|aktuell|current|valid|freigegeben|maßgeblich|massgeblich|in kraft)\b", re.I)
+
+
+def revision_is_current(revision: dict) -> bool:
+    """A revision counts as current only if it is marked so: an explicit is_current wins; otherwise the status text
+    must say current/valid and must not say invalid/superseded/draft (substring tricks like 'ungültig' do not count)."""
+    flag = revision.get("is_current")
+    if flag is False:
+        return False
+    status = clean(revision.get("status_text"))
+    if status and _NOT_CURRENT.search(status):
+        return False
+    return flag is True or bool(status and _CURRENT.search(status))
