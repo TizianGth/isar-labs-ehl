@@ -148,3 +148,52 @@ def test_a_frozen_page_never_blocks_the_agent(monkeypatch):
     observation, took, replaced = asyncio.run(scenario())
     # the hung tab is detected and replaced by a fresh tab at the last good address
     assert replaced and took < 20 and "busy" in observation
+
+
+def test_hanging_page_falls_back_to_load_more(monkeypatch):
+    """Regression (sandbox run_c8fe…): one pagination page never loads; the list's 'load more' control is used."""
+    import rfq.browser.site as site_module
+    monkeypatch.setattr(site_module, "NAVIGATION_TIMEOUT_MS", 1500)
+    monkeypatch.setattr(site_module, "LOADED_TIMEOUT_MS", 1500)
+    never = asyncio.Event()
+
+    def page(n: int) -> str:
+        return (f"<html><body><ul id='results'><li>Eintrag {n}</li></ul><p>Seite {n} von 4</p>"
+                f"<a href='/list?page={n + 1}'>Nächste Seite</a>"
+                f"<button id='more' onclick=\"fetch('/rows?page='+(window.nx=(window.nx||{n})+1)).then(r=>r.text())"
+                f".then(t=>{{document.getElementById('results').insertAdjacentHTML('beforeend',t);"
+                f"if(window.nx>=4)document.getElementById('more').remove();}})\">Weitere laden</button></body></html>")
+
+    async def scenario():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            context = await browser.new_context()
+
+            async def handle(route):
+                path = re.sub(r"^https?://[^/]+", "", route.request.url)
+                if path == "/list?page=3":                # this page never answers (request stays open)
+                    async def later(pending=route):
+                        await never.wait()
+                    asyncio.ensure_future(later())
+                    return
+                if path.startswith("/rows"):
+                    n = int(path.rsplit("=", 1)[1])
+                    body = f"<li>Eintrag {n}</li>"
+                else:
+                    body = page(int(path.rsplit("=", 1)[1])) if path.startswith("/list") else "<html><body>Start</body></html>"
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+
+            await context.route(f"{BASE}/**", handle)
+            site = Site("shop", BASE, {"username": "u", "password": "p"}, context)
+            await site.start()
+            await site.goto(f"{BASE}/list?page=1")
+            explorer = Explorer(site, Mission("t", "goal", {}), None)
+            result = await explorer._read_all_pages(_ref(await site.observe(), "Nächste Seite"), None, 10)
+            collection = list(site.collections.values())[-1]
+            texts = "\n".join(text for _, text in collection.pages)
+            never.set()
+            await browser.close()
+            return result, texts
+    result, texts = asyncio.run(scenario())
+    assert "did not load" in result and "load more" in result
+    assert "Eintrag 3" in texts and "Eintrag 4" in texts

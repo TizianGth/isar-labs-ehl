@@ -20,6 +20,7 @@ GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
 MAX_OBSERVATION = 14000
 EVAL_TIMEOUT = 12
 NAVIGATION_TIMEOUT_MS = 20000
+LOADED_TIMEOUT_MS = 12000
 RESPONSIVE_TIMEOUT = 4
 
 
@@ -43,6 +44,7 @@ class Site:
         self.visual_notes: dict[str, list[str]] = {}   # url -> answers read from screenshots
         self._frames: dict[int, Frame] = {}     # frame index of the last observation -> frame (refs stay valid)
         self.last_good_url: str | None = None   # last address that was observed successfully
+        self.hung: dict[str, int] = {}          # address -> navigations that never arrived (do not insist)
         self._recoveries = 0
         self.lock = asyncio.Lock()   # one action at a time per site page
 
@@ -118,27 +120,64 @@ class Site:
             log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
         await self.settle(recover=False)
 
-    async def goto(self, url: str, frame: Frame | None = None) -> None:
-        target = frame or self.page
-        for attempt in range(4):
-            # After a failure, never insist on the same tab: a hung renderer does not come back.
-            if attempt >= 1 and frame is None and (attempt == 1 or not await self.responsive()):
+    async def goto(self, url: str, frame: Frame | None = None) -> bool:
+        """Navigate the tab (or a frame); True if a readable page arrived. Sites have pages that never finish
+        loading: such an address gets two chances per run, afterwards the caller is told at once (try another route)."""
+        key = url.split("#")[0]
+        if self.hung.get(key, 0) >= 2:
+            log("goto_skipped_hung", site=self.site_id, url=_short(url))
+            return False
+        target, arrived, hard_failure, hangs = frame or self.page, False, False, 0
+        for attempt in range(3):
+            if hangs >= 2:            # a page that hung twice in a row will not come in a third try
+                break
+            # After a hang, never insist on the same tab: a hung renderer does not come back.
+            if hard_failure and frame is None and (attempt == 1 or not await self.responsive()):
                 await self._fresh_page()
                 target = self.page
+            hard_failure = False
             try:
-                response = await target.goto(url, wait_until="domcontentloaded")
+                response = await target.goto(url, wait_until="commit")
                 if response is not None and response.status >= 500:
                     log("http_error", site=self.site_id, status=response.status, url=_short(url))
                     await asyncio.sleep(0.7 * (attempt + 1))
                     continue
-                break
+                if await self._readable(target):
+                    arrived = True
+                    break
+                hard_failure, hangs = True, hangs + 1
             except PlaywrightError as error:
                 log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
+                hard_failure, hangs = True, hangs + 1
                 await asyncio.sleep(0.5)
+        if not arrived:      # no guards on a page that never arrived: they would only wait for timeouts
+            self.hung[key] = self.hung.get(key, 0) + 1
+            log("goto_failed", site=self.site_id, url=_short(url), times=self.hung[key])
+            return False
         await self.settle()
+        return True
+
+    async def _readable(self, target) -> bool:
+        """The document arrived; wait for it to be parsed. If it never finishes (stuck sub-resource or stream) but
+        already shows content, use it anyway."""
+        try:
+            await target.wait_for_load_state("domcontentloaded", timeout=LOADED_TIMEOUT_MS)
+            return True
+        except PlaywrightError:
+            pass
+        try:
+            size = await _eval(target, "() => document.body ? document.body.innerText.length : 0", None, timeout=4)
+        except PlaywrightError:
+            size = 0
+        log("partial_load", site=self.site_id, url=_short(target.url), chars=size)
+        return bool(size and size > 40)
 
     async def settle(self, rounds: int = 6, recover: bool = True) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
+        if not await self.responsive():
+            if recover:
+                await self.recover_tab("tab unresponsive while settling")
+            return
         try:
             await asyncio.wait_for(self._settle(rounds), timeout=45)
         except asyncio.TimeoutError:
@@ -328,8 +367,10 @@ class Site:
         tag = await el.evaluate("e => e.tagName")
         href = await el.get_attribute("href") if tag == "A" else None
         if href and not href.startswith(("#", "javascript:")):
-            await self.goto(urljoin(frame.url, href), frame=None if frame == self.page.main_frame else frame)
-            return f"opened {href}"
+            if await self.goto(urljoin(frame.url, href), frame=None if frame == self.page.main_frame else frame):
+                return f"opened {href}"
+            return (f"ERROR: {href} did not load (the page keeps hanging). Use another route: e.g. a 'load more' "
+                    f"button, another link to the same content, or continue with other work and come back later.")
         pages_before = set(self.context.pages)
         try:
             await el.click(timeout=5000)
@@ -449,8 +490,9 @@ class Site:
             return "ERROR: only URLs of this website can be opened"
         if not self.was_seen(url):
             return "ERROR: this address was not offered on any page you saw; navigate via the links shown instead"
-        await self.goto(url)
-        return f"opened {url}"
+        if await self.goto(url):
+            return f"opened {url}"
+        return f"ERROR: {url} did not load (the page keeps hanging); use another route"
 
     async def _do_scroll(self, ref: str | None = None, direction: str = "down", amount: int = 600) -> str:
         delta = abs(int(amount or 600)) * (-1 if direction == "up" else 1)
@@ -513,7 +555,8 @@ class Site:
     async def spawn(self) -> "Site":
         """Another tab of this website in the same browser context (shares the login session)."""
         twin = Site(self.site_id, self.url, self.credentials, self.context)
-        twin.seen_urls, twin.collections, twin.visual_notes = self.seen_urls, self.collections, self.visual_notes
+        twin.seen_urls, twin.collections, twin.visual_notes, twin.hung = (
+            self.seen_urls, self.collections, self.visual_notes, self.hung)
         twin.page = await self.context.new_page()
         twin._wire(twin.page)
         await twin.goto(self.url)
@@ -534,16 +577,18 @@ class Site:
         if urlparse(url).netloc != self.origin:
             return "ERROR: only URLs of this website can be read"
         helper = Site(self.site_id, self.url, self.credentials, self.context)
-        helper.logins, helper.seen_urls = self.logins, self.seen_urls
+        helper.logins, helper.seen_urls, helper.hung = self.logins, self.seen_urls, self.hung
         helper.page = await self.context.new_page()
         helper._wire(helper.page)
         try:
-            await helper.goto(url)
+            if not await helper.goto(url):          # shares self.hung: the failure is remembered for the site
+                return ("ERROR: the page did not load (it keeps hanging); use another route, e.g. the list's "
+                        "'load more' button or another link to the same content")
             if helper.page.url.rstrip("/") != url.rstrip("/") and "login" not in url:
                 await helper.goto(url)       # after a re-login the site may have dropped the target
             return await helper.full_text(follow_iframes)
         finally:
-            await helper.page.close()
+            await _close_quietly(helper.page)       # closing a hung tab can hang too: bounded
 
     async def screenshot(self, ref: str | None = None) -> bytes:
         """JPEG of an element (if it has a size) or of the viewport."""

@@ -271,27 +271,36 @@ class Explorer:
         key = f"{self.site.page.url}|{href or label}"
         collection = next((c for c in self.site.collections.values() if getattr(c, "key", None) == key), None)
         reused = collection is not None
+        note = ""
         if collection is None:
-            pages = await (self._follow_links(frame, href, label, max_pages) if href
-                           else self._press_load_more(element, max_pages))
+            if href:
+                pages, note = await self._follow_links(frame, href, label, max_pages)
+            else:
+                pages = await self._press_load_more(element, max_pages)
             collection = Collection(f"c{len(self.site.collections) + 1}", pages, _links(pages), key)
             self.site.collections[collection.id] = collection
         links = "\n".join(f"  - {label} -> {url}" for label, url in collection.links[:60])
         text = (f"{collection.id}{' (already collected; nothing reloaded)' if reused else ''}: {len(collection.pages)} pages: "
-                + ", ".join(url for url, _ in collection.pages) + (f"\nlinks on these pages:\n{links}" if links else ""))
+                + ", ".join(url for url, _ in collection.pages) + (f"\n{note}" if note else "")
+                + (f"\nlinks on these pages:\n{links}" if links else ""))
         if kind:
             text += "\n" + await self._extract_collection(collection, str(kind))
         else:
             text += f"\nnot extracted yet: call extract(kind, source='collection', collection_id='{collection.id}')"
         return text
 
-    async def _follow_links(self, frame, href: str, label: str, max_pages: int) -> list[tuple[str, str]]:
+    async def _follow_links(self, frame, href: str, label: str, max_pages: int) -> tuple[list[tuple[str, str]], str]:
+        """Follow the 'next page' link. If a page never loads, the same list's 'load more' control (if any) is used to
+        fetch the remaining rows into the current page instead."""
         pages = [(self.site.page.url, await self.site.full_text())]
         seen = {_body(pages[0][1])}
         url = urljoin(frame.url, href)
         for _ in range(max_pages):
             text = await self.site.read_url(url)
-            if text.startswith("ERROR") or _body(text) in seen:   # past the last page sites repeat it
+            if text.startswith("ERROR"):
+                extra, note = await self._load_more_fallback(frame, url, max_pages)
+                return pages + extra, note
+            if _body(text) in seen:   # past the last page sites repeat it
                 break
             seen.add(_body(text))
             pages.append((url, text))
@@ -299,7 +308,28 @@ class Explorer:
             if not nxt:
                 break
             url = urljoin(url, nxt)
-        return pages
+        return pages, ""
+
+    async def _load_more_fallback(self, frame, failed_url: str, max_pages: int) -> tuple[list[tuple[str, str]], str]:
+        button = frame.locator("button, [role=button], input[type=button]").filter(
+            has_text=re.compile(r"weitere|mehr (laden|anzeigen)|nachladen|load more|show more", re.I))
+        try:
+            available = await button.count() and await button.first.is_visible()
+        except Exception:
+            available = False
+        if not available:
+            log("load_more_unavailable", url=failed_url[:160])
+            return [], (f"NOTE: {failed_url} did not load (it hangs) and this list has no 'load more' control; the "
+                        f"pages above are complete only up to there. Look for another route to the remaining items.")
+        before = _content_lines(await self.site.full_text(follow_iframes=False))
+        extra = await self._press_load_more(button.first, max_pages)
+        grew = bool(_content_lines(extra[0][1]) - before)      # new content lines (controls may disappear)
+        log("load_more_fallback", url=failed_url[:160], grew=grew)
+        if not grew:
+            return [], f"NOTE: {failed_url} did not load (it hangs), and 'load more' brought nothing new either."
+        return [(f"{failed_url}#loaded-more", extra[0][1])], (
+            f"NOTE: {failed_url} did not load (it hangs); its rows were fetched with the list's 'load more' control "
+            f"instead (last page above).")
 
     async def _press_load_more(self, element, max_pages: int) -> list[tuple[str, str]]:
         """'Load more' button: press it until it disappears or the page stops growing; one page as a result."""
@@ -313,7 +343,7 @@ class Explorer:
             except Exception:
                 break
             current = await self.site.full_text(follow_iframes=False)
-            if len(current) <= len(previous):
+            if not _content_lines(current) - _content_lines(previous):   # nothing new arrived
                 break
             previous = current
         return [(self.site.page.url, await self.site.full_text())]
@@ -344,6 +374,11 @@ class Explorer:
         log("visual", site=self.site.site_id, question=question[:200], data=data)
         return ("visual answer: " + json.dumps(data, ensure_ascii=False)[:1200]
                 + "\n(the answer is now part of this page's text for extract)")
+
+
+def _content_lines(text: str) -> set[str]:
+    """Lines that carry content (not controls/refs), to see whether loading more added anything."""
+    return {line.strip() for line in text.splitlines()[1:] if line.strip() and not re.match(r"\[(?:f\d+)?e\d+\]", line.strip())}
 
 
 def _hints(observation: str, vision_left: bool) -> str:
