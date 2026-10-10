@@ -6,6 +6,8 @@ AGENT := agent
 RUNS  := dev/runs
 OUT   ?= $(RUNS)/local.json
 
+include dev/fake_portals/Makefile.inc
+
 .PHONY: help setup test leaks manifest check test-run run-local score replay status clean
 
 help: ## Diese Übersicht

@@ -1,0 +1,5 @@
+__pycache__/
+browser-smoke/
+variant-browser-report.json
+fixture-performance.json
+runs/
