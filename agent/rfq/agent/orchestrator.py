@@ -209,13 +209,25 @@ class Orchestrator:
         qa = self.bb.get("clarifications")
         entries = {parse.norm_id(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}
         collected = any(i.get("via") == "collection" for i in qa)
+        unread, total = self.qa_pages_unread()
         lines = [
             f"[{'x' if positions else ' '}] positions: " + (", ".join(f"{p['position']} {p.get('quantity')} {p.get('unit')} "
                                                                        f"-> {p.get('requirement_ref')}" for p in positions) or "not found yet"),
-            f"[{'x' if entries and collected else ' '}] Q&A entries: {len(entries)}" + (
-                "" if collected or not entries else " (only single pages extracted: read ALL pages with read_all_pages)"),
+            f"[{'x' if entries and collected and not unread else ' '}] Q&A entries: {len(entries)}" + (
+                "" if collected or not entries else " (only single pages extracted: read ALL pages with read_all_pages)")
+            + (f"; Q&A list pages NOT read yet: {unread} of {total} (open them and extract kind 'clarifications')"
+               if unread else ""),
         ]
-        return "\n".join(lines), bool(positions and entries and collected)
+        return "\n".join(lines), bool(positions and entries and collected and not unread)
+
+    def qa_pages_unread(self) -> tuple[list[int], int]:
+        """Pages of a paginated Q&A list that were not extracted (only when the pages state their numbers)."""
+        qa = self.bb.get("clarifications")
+        total = max((parse.integer(i["data"].get("pages_total")) or 0 for i in qa), default=0)
+        read = {parse.integer(i["data"].get("page")) for i in qa} - {None}
+        if not total or not read or total > 50:
+            return [], total
+        return sorted(set(range(1, total + 1)) - read), total
 
     def current_revision(self) -> str | None:
         current = None
@@ -411,7 +423,60 @@ search says there are too many results, add the subject keyword.""",
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
-            status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()})
+            status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    async def recheck_no_bid(self, result: Result) -> Result:
+        """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
+        corrected stroke) is enough to cause it. Before accepting it, one short mission reads every Q&A page again,
+        fresh (no cached pages or extractions), and the rules run once more."""
+        reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line]
+        log("no_bid_recheck", reasons=reasons[:12])
+        site = self.site_for("tender")
+        site.fresh_start()
+        site.collections.clear()
+        self._cache = {k: v for k, v in self._cache.items() if not k.startswith("clarifications")}
+        before = len(self.bb.get("clarifications"))
+
+        def progress() -> tuple[str, bool]:
+            new = self.bb.get("clarifications")[before:]
+            unread, total = self.qa_pages_unread()
+            done = any(i.get("via") == "collection" for i in new) and not unread
+            return (f"Q&A pages read again: {len(new)}" + (f" (pages NOT read yet: {unread} of {total})" if unread else "")
+                    + "\nRead them with read_all_pages(next_ref=<the Q&A list's next-page link>, kind='clarifications')."), done
+
+        mission = self.mission("recheck", f"""Our rules would decide NOT to bid for tender
+{self.brief.get('tender_reference')}, because no material fits some positions:
+{chr(10).join(reasons[:12])}
+The usual reason is a bidder answer that was missed: open the tender's bidder questions & answers (Q&A /
+Bieterfragen) and read ALL their pages again with read_all_pages(kind='clarifications'), then finish. Do not start the
+bid submission.""", ["clarifications"], 14, progress=progress)
+        mission.deadline = min(self.evidence_end, time.time() + 150)
+        try:
+            await asyncio.wait_for(self.run_mission(site, mission, attempts=1), timeout=max(10, mission.deadline - time.time() + 5))
+        except (Exception, asyncio.TimeoutError) as error:
+            log("no_bid_recheck_error", error=f"{type(error).__name__}: {error}"[:300])
+        checked = self.resolve()
+        log("no_bid_recheck_done", decision=checked.answer.get("decision"), qa_read_again=len(self.bb.get("clarifications")) - before)
+        return checked
+
+    def evidence_digest(self) -> dict:
+        """The facts in a few hundred bytes: the platform keeps only the end of a run's log."""
+        qa = self.bb.get("clarifications")
+        facts = [f for i in qa for e in i["data"].get("entries") or [] for f in e.get("facts") or []]
+        unread, total = self.qa_pages_unread()
+        return {
+            "positions": [p.get("position") for p in self.positions()],
+            "qa": sorted({parse.clean(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}),
+            "qa_pages": f"{total - len(unread)}/{total}" if total else None,
+            "qa_facts": {t: sum(1 for f in facts if f.get("type") == t) for t in sorted({f.get("type") for f in facts})},
+            "amendments": [[f.get("revision"), f.get("requirement"), f.get("attribute"), f.get("value")]
+                           for f in facts if f.get("type") == "tech_amendment"][:8],
+            "revision": self.current_revision(),
+            "requirements": sorted(self.requirements()),
+            "materials": sorted({parse.clean(m.get("material_number")) for i in self.bb.get("materials")
+                                 for m in i["data"].get("materials") or [] if m.get("material_number")})[:40],
+            "mail_topics": sorted({str(i["data"].get("topic")) for i in self.bb.get("mail_message") if i["data"].get("topic")}),
+        }
 
     async def erp_phase(self) -> list:
         """One ERP mission per needed catalogue group, in parallel tabs of the ERP browser (shared session).
@@ -517,6 +582,8 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
         try:
             result = self.resolve()
+            if not replay and result.answer.get("decision") == "no_bid" and time.time() < self.evidence_end - 30:
+                result = await self.recheck_no_bid(result)
         except Exception as error:
             log("resolve_error", error=f"{type(error).__name__}: {error}"[:500])
         if result is None:

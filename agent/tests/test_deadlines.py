@@ -227,3 +227,54 @@ def test_a_cancelled_extraction_does_not_cancel_the_one_waiting_for_it(monkeypat
         return await second
     result = asyncio.run(scenario())
     assert "1" in result and len(calls) == 2           # the waiter extracted the page itself
+
+
+def test_every_page_of_a_paginated_qa_list_is_required():
+    """Run 6c71…: Q&A pages were missing, the tender mission still counted as complete, and a missed amendment
+    turned the whole bid into no_bid."""
+    o = _orchestrator()
+    o.bb.add("positions", {"positions": [{"position": "1", "quantity": "2", "unit": "Stk", "requirement_ref": "A-1"}]}, "u")
+    for page in (1, 2, 3):
+        o.bb.add("clarifications", {"page": page, "pages_total": 6, "entries": [{"number": str(page), "facts": []}]},
+                 f"u{page}", "collection")
+    text, complete = o.tender_progress()
+    assert not complete and "NOT read yet: [4, 5, 6] of 6" in text
+    for page in (4, 5, 6):
+        o.bb.add("clarifications", {"page": str(page), "pages_total": "6", "entries": []}, f"u{page}", "collection")
+    assert o.tender_progress()[1]
+
+
+def test_qa_without_page_numbers_keeps_the_old_rule():
+    o = _orchestrator()
+    o.bb.add("positions", {"positions": [{"position": "1", "requirement_ref": "A-1"}]}, "u")
+    o.bb.add("clarifications", {"entries": [{"number": "7", "facts": []}]}, "u1", "collection")
+    assert o.tender_progress()[1]
+
+
+def test_no_bid_is_checked_again_with_fresh_qa_before_it_is_accepted(monkeypatch):
+    from types import SimpleNamespace
+    from rfq.rules.resolve import Result
+    o = _orchestrator()
+    site = SimpleNamespace(collections={"c1": object()}, fresh=[])
+    site.fresh_start = lambda: site.fresh.append(1)
+    monkeypatch.setattr(Orchestrator, "site_for", lambda self, role: site)
+    o._cache = {"clarificationsabc": "old", "materialsdef": "keep"}
+    missions = []
+
+    async def fake_mission(self, s, mission, attempts=2):
+        missions.append((mission.name, attempts))
+        self.bb.add("clarifications", {"page": 1, "pages_total": 1, "entries": [{"number": "9", "facts": [
+            {"type": "tech_amendment", "revision": "R1", "requirement": "A-1", "attribute": "stroke", "value": "480"}]}]},
+            "u-again", "collection")
+
+    def fake_resolve(self):
+        amended = any(f.get("type") == "tech_amendment" for i in self.bb.get("clarifications")
+                      for e in i["data"]["entries"] for f in e["facts"])
+        return Result({"decision": "bid" if amended else "no_bid"}, ["no active matching material for ['1']: no_bid"], [], {})
+
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "resolve", fake_resolve)
+    checked = asyncio.run(o.recheck_no_bid(o.resolve()))
+    assert checked.answer["decision"] == "bid" and missions == [("recheck", 1)]
+    assert site.fresh and site.collections == {} and o._cache == {"materialsdef": "keep"}
+    assert o.evidence_digest()["amendments"] == [["R1", "A-1", "stroke", "480"]]

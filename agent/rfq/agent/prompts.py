@@ -94,7 +94,9 @@ Raw values exactly as displayed (keep the page's number format).""",
     },
     "clarifications": {
         "describe": "bidder questions & answers (Bieterfragen / Q&A), all pages",
-        "schema": """{"entries": [{"number": "exact Q&A number", "datetime_utc": "ISO 8601 Z (use the UTC/ISO value if shown,
+        "schema": """{"page": "number of this Q&A list page (e.g. 'Seite 2 von 6' -> 2), null if not paginated",
+ "pages_total": "total number of Q&A list pages if shown (e.g. 'Seite 2 von 6' -> 6), else null",
+ "entries": [{"number": "exact Q&A number", "datetime_utc": "ISO 8601 Z (use the UTC/ISO value if shown,
  else convert from the page's time zone)", "question": "...", "answer": "full answer text",
  "facts": [ one or more of:
   {"type": "quantity_change", "position": "...", "quantity": "number", "unit": "unit as written"},

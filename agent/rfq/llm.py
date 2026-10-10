@@ -27,6 +27,7 @@ _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
 MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
 _hedging = 0
+QUIET_CALLS = bool(os.environ.get("CHALLENGE_RUN_TOKEN"))   # in a run the platform keeps only the end of the log
 _recent: dict[bool, list[float]] = {True: [], False: []}
 
 
@@ -104,8 +105,9 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             calls.append((call.function.name, _loads(call.function.arguments) or {}))
         if tools and not calls:  # some replies put the call into the text
             calls = _calls_from_text(message.content or "")
-        log("llm", tag=tag, s=round(seconds, 2),
-            tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
+        if not QUIET_CALLS or seconds > 8 or attempt:   # sandbox: only slow or retried calls (usage has the totals)
+            log("llm", tag=tag, s=round(seconds, 2),
+                tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
         return {"content": message.content or "", "tool_calls": calls}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
 
