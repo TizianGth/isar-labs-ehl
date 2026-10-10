@@ -46,8 +46,8 @@ def test_a_wrong_reference_is_not_signed_while_time_allows(monkeypatch):
     ex = _explorer({**GOOD, "tender_reference": "XT-2"}, seconds_left=400)
     for _ in range(5):
         assert asyncio.run(ex._submit("e9")).startswith("ERROR: the review page does not match")
-    ex.orchestrator.end = time.time() + 30                                   # the last minute: a bid beats none
-    assert asyncio.run(ex._submit("e9")).startswith("DRY RUN")
+    ex.orchestrator.end = time.time() + 30
+    assert asyncio.run(ex._submit("e9")).startswith("ERROR")
 
 
 def test_other_critical_mismatches_get_three_fixing_rounds(monkeypatch):
@@ -56,4 +56,4 @@ def test_other_critical_mismatches_get_three_fixing_rounds(monkeypatch):
     ex = _explorer(wrong, seconds_left=400)
     for _ in range(3):
         assert asyncio.run(ex._submit("e9")).startswith("ERROR")
-    assert asyncio.run(ex._submit("e9")).startswith("DRY RUN")              # partial bid instead of none
+    assert asyncio.run(ex._submit("e9")).startswith("ERROR")

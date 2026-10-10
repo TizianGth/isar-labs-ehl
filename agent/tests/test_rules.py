@@ -75,7 +75,7 @@ def _evidence(**overrides):
             {"material_number": "M-0", "catalog_group": "G1", "bore_mm": "40", "stroke_mm": "100", "pressure_bar": "200", "mounting": "Flansch",
              "certification": "none", "status_meaning": "blocked"},
             {"material_number": "M-2", "catalog_group": "G2", "bore_mm": "50", "stroke_mm": "200", "pressure_bar": "200", "mounting": "Flansch",
-             "certification": None, "status_meaning": "active", "pieces_per_carton": "10", "lead_time_stock_weeks": "1",
+             "certification": "none", "status_meaning": "active", "pieces_per_carton": "10", "lead_time_stock_weeks": "1",
              "lead_time_production_weeks": "9", "unrestricted_stock": "1",
              "conditions": [{"valid_from": "2030-01-01", "valid_to": "2030-12-31", "currency": "USD", "fx_key": "F-1", "price_unit_qty": "100",
                              "number_format": "en-US", "scales": [{"from_qty": "1", "price": "10,000"}]}]}]}}],

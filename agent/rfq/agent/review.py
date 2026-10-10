@@ -17,9 +17,15 @@ def _num(raw) -> Decimal | None:
     everything else is read in the portals' German format ('1.234,50', '1.234' = 1234)."""
     if not isinstance(raw, str):
         return number(raw)
+    if "(de-CH)" in raw and "," not in raw:
+        return number(raw.replace("(de-CH)", ""), "en-US")
     if re.search(r"\((?:de|en|fr)-[A-Z]{2}\)", raw):
         return number(raw)
     core = re.sub(r"[^\d.,-]", "", raw)
+    if "." in core and "," in core:
+        return number(raw)  # both separators establish which one is decimal
+    if "'" in raw or "’" in raw:
+        return number(raw)
     if re.fullmatch(r"-?\d+\.\d{1,2}", core):
         return number(core, "en-US")
     return number(raw, "de-DE")
@@ -30,9 +36,31 @@ def _same_number(expected, observed) -> bool:
     return a is not None and b is not None and abs(a - b) < Decimal("0.005")
 
 
+def _readback_number(raw) -> Decimal | None:
+    """Only clearly parsed readback may prove a wrong value; untagged three-digit separators are ambiguous."""
+    if isinstance(raw, str):
+        text = re.sub(r"\([^)]*\)", "", clean(raw))
+        parts = re.findall(r"-?\d[\d.,'’ ]*", text)
+        if len(parts) != 1:
+            return None
+        core = parts[0].strip().replace(" ", "")
+        if not re.search(r"\((?:de|en|fr)-[A-Z]{2}\)", raw):
+            if re.fullmatch(r"-?\d+[.,]\d{3}", core):
+                return None
+            if "," in core and "." in core:
+                decimal = "," if core.rfind(",") > core.rfind(".") else "."
+                grouping = "." if decimal == "," else ","
+                pattern = rf"-?\d{{1,3}}(?:{re.escape(grouping)}\d{{3}})+{re.escape(decimal)}\d+"
+                if not re.fullmatch(pattern, core):
+                    return None
+    value = _num(raw)
+    return value if value is not None and value.is_finite() else None
+
+
 def validate_review(expected: dict, observed: dict, skipped: list[str] | None = None) -> dict:
     """{"mismatches": [...], "missing": [...], "verified": [...], "blocking": bool}. Blocking = a critical field is wrong
-    or missing (reference, offer type, totals, positions); optional breakdown fields only warn."""
+    or missing (reference, offer type, totals, positions). Clearly wrong optional values also block; unreadable or
+    absent optional breakdown values only warn, because absence is not evidence of a wrong entered value."""
     mismatches, missing, verified, blocking = [], [], [], False
 
     def check(label: str, ok: bool, critical: bool, detail: str = ""):
@@ -49,11 +77,17 @@ def validate_review(expected: dict, observed: dict, skipped: list[str] | None = 
     wanted = "no_bid" if expected["decision"] == "no_bid" else "main"
     check("offer_type", offer == wanted, True, f"page shows {offer or 'nothing'}, expected {wanted}")
     if expected["decision"] == "no_bid":
+        if observed.get("positions"):
+            check("positions", False, True, "a non-participation declaration must not carry bid positions")
         return {"mismatches": mismatches, "missing": missing, "verified": verified, "blocking": blocking}
-    check("discount_percent", _same_number(expected["discount_percent"], observed.get("discount_percent")), True,
-          f"page {observed.get('discount_percent')!r}, expected {expected['discount_percent']}")
-    check("total_net", _same_number(expected["total_net"], observed.get("total_net")), True,
-          f"page {observed.get('total_net')!r}, expected {expected['total_net']}")
+    for field in ("discount_percent", "total_net"):
+        value = _readback_number(observed.get(field))
+        if value is None:
+            missing.append(field + " (unreadable/ambiguous)")
+            blocking = True
+        else:
+            check(field, _same_number(expected[field], value), True,
+                  f"page {observed.get(field)!r}, expected {expected[field]}")
     if observed.get("own_terms_declared") is True:
         check("own_terms", False, True, "own terms/AGB are declared; they must not be")
     if observed.get("documents_acknowledged") is False:
@@ -83,8 +117,16 @@ def validate_review(expected: dict, observed: dict, skipped: list[str] | None = 
                 missing.append(f"position {p['position']} {field}")
                 blocking |= field in CRITICAL
                 continue
-            ok = norm_id(have) == norm_id(want) if field == "material_number" else _same_number(want, have)
-            check(f"position {p['position']} {field}", ok, field in CRITICAL, f"page {have!r}, expected {want}")
+            if field == "material_number":
+                ok = norm_id(have) == norm_id(want)
+            else:
+                value = _readback_number(have)
+                if value is None:
+                    missing.append(f"position {p['position']} {field} (unreadable/ambiguous)")
+                    blocking |= field in CRITICAL
+                    continue
+                ok = _same_number(want, value)
+            check(f"position {p['position']} {field}", ok, True, f"page {have!r}, expected {want}")
     for pid in skipped or []:
         if norm_id(pid) not in {norm_id(x) for x in observed.get("omitted_positions") or []} and norm_id(pid) in seen:
             check(f"position {pid}", False, False, "should be omitted")

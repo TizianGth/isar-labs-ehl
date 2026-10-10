@@ -106,6 +106,39 @@ def cert(raw) -> str:
     return "" if value in NO_CERT else value
 
 
+def certification_known(record: dict, *, requirement: bool = False) -> bool:
+    """Presence and absence are facts; a missing material certificate is not 'none'.
+
+    Older requirement extractions used an explicit null to mean no requirement.
+    New extractions carry an independent known flag so unseen fields stay unknown.
+    """
+    if record.get("certification_known") is False:
+        return False
+    value = record.get("certification")
+    if value is not None and clean(value):
+        return True
+    return requirement and "certification" in record and (
+        "certification_known" not in record or record.get("certification_known") is True
+    )
+
+
+def merge_certification(target: dict, source: dict) -> None:
+    """An unrelated partial page with an unseen field cannot erase a read fact."""
+    if certification_known(source):
+        target["certification"] = source["certification"]
+        target["certification_known"] = True
+
+
+def merge_requirement(target: dict, source: dict) -> None:
+    """Combine partial rows of one proven revision without erasing observed facts."""
+    for key, value in source.items():
+        if key not in ("certification", "certification_known") and value not in (None, "", []):
+            target[key] = value
+    if certification_known(source, requirement=True):
+        target["certification"] = source.get("certification")
+        target["certification_known"] = True
+
+
 _NOT_CURRENT = re.compile(r"\b(un|nicht\s*)g[üu]ltig|\binvalid|ersetzt|superseded|veraltet|obsolet|zur[üu]ckgezogen|"
                           r"withdrawn|archiv|entwurf|draft|vorschau|preview|outdated|replaced", re.I)
 _CURRENT = re.compile(r"(?<![a-zäöü])(g[üu]ltig|aktuell|current|valid|freigegeben|maßgeblich|massgeblich|in kraft)\b", re.I)

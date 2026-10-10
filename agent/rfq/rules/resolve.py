@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, mail_address, norm_id, number, qa_number, revision_is_current, same_text, when
+from .parse import cert, certification_known, clean, day, integer, mail_address, merge_certification, merge_requirement, norm_id, number, qa_number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -124,13 +124,17 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     note(f"current specification revision: {current_rev}")
     requirements: dict[str, dict] = {}
     for item in bb.get("requirements", []):
-        rev = norm_id(item["data"].get("revision"))
-        if current_rev and rev and rev != current_rev:
+        rev = norm_id(item["data"].get("revision")) or norm_id(item.get("validated_current_revision"))
+        if not current_rev or not rev:
+            note("ignoring requirements without a proven current revision")
+            continue
+        if rev != current_rev:
             note(f"ignoring requirements of revision {rev} (not current)")
             continue
         for r in item["data"].get("requirements") or []:
             if r.get("ref"):
-                requirements[norm_id(r["ref"])] = {**r, "revision": rev or current_rev}
+                target = requirements.setdefault(norm_id(r["ref"]), {"revision": rev})
+                merge_requirement(target, r)
 
     # ---------------------------------------------------------------- mails (authority and time)
     domain = ctx.mailbox_domain
@@ -192,12 +196,15 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
                 continue
             target = materials.setdefault(num, {"material_number": clean(m["material_number"]), "conditions": []})
             for k, v in m.items():
-                if k == "conditions":
+                if k in ("certification", "certification_known"):
+                    continue
+                elif k == "conditions":
                     for c in v or []:
                         if c.get("scales") and c not in target["conditions"]:
                             target["conditions"].append(c)
                 elif v not in (None, "", []):
                     target[k] = v
+            merge_certification(target, m)
 
     def matches(mat: dict, req: dict, stroke: D | None) -> bool:
         """Exact match. stroke=None means 'nominal stroke unknown' (e.g. end reserve not found): stroke is then not
@@ -210,7 +217,8 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             return False
         if not same_text(mat.get("mounting"), req.get("mounting")):
             return False
-        return cert(mat.get("certification")) == cert(req.get("certification"))
+        return (certification_known(mat) and certification_known(req, requirement=True)
+                and cert(mat.get("certification")) == cert(req.get("certification")))
 
     # ---------------------------------------------------------------- per position
     resolved: dict[str, dict] = {}
@@ -242,6 +250,8 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             if amendment:
                 field_name = {"bore": "bore_mm", "stroke": "stroke_mm", "pressure": "pressure_bar"}.get(attribute, attribute)
                 attrs[field_name] = amendment.get("value")
+                if field_name == "certification":
+                    attrs["certification_known"] = amendment.get("value") is not None
                 note(f"{pid}: amendment {attribute} = {amendment.get('value')}")
         stroke = number(attrs.get("stroke_mm"))
         usable_floor = None
@@ -266,6 +276,23 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             uncertain = True
         else:
             uncertain = False
+        # A complete catalogue search cannot prove no_bid if an otherwise matching
+        # active candidate lacks a fact needed to rule it out.
+        if not certification_known(attrs, requirement=True):
+            uncertain = True
+        for m in candidates:
+            if m.get("status_meaning") == "blocked":
+                continue
+            comparable = (("bore_mm", attrs.get("bore_mm")), ("pressure_bar", attrs.get("pressure_bar")),
+                          ("stroke_mm", stroke))
+            disproven = any(number(m.get(k)) is not None and number(v) is not None
+                            and number(m.get(k)) != number(v) for k, v in comparable)
+            disproven |= bool(clean(m.get("mounting")) and clean(attrs.get("mounting"))
+                              and not same_text(m["mounting"], attrs["mounting"]))
+            incomplete_dimensions = any(number(m.get(k)) is None for k, _ in comparable if _ is not None)
+            if not disproven and (not certification_known(m) or m.get("status_meaning") is None
+                                  or incomplete_dimensions or not clean(m.get("mounting"))):
+                uncertain = True
         active = [m for m in fitting if m.get("status_meaning") == "active"]
         note(f"{pid}: group {group} candidates={[m['material_number'] for m in candidates]} "
              f"fitting={[m['material_number'] for m in fitting]} active={[m['material_number'] for m in active]}")
@@ -307,7 +334,14 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         if not valid:
             note(f"{pid}: no price condition valid on {T.date()}")
             return None
-        c = valid[-1]
+        # Arrival order is not price priority. Overlapping conflicting conditions
+        # need source clarification; a newer start date alone is not an authority rule.
+        distinct = {repr({k: c.get(k) for k in ("valid_from", "valid_to", "currency", "fx_key",
+                                               "price_unit_qty", "number_format", "scales")}): c for c in valid}
+        if len(distinct) != 1:
+            note(f"{pid}: conflicting valid price conditions; price unknown until clarified")
+            return None
+        c = next(iter(distinct.values()))
         fmt = c.get("number_format")
         scales = sorted(((number(s.get("from_qty"), fmt), number(s.get("price"), fmt)) for s in c.get("scales") or []),
                         key=lambda s: s[0] or 0)
@@ -320,8 +354,8 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             rate = fx_rates.get(norm_id(c.get("fx_key")))
             eur = number((rate or {}).get("eur_per_unit"))
             if eur is None:
-                note(f"{pid}: no FX rate for {c.get('fx_key')} ({currency}); price left in {currency}")
-                eur = D(1)
+                note(f"{pid}: no FX rate for {c.get('fx_key')} ({currency}); price unknown")
+                return None
             price *= eur
         base = r2(price)
         note(f"{pid}: scale from {usable[-1][0]} price {usable[-1][1]} / unit {c.get('price_unit_qty')} {currency} -> base {base} EUR")

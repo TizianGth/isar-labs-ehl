@@ -17,8 +17,16 @@ from .log import log
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
-_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "10")))
-usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
+# Gates apply to actual provider requests, not logical chat calls: a hedge
+# consumes a slot too. Extraction waits before the global gate, preserving
+# room for navigation, review and signing while long documents are processed.
+_PARALLEL = max(1, min(10, int(os.environ.get("RFQ_LLM_PARALLEL", "10"))))
+_EXTRACT_PARALLEL = max(1, min(8, max(1, _PARALLEL - 2),
+                              int(os.environ.get("RFQ_LLM_EXTRACT_PARALLEL", "8"))))
+_slots = asyncio.Semaphore(_PARALLEL)
+_extract_slots = asyncio.Semaphore(_EXTRACT_PARALLEL)
+usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0,
+         "requests": 0, "request_seconds": 0.0, "slot_wait_seconds": 0.0, "cancelled_requests": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
 # would have answered is probably stuck in a queue, so an identical twin is sent and the first answer wins.
@@ -70,21 +78,13 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             log("llm_deadline", tag=tag, attempt=attempt)
             raise DeadlineExceeded(tag)
         started = time.monotonic()
-        slots = _slots
         try:
-            await asyncio.wait_for(slots.acquire(), timeout=left - 2)
-        except asyncio.TimeoutError:
-            log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
-            raise DeadlineExceeded(tag)
-        try:
-            try:
-                requested = time.monotonic()
-                response = await _first_answer(kwargs, per_call, end, None if thinking else _hedge_after(bool(tools)), tag)
-                _recent[bool(tools)][:] = _recent[bool(tools)][-29:] + [time.monotonic() - requested]
-            finally:
-                slots.release()
+            requested = time.monotonic()
+            response = await _first_answer(kwargs, per_call, end, None if thinking else _hedge_after(bool(tools)),
+                                           tag, attempt=attempt)
+            _recent[bool(tools)][:] = _recent[bool(tools)][-29:] + [time.monotonic() - requested]
         except Exception as error:
-            log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
+            log("llm_error", tag=tag, attempt=attempt, retry=attempt + 1, error=f"{type(error).__name__}: {str(error)[:200]}")
             status = getattr(error, "status_code", None)
             if status in (401, 403):
                 # the run token is revoked once the answer is accepted (or the key is wrong): retrying cannot help
@@ -98,10 +98,6 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         message = response.choices[0].message
         tokens = response.usage
         cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0 if tokens else 0
-        if tokens:
-            usage["input"] += tokens.prompt_tokens or 0
-            usage["output"] += tokens.completion_tokens or 0
-            usage["cached"] += cached
         usage["calls"] += 1
         usage["seconds"] += seconds
         calls = []
@@ -122,26 +118,105 @@ def _hedge_after(tools: bool) -> float:
     return max(HEDGE_AFTER[tools], 3 * typical)
 
 
-async def _request(kwargs: dict, timeout: float):
-    return await client().chat.completions.create(**kwargs, timeout=timeout)
+async def _request(kwargs: dict, timeout: float, *, end: float = float("inf"), tag: str = "",
+                   attempt: int = 0, hedged: bool = False, started_event: asyncio.Event | None = None):
+    """Acquire capacity for one actual request, including a hedged request.
+
+    Both gates and provider execution honor the run deadline. A cancelled or
+    failed request releases precisely the gate instances that it acquired.
+    Token totals include every completed response; a cancelled request may
+    still be billed upstream and cannot provide a trustworthy usage total.
+    """
+    slots, extraction_slots = _slots, _extract_slots
+    extraction = tag.startswith("extract:") or tag.startswith("extract_")
+    held_extract = held_global = False
+    waiting = time.monotonic()
+    request_started = None
+    response = None
+    status = "waiting"
+    slot_wait = 0.0
+    try:
+        for gate, is_extract in ((extraction_slots, True), (slots, False)):
+            if is_extract and not extraction:
+                continue
+            left = end - time.time()
+            if left < 3:
+                raise DeadlineExceeded(f"{tag}: waiting for request capacity")
+            try:
+                await asyncio.wait_for(gate.acquire(), timeout=left - 2)
+            except asyncio.TimeoutError as error:
+                raise DeadlineExceeded(f"{tag}: waiting for request capacity") from error
+            if is_extract:
+                held_extract = True
+            else:
+                held_global = True
+        left = end - time.time()
+        if left < 3:
+            raise DeadlineExceeded(f"{tag}: request deadline")
+        slot_wait = time.monotonic() - waiting
+        request_started = time.monotonic()
+        usage["requests"] = usage.get("requests", 0) + 1
+        status = "error"
+        budget = min(timeout, left - 2)
+        if started_event is not None:
+            started_event.set()
+        response = await asyncio.wait_for(client().chat.completions.create(**kwargs, timeout=budget), timeout=budget)
+        status = "completed"
+        tokens = response.usage
+        if tokens:
+            cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+            usage["input"] += tokens.prompt_tokens or 0
+            usage["output"] += tokens.completion_tokens or 0
+            usage["cached"] += cached
+        return response
+    except asyncio.CancelledError:
+        status = "cancelled" if request_started is not None else "cancelled_waiting"
+        if request_started is not None:
+            usage["cancelled_requests"] = usage.get("cancelled_requests", 0) + 1
+        raise
+    finally:
+        request_s = time.monotonic() - request_started if request_started is not None else 0.0
+        if request_started is None:
+            slot_wait = time.monotonic() - waiting
+        usage["slot_wait_seconds"] = usage.get("slot_wait_seconds", 0.0) + slot_wait
+        usage["request_seconds"] = usage.get("request_seconds", 0.0) + request_s
+        if held_global:
+            slots.release()
+        if held_extract:
+            extraction_slots.release()
+        tokens = getattr(response, "usage", None)
+        log("llm_request", tag=tag, attempt=attempt, retry=attempt, hedge=hedged,
+            request_class="extract" if extraction else "control", status=status,
+            slot_wait_s=round(slot_wait, 4), request_s=round(request_s, 4),
+            tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None)],
+            usage_available=tokens is not None)
 
 
-async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: float | None, tag: str):
+async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: float | None, tag: str,
+                        *, attempt: int = 0):
     """The first successful answer of the request or, when it stays silent for `hedge_after` seconds, of its twin.
     The other request is cancelled. Errors are raised only when every request failed."""
     global _hedging
     if hedge_after is not None and hedge_after >= per_call - 5:
         hedge_after = None                          # the request's own timeout comes first
-    tasks = [asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time()))))]
+    request_started = asyncio.Event()
+    tasks = [asyncio.ensure_future(_request(kwargs, per_call, end=end, tag=tag, attempt=attempt,
+                                          started_event=request_started))]
+    started_waiter = None
     twin = False
     try:
+        if hedge_after is not None:
+            # A capacity queue is our own backpressure, not a stuck provider.
+            # Start the hedge clock only when the primary actually gets a slot.
+            started_waiter = asyncio.create_task(request_started.wait())
+            await asyncio.wait((tasks[0], started_waiter), return_when=asyncio.FIRST_COMPLETED)
         done, _ = await asyncio.wait(tasks, timeout=hedge_after)
         if hedge_after is not None and not done and _hedging < MAX_HEDGES and end - time.time() > 10:
             _hedging += 1
             twin = True
             usage["hedges"] += 1
             log("llm_hedge", tag=tag, after=round(hedge_after, 1))
-            tasks.append(asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time())))))
+            tasks.append(asyncio.ensure_future(_request(kwargs, per_call, end=end, tag=tag, attempt=attempt, hedged=True)))
         pending, error = set(tasks), None
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -158,8 +233,12 @@ async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: 
         for task in tasks:
             if not task.done():
                 task.cancel()
-            elif not task.cancelled():
-                task.exception()   # a failed loser: retrieved, no warning
+        if started_waiter is not None:
+            started_waiter.cancel()
+        # Await cancellation before returning: the next phase must see the
+        # released provider slots, not merely scheduled cancellation.
+        await asyncio.gather(*tasks, *([started_waiter] if started_waiter is not None else []),
+                             return_exceptions=True)
 
 
 async def ask_json(system: str, user: str | list, *, thinking: bool = False, tag: str = "",

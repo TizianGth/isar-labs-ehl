@@ -47,12 +47,38 @@ def test_alternative_offer_gross_total_extra_and_missing_positions_block():
     assert result["blocking"] and "position 1.2" in result["missing"]
 
 
-def test_optional_field_only_warns_and_own_terms_block():
+def test_verified_wrong_optional_field_and_own_terms_block():
     page = _page()
     page["positions"][0]["packaging_per_unit"] = "0,10"
     result = validate_review(EXPECTED, page)
-    assert result["mismatches"] and not result["blocking"]
+    assert result["mismatches"] and result["blocking"]
     assert validate_review(EXPECTED, _page(own_terms_declared=True))["blocking"]
+
+
+def test_optional_unreadable_or_ambiguous_values_warn_without_false_mismatches():
+    for raw in (None, "unavailable", "1,234", "1.234", "3 / 4"):
+        page = _page()
+        page["positions"][0]["packaging_per_unit"] = raw
+        result = validate_review(EXPECTED, page)
+        assert result["missing"] and not result["mismatches"] and not result["blocking"]
+    page = _page()
+    page["positions"][0]["quantity"] = "1,234"
+    result = validate_review(EXPECTED, page)
+    assert result["blocking"] and any("ambiguous" in m for m in result["missing"])
+
+
+def test_english_and_swiss_money_readback_do_not_create_false_blocks():
+    for raw in ("1,234.50", "1'234.50 (de-CH)", "1’234.50"):
+        assert not validate_review(EXPECTED, _page(total_net=raw))["blocking"]
+    page = _page()
+    page["positions"][0]["packaging_per_unit"] = "1,234 (en-US)"
+    assert validate_review(EXPECTED, page)["blocking"]
+
+
+def test_non_participation_with_position_rows_blocks():
+    expected = {"tender_reference": "XT-1", "decision": "no_bid"}
+    assert validate_review(expected, {"tender_reference": "XT-1", "offer_type": "no_bid", "positions": []})["blocking"] is False
+    assert validate_review(expected, {"tender_reference": "XT-1", "offer_type": "no_bid", "positions": [{"position": "1"}]})["blocking"]
 
 
 def test_number_formats_on_the_review_page():

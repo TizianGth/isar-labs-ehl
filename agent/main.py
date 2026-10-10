@@ -65,19 +65,17 @@ async def main() -> int:
         sites=[a["siteId"] for a in run["access"]], submission=run.get("submission", {}).get("kind"))
     async with async_playwright() as playwright:
         sites, browsers = await open_sites(playwright, run["access"])
-        # A site that cannot be reached at once must not block the others: missions retry it later.
-        started = await asyncio.gather(*(asyncio.wait_for(site.start(), timeout=100) for site in sites.values()),
-                                       return_exceptions=True)
-        for site, outcome in zip(sites.values(), started):
-            log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
-                error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
-        orchestrator = Orchestrator(run, sites, started=STARTED)
+        # Brief interpretation overlaps login. Each mission waits only for its own website.
+        readiness = {name: asyncio.create_task(_start_site(site)) for name, site in sites.items()}
+        orchestrator = Orchestrator(run, sites, started=STARTED, readiness=readiness)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs
             result = await asyncio.wait_for(orchestrator.run_all(replay), timeout=max(60, orchestrator.end - time.time() + 45))
         except asyncio.TimeoutError:
             log("watchdog_timeout")
             result = orchestrator.result
+        finally:
+            await orchestrator.close()
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
@@ -88,6 +86,15 @@ async def main() -> int:
             for browser in browsers:
                 await browser.close()
     return 0
+
+
+async def _start_site(site: Site) -> None:
+    try:
+        await asyncio.wait_for(site.start(), timeout=100)
+        log("site_ready", site=site.site_id, ok=True)
+    except Exception as error:
+        # The site's normal navigation/relogin recovery may still succeed later.
+        log("site_ready", site=site.site_id, ok=False, error=str(error)[:200])
 
 
 if __name__ == "__main__":

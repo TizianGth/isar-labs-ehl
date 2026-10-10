@@ -9,6 +9,8 @@ import html
 import inspect
 import re
 import time
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -23,6 +25,67 @@ EVAL_TIMEOUT = 12
 NAVIGATION_TIMEOUT_MS = 20000
 LOADED_TIMEOUT_MS = 12000
 RESPONSIVE_TIMEOUT = 4
+
+
+class _Session:
+    """Concurrent page work, exclusive cookie reset. Nested work in the same task is safe."""
+    def __init__(self):
+        self.condition = asyncio.Condition()
+        self.reset_lock = asyncio.Lock()
+        self.readers = {}
+        self.waiting = 0
+        self.writer = None
+        self.epoch = 0
+        self.health = {"fails": 0, "resets": 0, "at": 0.0}
+        self.owner = ContextVar("session_operation_owner", default=None)
+
+    @asynccontextmanager
+    async def operation(self):
+        task = self.owner.get() or object()
+        token = self.owner.set(task)
+        entered = False
+        try:
+            async with self.condition:
+                await self.condition.wait_for(lambda: task == self.writer or task in self.readers
+                                              or (not self.waiting and self.writer is None))
+                self.readers[task] = self.readers.get(task, 0) + 1
+                entered = True
+            yield
+        finally:
+            if entered:
+                async with self.condition:
+                    self.readers[task] -= 1
+                    if not self.readers[task]:
+                        del self.readers[task]
+                    self.condition.notify_all()
+            self.owner.reset(token)
+
+    @asynccontextmanager
+    async def reset(self):
+        task = self.owner.get() or object()
+        token = self.owner.set(task)
+        async with self.condition:
+            held = self.readers.pop(task, 0)  # upgrade: do not wait for our own navigation
+            self.waiting += 1
+            self.condition.notify_all()
+        try:
+            async with self.reset_lock:
+                async with self.condition:
+                    await self.condition.wait_for(lambda: not self.readers)
+                    self.writer = task
+                try:
+                    yield
+                finally:
+                    async with self.condition:
+                        self.writer = None
+                        self.condition.notify_all()
+        finally:
+            async with self.condition:
+                if held:
+                    self.readers[task] = self.readers.get(task, 0) + held
+                self.waiting -= 1
+                self.condition.notify_all()
+            self.owner.reset(token)
 
 
 async def _eval(target, script: str, arg, timeout: float | None = None):
@@ -47,6 +110,15 @@ class Site:
         self.last_good_url: str | None = None   # last address that was observed successfully
         self.hung: dict[str, int] = {}          # address -> navigations that never arrived (do not insist)
         self.health = {"fails": 0, "resets": 0, "at": 0.0}   # navigation failures in a row, session resets (shared)
+        session = getattr(context, "_rfq_session", None)
+        if session is None:
+            session = _Session()
+            if context is not None:
+                context._rfq_session = session
+        self.session = session
+        self.health = session.health
+        self._session_epoch = session.epoch
+        self._settle_version = 0
         self._recoveries = 0
         self.lock = asyncio.Lock()   # one action at a time per site page
 
@@ -131,6 +203,14 @@ class Site:
         await self.settle(recover=False)
 
     async def goto(self, url: str, frame: Frame | None = None) -> bool:
+        started = time.monotonic()
+        try:
+            async with self.session.operation():
+                return await self._goto(url, frame)
+        finally:
+            log("browser_wait", site=self.site_id, phase="navigation", seconds=round(time.monotonic() - started, 3))
+
+    async def _goto(self, url: str, frame: Frame | None = None) -> bool:
         """Navigate the tab (or a frame); True if a readable page arrived. Sites have pages that never finish
         loading: such an address gets two chances per run, afterwards the caller is told at once (try another route)."""
         key = url.split("#")[0]
@@ -172,6 +252,13 @@ class Site:
         return True
 
     async def _new_session(self, url: str) -> bool:
+        state = self.health
+        if state["fails"] < 2 or state["resets"] >= 2 or time.time() - state["at"] < 60:
+            return False
+        async with self.session.reset():
+            return await self._reset_session(url)
+
+    async def _reset_session(self, url: str) -> bool:
         """Pages of a website that keep hanging for our session load again in a new one: often one request that
         never ends holds the session on the server, and every later request of that session waits behind it.
         The site's cookies are dropped and the login guard signs in again. At most twice per run and site, once a
@@ -182,6 +269,7 @@ class Site:
         state.update(resets=state["resets"] + 1, fails=0, at=time.time())
         log("session_reset", site=self.site_id, after=_short(url), reset=state["resets"])
         self.hung.clear()
+        self.session.epoch += 1  # even a timed-out cookie RPC may already have changed the remote session
         try:
             await asyncio.wait_for(self.context.clear_cookies(), timeout=10)
         except Exception as error:
@@ -193,6 +281,7 @@ class Site:
         except PlaywrightError as error:
             log("goto_error", site=self.site_id, url=_short(self.url), error=str(error)[:200])
         await self.settle(recover=False)     # the login guard signs in
+        self._session_epoch = self.session.epoch
         return True
 
     async def _readable(self, target) -> bool:
@@ -211,6 +300,13 @@ class Site:
         return bool(size and size > 40)
 
     async def settle(self, rounds: int = 6, recover: bool = True) -> None:
+        started = time.monotonic()
+        try:
+            await self._settle_guarded(rounds, recover)
+        finally:
+            log("browser_wait", site=self.site_id, phase="settle", seconds=round(time.monotonic() - started, 3))
+
+    async def _settle_guarded(self, rounds: int, recover: bool) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
         if not await self.responsive():
             if recover:
@@ -218,6 +314,7 @@ class Site:
             return
         try:
             await asyncio.wait_for(self._settle(rounds), timeout=45)
+            self._settle_version += 1
         except asyncio.TimeoutError:
             log("settle_timeout", site=self.site_id, url=_short(self.page.url if self.page else ""))
             if recover and not await self.responsive():
@@ -308,6 +405,21 @@ class Site:
 
     # ---------------------------------------------------------------- observation
     async def observe(self, limit: int = MAX_OBSERVATION) -> str:
+        started = time.monotonic()
+        try:
+            async with self.session.operation():
+                if self._session_epoch != self.session.epoch:
+                    self._frames.clear()
+                    self.collections.clear()
+                    url = self.last_good_url or self.url
+                    await self._fresh_page()
+                    await self.goto(url)  # discard stale session/CSRF DOM, re-login and inspect the live workflow
+                    self._session_epoch = self.session.epoch
+                return await self._observe(limit)
+        finally:
+            log("browser_wait", site=self.site_id, phase="observe", seconds=round(time.monotonic() - started, 3))
+
+    async def _observe(self, limit: int = MAX_OBSERVATION) -> str:
         await self._ensure_page()
         if not await self.responsive():
             await self.recover_tab("tab unresponsive before observing")
@@ -373,7 +485,24 @@ class Site:
 
     # ---------------------------------------------------------------- actions (never raise)
     async def act(self, name: str, args: dict) -> str:
+        started, status = time.monotonic(), "error"
+        try:
+            async with self.session.operation():
+                if self._session_epoch != self.session.epoch:
+                    return "ERROR: the shared session changed; observe the page again before acting"
+                epoch = self.session.epoch
+                result = await self._act(name, args)
+                if epoch != self.session.epoch:
+                    return "ERROR: the session recovered during this action; observe and verify the form before continuing"
+                status = "error" if result.startswith("ERROR") else "ok"
+                return result
+        finally:
+            log("browser_action", site=self.site_id, action=name, status=status,
+                seconds=round(time.monotonic() - started, 3))
+
+    async def _act(self, name: str, args: dict) -> str:
         async with self.lock:
+            settled = self._settle_version
             try:
                 await self._ensure_page()
                 if not await self.responsive():
@@ -390,7 +519,8 @@ class Site:
                     await self.recover_tab(f"{name} hung")
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
-            await self.settle()
+            if name not in ("click", "open_url") or self._settle_version == settled:
+                await self.settle()
             return message
 
     async def _element(self, ref: str):
@@ -460,6 +590,8 @@ class Site:
             return problem
         await el.fill(str(text), timeout=4000)
         value = await el.input_value()
+        if value != str(text):
+            return f"ERROR: the field did not keep the requested text; it now contains {value!r}"
         if submit:
             await el.press("Enter")
             await asyncio.sleep(0.3)
@@ -499,6 +631,8 @@ class Site:
         if kind not in ("checkbox", "radio"):
             return f"ERROR: {ref} is not a checkbox/radio (it is {kind}); click it instead"
         await el.set_checked(bool(checked), force=True, timeout=4000)
+        if await el.is_checked() != bool(checked):
+            return "ERROR: the field did not keep its requested checked state"
         return f"{'checked' if checked else 'unchecked'}"
 
     async def _then_click(self, ref: str | None) -> str:
@@ -513,12 +647,15 @@ class Site:
         label). On an error or a changed form the step stops and says how far it got."""
         fields = [f for f in fields or [] if isinstance(f, dict)]
         identity = {}
-        for field in fields:
+        targets = [str(f.get("ref")) for f in fields] + [str(f["apply"]) for f in fields if f.get("apply")]
+        if then_click:
+            targets.append(str(then_click))
+        for target in targets:
             try:
-                _, el = await self._element(str(field.get("ref")))
-                identity[str(field.get("ref"))] = await el.evaluate(_FIELD_ID)
-            except (PlaywrightError, ValueError):
-                pass
+                _, el = await self._element(target)
+                identity[target] = await el.evaluate(_FIELD_ID)
+            except (PlaywrightError, ValueError) as error:
+                return f"ERROR: batch target {target} is unavailable; no fields filled: {str(error)[:120]}"
         results, stopped = [], False
         for index, field in enumerate(fields):
             ref, value, apply = str(field.get("ref")), field.get("value"), field.get("apply")
@@ -538,18 +675,34 @@ class Site:
             except (PlaywrightError, ValueError) as error:
                 result = f"ERROR {str(error).splitlines()[0][:150]}"
             results.append(f"{ref}: {result}")
+            if result.startswith("ERROR"):
+                stopped = True
+                break
             if apply:
-                if result.startswith("ERROR"):
+                _, button = await self._element(str(apply))
+                if await button.evaluate(_FIELD_ID) != identity[str(apply)]:
+                    results.append("ERROR: the apply button changed identity")
                     stopped = True
                     break
-                results.append(f"applied ({apply}): " + await self._do_click(str(apply)))
+                applied = await self._do_click(str(apply))
+                results.append(f"applied ({apply}): " + applied)
+                if applied.startswith("ERROR"):
+                    stopped = True
+                    break
                 await self.settle(rounds=3)
                 await self.observe()          # the form may have been rendered again: refs in page order again
         if stopped:
             done = [str(f.get("ref")) for f in fields[:index]]
-            return ("; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "
+            return ("ERROR: batch stopped; " + "; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "
                     "with the remaining fields.")
-        return "; ".join(results) + await self._then_click(then_click)
+        if then_click:
+            _, button = await self._element(str(then_click))
+            if await button.evaluate(_FIELD_ID) != identity[str(then_click)]:
+                return "ERROR: the transition button changed identity; fields filled without advancing"
+        advanced = await self._then_click(then_click)
+        if "; then ERROR" in advanced:
+            return "ERROR: batch transition failed; " + "; ".join(results) + advanced
+        return "; ".join(results) + advanced
 
     async def _do_set_slider(self, ref: str, value: str = "max") -> str:
         _, el = await self._element(ref)
@@ -718,7 +871,8 @@ class Site:
 
 _FIELD_ID = """e => { const l = e.labels && e.labels[0];       // the label's own words, not the options inside it
     const own = l ? [...l.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' ').trim() : '';
-    return [e.tagName, e.name || '', e.id || '', own || e.getAttribute('aria-label') || e.getAttribute('placeholder') || ''].join('|'); }"""
+    return [e.tagName, e.name || '', e.id || '', own || e.getAttribute('aria-label') || e.getAttribute('placeholder')
+        || (e.matches('button,a,input[type=submit],input[type=button]') ? e.innerText || e.value : '') || ''].join('|'); }"""
 
 
 class _Popups(list):

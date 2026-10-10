@@ -20,6 +20,7 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
+from .extraction_jobs import ExtractionJobs, Snapshot
 from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
 from .submit import submit_bid
 
@@ -28,8 +29,6 @@ THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
 CHUNK_CHARS, MAX_CHUNKS = 60000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
-MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
-                     "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
 
 class Blackboard:
@@ -57,7 +56,8 @@ class Blackboard:
 
 
 class Orchestrator:
-    def __init__(self, run: dict, sites: dict[str, Site], started: float | None = None):
+    def __init__(self, run: dict, sites: dict[str, Site], started: float | None = None,
+                 readiness: dict[str, asyncio.Task] | None = None):
         self.run, self.sites = run, sites
         self.bb = Blackboard()
         started = started or time.time()
@@ -71,14 +71,22 @@ class Orchestrator:
         self.erp_complete: set[str] = set()               # catalogue groups whose ERP mission completed its checklist
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, asyncio.Future] = {}
+        self.readiness = readiness or {}
+        self.jobs = ExtractionJobs(self._extract_snapshot) if os.environ.get("RFQ_ASYNC_EXTRACT") == "1" else None
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
-    async def extract(self, kind: str, text: str, url: str, via: str = "page") -> str:
+    async def _extract_snapshot(self, kind: str, text: str, url: str, via: str = "page") -> str:
+        return await self.extract(kind, text, url, via, _source_bound=True)
+
+    async def extract(self, kind: str, text: str, url: str, via: str = "page", *, _source_bound: bool = False) -> str:
         spec = KINDS.get(kind)
         if spec is None:
             return f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"
         key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
+        if _source_bound:
+            # Background jobs must never inherit revision/source provenance from an identical other page.
+            key = "snapshot:" + hashlib.sha256(json.dumps([kind, url, via, text]).encode()).hexdigest()
         if key in self._cache:
             return "already extracted earlier: " + self._cache[key]
         if key in self._inflight:                    # the same page is being extracted right now: share its result
@@ -89,7 +97,7 @@ class Orchestrator:
         self._inflight[key] = future
         try:
             summary = await self._extract_new(kind, spec, text, url, via)
-            if summary.startswith("extraction returned nothing"):
+            if summary.startswith("extraction returned nothing") or "NOTHING of kind" in summary:
                 return summary
             self._cache[key] = summary               # empty/failed results are not cached as facts
             return summary
@@ -106,13 +114,16 @@ class Orchestrator:
             skipped = len(parts) - MAX_CHUNKS
             parts = parts[:MAX_CHUNKS - 1] + parts[-1:]
             log("extract_parts_skipped", kind=kind, url=url[:160], skipped=skipped)
-        results = await asyncio.gather(*(llm.ask_json(EXTRACT_SYSTEM, (
-            f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
-            f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
-            f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}"
-            + (f" (part {i + 1} of {len(parts)})" if len(parts) > 1 else "")
-            + f"\n<<<PAGE TEXT>>>\n{part}\n<<<END>>>"), thinking=THINKING_EXTRACT, tag=f"extract:{kind}")
-            for i, part in enumerate(parts)))
+        # One failing/cancelled part must settle every sibling request before its job finishes.
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(llm.ask_json(EXTRACT_SYSTEM, (
+                f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
+                f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
+                f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}"
+                + (f" (part {i + 1} of {len(parts)})" if len(parts) > 1 else "")
+                + f"\n<<<PAGE TEXT>>>\n{part}\n<<<END>>>"), thinking=THINKING_EXTRACT, tag=f"extract:{kind}"))
+                for i, part in enumerate(parts)]
+        results = [task.result() for task in tasks]
         data = _merge_parts(kind, [r for r in results if r])
         if not data:
             return "extraction returned nothing"
@@ -124,21 +135,56 @@ class Orchestrator:
     # ---------------------------------------------------------------- brief
     async def read_brief(self) -> None:
         brief = self.run["brief"]
-        self.brief = await llm.ask_json(BRIEF_SYSTEM, brief, thinking=False, tag="brief")
+        self.brief = await llm.ask_json(BRIEF_SYSTEM, brief, thinking=False, tag="brief", deadline=self.evidence_end)
         ref = parse.clean(self.brief.get("tender_reference"))
         if not ref or ref not in brief:   # the reference must be copied verbatim from the brief
             candidates = re.findall(r"\(([A-Z]{1,5}-[\w-]+)\)", brief)
             log("brief_reference_fallback", model=ref, candidates=candidates)
             if candidates:
                 self.brief["tender_reference"] = candidates[0]
+        if not self.valid_roles(self.brief.get("sites")):
+            access = [{"siteId": a.get("siteId"), "url": a.get("url"),
+                       "label": a.get("label") or a.get("name")} for a in self.run.get("access", [])]
+            repaired = await llm.ask_json(
+                "Identify website roles from the task brief and its access inventory. Return JSON "
+                "{\"sites\": {\"tender\": \"siteId\", \"specification\": \"siteId\", "
+                "\"erp\": \"siteId\", \"mail\": \"siteId\"}}. Use each valid siteId exactly once. "
+                "Never infer roles from inventory order; match the role descriptions in the brief.",
+                f"TASK BRIEF:\n{brief}\nACCESS INVENTORY:\n{json.dumps(access)}\n"
+                f"Invalid initial mapping: {json.dumps(self.brief.get('sites'))}",
+                thinking=False, tag="brief:roles", deadline=self.evidence_end)
+            if not self.valid_roles(repaired.get("sites")):
+                raise ValueError("brief roles remain invalid after one targeted repair")
+            self.brief["sites"] = repaired["sites"]
+            log("brief_roles_repaired", sites=repaired["sites"])
         log("brief", data=self.brief)
+
+    def valid_roles(self, roles) -> bool:
+        if not isinstance(roles, dict):
+            return False
+        ids = [roles.get(role) for role in ("tender", "specification", "erp", "mail")]
+        return all(isinstance(i, str) and i in self.sites for i in ids) and len(set(ids)) == 4
 
     def site_for(self, role: str) -> Site:
         site_id = (self.brief.get("sites") or {}).get(role)
         if site_id in self.sites:
             return self.sites[site_id]
-        order = ["tender", "specification", "erp", "mail"]
-        return list(self.sites.values())[order.index(role) % len(self.sites)]
+        raise ValueError(f"no validated website mapping for role {role!r}")
+
+    async def wait_site(self, site: Site) -> None:
+        task = self.readiness.get(getattr(site, "site_id", ""))
+        if task is not None:
+            await asyncio.shield(task)
+
+    async def close(self) -> None:
+        if self.jobs:
+            await self.jobs.close()
+        tasks = list(self.readiness.values())
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def mission(self, name: str, goal: str, kinds: list[str], steps: int, progress=None, context: str = "") -> Mission:
         return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
@@ -175,12 +221,27 @@ class Orchestrator:
 
     async def run_mission(self, site: Site, mission: Mission, attempts: int = 2) -> Explorer | None:
         """Run a mission; if it ends incomplete and time allows, recovery attempts with the failure context."""
+        await self.wait_site(site)
         mission = self._remembering(site, mission)
         explorer = None
         for attempt in range(attempts):
             if mission.deadline - time.time() < 60:
                 break
-            explorer = await Explorer(site, mission, self.extract).run()
+            if self.jobs:
+                async def enqueue(kind, text, url, via="page"):
+                    if kind not in KINDS:
+                        return f"ERROR: unknown kind {kind}"
+                    return self.jobs.enqueue(mission.name, Snapshot(kind, str(text), str(url), via))
+
+                async def drain():
+                    # A phase timeout stops navigation, but selected snapshots may still finish in the reserve.
+                    await self.jobs.drain(self.end - 90, mission.name)
+
+                explorer = await Explorer(site, mission, enqueue,
+                                          extraction_status=lambda: self.jobs.status(mission.name),
+                                          await_extractions=drain).run()
+            else:
+                explorer = await Explorer(site, mission, self.extract).run()
             complete = mission.progress()[1] if mission.progress else explorer.status in ("complete", "finished")
             self.status[mission.name] = "complete" if complete else explorer.status
             log("mission_status", mission=mission.name, attempt=attempt + 1, status=self.status[mission.name],
@@ -239,22 +300,51 @@ class Orchestrator:
 
     def requirements(self) -> dict[str, dict]:
         current, found = self.current_revision(), {}
+        if not current:
+            return found
         for item in self.bb.get("requirements"):
             rev = parse.norm_id(item["data"].get("revision"))
-            if current and rev and rev != current:
+            proven = rev or parse.norm_id(item.get("validated_current_revision"))
+            if current and proven != current:
                 continue
             for r in item["data"].get("requirements") or []:
                 if r.get("ref"):
-                    found[parse.norm_id(r["ref"])] = {**r, "revision": rev}
+                    target = found.setdefault(parse.norm_id(r["ref"]), {"revision": proven})
+                    parse.merge_requirement(target, r)
         return found
 
     def needed_requirements(self) -> dict[str, dict]:
         reqs = self.requirements()
+        for f in self._qa_facts():
+            if f.get("type") == "tech_amendment":
+                key = parse.norm_id(f.get("requirement"))
+                req = reqs.get(key)
+                field = {"bore": "bore_mm", "stroke": "stroke_mm", "pressure": "pressure_bar"}.get(f.get("attribute"), f.get("attribute"))
+                if req and parse.norm_id(f.get("revision")) == parse.norm_id(req.get("revision")) and field in (
+                        "bore_mm", "stroke_mm", "pressure_bar", "mounting", "certification"):
+                    reqs[key] = {**req, field: f.get("value")}
+                    if field == "certification":
+                        reqs[key]["certification_known"] = f.get("value") is not None
         needed = {parse.norm_id(p.get("requirement_ref")) for p in self.positions() if p.get("requirement_ref")}
         return {k: v for k, v in reqs.items() if k in needed} if needed else reqs
 
+    def _qa_facts(self) -> list[dict]:
+        """Same date/withdrawal ordering as the resolver; only facts already selected and extracted."""
+        scenario = parse.when(self.brief.get("scenario_datetime_utc"))
+        entries = {parse.qa_number(e.get("number")): e for i in self.bb.get("clarifications")
+                   for e in i["data"].get("entries") or [] if e.get("number")}
+        valid = {k: e for k, e in entries.items()
+                 if not scenario or not parse.when(e.get("datetime_utc")) or parse.when(e.get("datetime_utc")) <= scenario}
+        withdrawn = {parse.qa_number(f.get("withdrawn_number")) for e in valid.values() for f in e.get("facts") or []
+                     if f.get("type") == "withdrawal" and f.get("withdrawn_number")}
+        ordered = sorted(((k, e) for k, e in valid.items() if k not in withdrawn),
+                         key=lambda x: ((parse.when(x[1].get("datetime_utc")).timestamp()
+                                         if parse.when(x[1].get("datetime_utc")) else float("-inf")),
+                                        parse.integer(x[0]) or 0))
+        return [f for _, e in ordered for f in e.get("facts") or []]
+
     def spec_progress(self) -> tuple[str, bool]:
-        current, reqs = self.current_revision(), self.requirements()
+        current, reqs = self.current_revision(), self.needed_requirements()
         needed = {parse.norm_id(p.get("requirement_ref")) for p in self.positions() if p.get("requirement_ref")}
         missing = sorted(needed - set(reqs))
         lines = [f"[{'x' if current else ' '}] revision marked current: {current or 'unknown (extract the revision list with statuses)'}",
@@ -262,8 +352,25 @@ class Orchestrator:
         if needed:
             lines.append(f"[{'x' if not missing else ' '}] requirements referenced by the tender positions: "
                          f"{sorted(needed)}" + (f" — missing {missing}" if missing else ""))
+        gaps = []
+        for key, req in reqs.items():
+            fields = [f for f in ("bore_mm", "stroke_mm", "pressure_bar") if parse.number(req.get(f)) is None]
+            if not parse.clean(req.get("mounting")):
+                fields.append("mounting")
+            if not parse.certification_known(req, requirement=True):
+                fields.append("certification (explicit standard or no requirement)")
+            if req.get("usable_stroke") and not req.get("end_reserve_key"):
+                fields.append("end_reserve_key")
+            units = {parse.norm_id(p.get("unit")) for p in self.effective_positions()
+                     if parse.norm_id(p.get("requirement_ref")) == key}
+            if any(u and not u.lower().startswith(("st", "stk", "stück", "pc", "piece")) for u in units) and not parse.integer(req.get("pieces_per_set")):
+                fields.append("pieces_per_set")
+            if fields:
+                gaps.append(f"{key}: {', '.join(fields)}")
+        if gaps:
+            lines.append("[ ] required technical/conversion facts: " + "; ".join(gaps))
         collected = any(i.get("via") == "collection" for i in self.bb.get("requirements"))
-        complete = bool(current and reqs and (not missing if needed else collected))
+        complete = bool(current and reqs and not gaps and (not missing if needed else collected))
         return "\n".join(lines), complete
 
     def materials(self) -> dict[str, dict]:
@@ -275,12 +382,15 @@ class Orchestrator:
                     continue
                 target = merged.setdefault(num, {"material_number": m["material_number"], "conditions": [], "records": None})
                 for k, v in m.items():
+                    if k in ("certification", "certification_known"):
+                        continue
                     if k == "conditions":
                         target["conditions"] += [c for c in v or [] if c.get("scales")]
                     elif k == "condition_records_total" and v:
                         target["records"] = parse.integer(v)
                     elif v not in (None, "", []):
                         target[k] = v
+                parse.merge_certification(target, m)
         return merged
 
     def erp_progress(self, group: str, reqs: list[dict] | None = None) -> tuple[str, bool]:
@@ -293,19 +403,109 @@ class Orchestrator:
             if mismatch:
                 lines.append(f"[x] {m['material_number']}: does not fit the requirement ({mismatch}); no more data needed")
                 continue
-            missing = [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
+            missing = [f for f in ("bore_mm", "stroke_mm", "pressure_bar") if parse.number(m.get(f)) is None]
+            if not parse.clean(m.get("mounting")):
+                missing.append("mounting")
+            if m.get("status_meaning") not in ("active", "blocked"):
+                missing.append("status_meaning (active/blocked from legend)")
             if m.get("status_meaning") != "blocked":
+                if not parse.certification_known(m):
+                    missing.append("certification (standard or explicit 'none'; not unknown)")
+                applicable = self.material_dependencies(m, reqs or [])
+                missing += applicable
                 records = len({json.dumps(c.get("valid_from")) + json.dumps(c.get("currency")) for c in m["conditions"]})
                 if not records:
                     missing.append("price condition records WITH quantity scales (open the scales view via its link)")
                 elif m.get("records") and records < m["records"]:
                     missing.append(f"scales of all {m['records']} condition records (have {records})")
+                for c in m["conditions"]:
+                    for f in ("currency", "price_unit_qty"):
+                        if c.get(f) in (None, "", []):
+                            missing.append(f"price condition {c.get('record') or '?'}: {f}")
+                    if c.get("price_unit_qty") not in (None, "") and (parse.number(c.get("price_unit_qty"), c.get("number_format")) or 0) <= 0:
+                        missing.append(f"price condition {c.get('record') or '?'}: positive price_unit_qty")
+                    if any(parse.number(s.get("from_qty"), c.get("number_format")) is None
+                           or parse.number(s.get("price"), c.get("number_format")) is None for s in c.get("scales") or []):
+                        missing.append(f"price condition {c.get('record') or '?'}: readable scales/locale")
             else:
                 missing = [f for f in missing if f in ("bore_mm", "stroke_mm", "pressure_bar", "mounting")]
             complete &= not missing
             lines.append(f"[{'x' if not missing else ' '}] {m['material_number']} ({m.get('status_meaning') or 'status ?'})"
                          + (f": missing {', '.join(missing)}" if missing else ": complete"))
         return "\n".join(lines), complete
+
+    def effective_positions(self) -> list[dict]:
+        positions = {parse.norm_id(p.get("position")): dict(p) for p in self.positions()}
+        for f in self._qa_facts():
+            key = parse.norm_id(f.get("position"))
+            if f.get("type") == "quantity_change" and key in positions:
+                positions[key]["quantity"] = f.get("quantity")
+                if f.get("unit"):
+                    positions[key]["unit"] = f["unit"]
+        return list(positions.values())
+
+    def material_dependencies(self, material: dict, reqs: list[dict]) -> list[str]:
+        """Require only fields consumed by relevant pricing/logistics branches, never every nullable field."""
+        facts = self._qa_facts()
+        assignments: dict[str, dict] = {}
+        for f in facts:
+            if f.get("type") == "assignment":
+                assignments.setdefault(parse.norm_id(f.get("position")), {}).update(
+                    {k: v for k, v in f.items() if v not in (None, "")})
+        references = {parse.norm_id(r.get("ref")): r for r in reqs}
+        relevant, pooled, demand_known = [], 0, True
+        for p in self.effective_positions():
+            req = references.get(parse.norm_id(p.get("requirement_ref")))
+            if not req or _mismatch(material, [req]):
+                continue
+            quantity = parse.number(p.get("quantity"))
+            unit = parse.clean(p.get("unit")).lower()
+            if unit and not unit.startswith(("st", "stk", "stück", "pc", "piece")):
+                conversion = parse.integer(req.get("pieces_per_set"))
+                quantity = quantity * conversion if quantity is not None and conversion else None
+            pooled += int(quantity) if quantity is not None else 0
+            demand_known &= quantity is not None and quantity > 0
+            relevant.append(assignments.get(parse.norm_id(p.get("position")), {}))
+        required = []
+        if any(a.get("packaging_key") for a in relevant):
+            required.append("pieces_per_carton")
+        if any(a.get("setup_pool_key") for a in relevant):
+            required.append("allocation_weight_g")
+        topics = {r.get("topic") for r in self.brief.get("authorized_records") or []}
+        if material.get("price_index_key") or "metal_index" in topics:
+            required.append("surcharge_mass_g")
+            if (parse.number(material.get("surcharge_mass_g")) or 0) > 0 and not material.get("price_index_key"):
+                required.append("price_index_key")
+        commitments = self.delivery_commitments()
+        guaranteed = bool(relevant) and demand_known
+        for a in relevant:
+            c = next((v for k, v in commitments.items() if parse.norm_id(k) == parse.norm_id(a.get("delivery_key"))), {})
+            cap = parse.number(c.get("max_total_qty"))
+            guaranteed &= bool(c and parse.norm_id(c.get("material")) == parse.norm_id(material.get("material_number"))
+                               and cap is not None and pooled <= cap and parse.integer(c.get("weeks")) is not None)
+        if not guaranteed:
+            required.append("unrestricted_stock")
+            stock = parse.number(material.get("unrestricted_stock"))
+            # Unknown demand: retain both lead branches until the referenced requirements are known.
+            if not relevant or not demand_known:
+                required += ["lead_time_stock_weeks", "lead_time_production_weeks"]
+            else:
+                required.append("lead_time_stock_weeks" if stock is not None and pooled <= stock else "lead_time_production_weeks")
+        return [f for f in dict.fromkeys(required) if (not material.get(f) if f == "price_index_key"
+                else parse.number(material.get(f)) is None)
+                or (f == "pieces_per_carton" and (parse.integer(material.get(f)) or 0) <= 0)]
+
+    def delivery_commitments(self) -> dict:
+        """Only authority-, reference- and date-valid commitments, newest per normalized key."""
+        commitments = {}
+        for item in sorted(self.bb.get("mail_message"),
+                           key=lambda i: parse.when(i["data"].get("datetime_utc")).timestamp()
+                           if parse.when(i["data"].get("datetime_utc")) else float("-inf")):
+            mail = item["data"]
+            if mail.get("topic") == "delivery" and self._mail_problem(mail, parse.norm_id(self.brief.get("tender_reference"))) is None:
+                commitments.update({parse.norm_id(k): v for k, v in
+                                    ((mail.get("data") or {}).get("commitments") or {}).items()})
+        return commitments
 
     def mail_progress(self) -> tuple[str, bool]:
         ref = parse.norm_id(self.brief.get("tender_reference"))
@@ -421,9 +621,30 @@ search says there are too many results, add the subject keyword.""",
         results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
                                        tracked("specification", self.site_for("specification"), spec, attempts=3),
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
+        # Other missions can add referenced requirements or delivery constraints
+        # after a mission first finishes. Reconcile live dependencies before pricing.
+        await self.reconcile_evidence(spec)
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    async def reconcile_evidence(self, specification: Mission) -> None:
+        if self.jobs:
+            await self.jobs.drain(self.end - 90)
+        if not self.spec_progress()[1] and self.evidence_end - time.time() >= 60:
+            log("dependency_repair", mission="specification", reason="live referenced requirements incomplete")
+            await self.run_mission(self.site_for("specification"), specification, attempts=1)
+        for group, reqs in self.erp_groups().items():
+            if self.erp_progress(group, reqs)[1]:
+                continue
+            self.erp_complete.discard(parse.norm_id(group))
+            if self.evidence_end - time.time() < 60:
+                log("dependency_incomplete", group=group, reason="live ERP dependencies incomplete")
+                continue
+            log("dependency_repair", mission=f"erp:{group}", reason="live ERP dependencies changed or incomplete")
+            await self.run_mission(self.site_for("erp"), self.erp_mission(group, reqs), attempts=1)
+            if self.erp_progress(group, self.erp_groups().get(group, reqs))[1]:
+                self.erp_complete.add(parse.norm_id(group))
 
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
@@ -435,6 +656,10 @@ search says there are too many results, add the subject keyword.""",
         site.fresh_start()
         site.collections.clear()
         self._cache = {k: v for k, v in self._cache.items() if not k.startswith("clarifications")}
+        if self.jobs:
+            # A fresh Q&A recheck must not be satisfied by a previously completed snapshot job/cache entry.
+            self._cache = {k: v for k, v in self._cache.items() if not k.startswith("snapshot:")}
+            self.jobs.by_key = {k: j for k, j in self.jobs.by_key.items() if j.snapshot.kind != "clarifications"}
         before = len(self.bb.get("clarifications"))
 
         def progress() -> tuple[str, bool]:
@@ -455,6 +680,8 @@ bid submission.""", ["clarifications"], 14, progress=progress)
             await asyncio.wait_for(self.run_mission(site, mission, attempts=1), timeout=max(10, mission.deadline - time.time() + 5))
         except (Exception, asyncio.TimeoutError) as error:
             log("no_bid_recheck_error", error=f"{type(error).__name__}: {error}"[:300])
+        if self.jobs:
+            await self.jobs.drain(self.end - 90)
         checked = self.resolve()
         log("no_bid_recheck_done", decision=checked.answer.get("decision"), qa_read_again=len(self.bb.get("clarifications")) - before)
         return checked
@@ -483,6 +710,8 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         Groups start as soon as they are known; nothing waits for a specification mission that has ended.
         Missions never share a tab at the same time, and all of them end with this phase."""
         base, started = self.site_for("erp"), {}
+        await self.wait_site(base)
+        signatures = {}
         base_chain: asyncio.Task | None = None       # missions that have to run on the base tab, one after another
         try:
             while time.time() < self.evidence_end - 90:
@@ -490,8 +719,17 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                 known_positions = bool(self.positions()) or tender_ended
                 if known_positions:
                     for group, reqs in self.erp_groups().items():
-                        if group in started:
+                        refs = {parse.norm_id(r.get("ref")) for r in reqs}
+                        ids = {parse.norm_id(p.get("position")) for p in self.positions()
+                               if parse.norm_id(p.get("requirement_ref")) in refs}
+                        dependencies = [f for f in self._qa_facts() if f.get("type") in ("assignment", "quantity_change")
+                                        and parse.norm_id(f.get("position")) in ids]
+                        delivery_keys = {parse.norm_id(f.get("delivery_key")) for f in dependencies if f.get("delivery_key")}
+                        commitments = {k: v for k, v in self.delivery_commitments().items() if k in delivery_keys}
+                        signature = json.dumps([reqs, dependencies, commitments], sort_keys=True)
+                        if group in started and (not started[group].done() or signatures[group] == signature):
                             continue
+                        signatures[group] = signature
                         mission = self.erp_mission(group, reqs)
                         site = base if base_chain is None else await self._tab(base)
                         if site is base:
@@ -550,10 +788,12 @@ bid submission.""", ["clarifications"], 14, progress=progress)
    storage-location level (freely usable stock), and ALL price condition records with their quantity scales (scales
    may be on a separate tab/view; several records may be paged). Prefer extract_urls with several detail URLs.
 The progress checklist tells you what is still missing per material.""", ["materials"], 35,
-                            progress=lambda g=group, rs=reqs: self.erp_progress(g, rs))
+                            progress=lambda g=group, rs=reqs: self.erp_progress(g, self.erp_groups().get(g, rs)))
 
     # ---------------------------------------------------------------- rules + submission
     def resolve(self) -> Result:
+        if getattr(self, "jobs", None) and self.jobs.pending():
+            raise RuntimeError("cannot calculate while selected extraction snapshots are pending")
         brief = self.brief
         authorized = {r.get("topic"): r.get("sender_localpart") for r in brief.get("authorized_records") or []
                       if r.get("topic") and r.get("sender_localpart")}
@@ -580,6 +820,9 @@ The progress checklist tells you what is still missing per material.""", ["mater
                 await asyncio.wait_for(self.gather_evidence(), timeout=max(30, self.evidence_end - time.time()))
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
+        if self.jobs:
+            # Evidence remains immutable and source-bound after navigation ends. Settle it before calculating.
+            await self.jobs.drain(self.end - 90)
         try:
             result = self.resolve()
             if not replay and result.answer.get("decision") == "no_bid" and time.time() < self.evidence_end - 30:
@@ -650,7 +893,7 @@ def _mismatch(m: dict, reqs: list[dict]) -> str:
                 why.append(f"{f} {a}≠{b}")
         if m.get("mounting") and r.get("mounting") and not parse.same_text(m["mounting"], r["mounting"]):
             why.append(f"mounting {m['mounting']}≠{r['mounting']}")
-        if m.get("certification") is not None and parse.cert(m.get("certification")) != parse.cert(r.get("certification")):
+        if parse.certification_known(m) and parse.certification_known(r, requirement=True) and parse.cert(m.get("certification")) != parse.cert(r.get("certification")):
             why.append(f"certification {m.get('certification')}≠{r.get('certification') or 'none'}")
         if not why:
             return ""

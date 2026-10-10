@@ -9,6 +9,7 @@ import os
 import re
 import time
 from decimal import Decimal
+from playwright.async_api import Error as PlaywrightError
 
 from .. import llm
 from ..log import log
@@ -16,6 +17,7 @@ from ..rules import parse
 from .explorer import TOOLS, Explorer, Mission, _tool
 from .prompts import EXTRACT_SYSTEM, KINDS
 from .review import validate_review
+from .form_plans import FormPlans
 
 SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
                 ("read_all_pages", "read_collection", "extract", "extract_urls", "read_document")] + [
@@ -62,11 +64,65 @@ class SubmitExplorer(Explorer):
     receipt: str | None = None
     review_blocks = 0
 
+    async def run(self, tools=None):
+        tools = tools or SUBMIT_TOOLS
+        if os.environ.get("RFQ_FORM_PLANS") == "1":
+            self.form_plans = FormPlans()
+            tools = tools + [
+                _tool("remember_form_plan", "Optionally remember semantic bindings of this CURRENT position form "
+                      "for reuse in THIS run. No TAN/signing, no dependent filters. value_key names computed bid "
+                      "fields (quantity, unit_price, material_number, breakdown fields, lead_time_weeks).",
+                      {"plan_id": {"type": "string"}, "position": {"type": "string"}, "position_ref": {"type": "string"},
+                       "fields": {"type": "array", "items": {"type": "object", "properties": {
+                           "ref": {"type": "string"}, "value_key": {"type": "string"}}, "required": ["ref", "value_key"]}},
+                       "then_click": {"type": "string"}}, ["plan_id", "position", "position_ref", "fields"]),
+                _tool("apply_form_plan", "Apply a remembered form plan to the CURRENT position, using ONLY our "
+                      "computed bid values. Choose its visible position marker. Changed form/options/session stop "
+                      "before writing: fall back to fill_fields. This does not sign a bid.",
+                      {"plan_id": {"type": "string"}, "position": {"type": "string"}, "position_ref": {"type": "string"}},
+                      ["plan_id", "position", "position_ref"]),
+            ]
+        return await super().run(tools)
+
     @property
     def submitted(self) -> bool:
         return self.state in ("confirmed", "prepared")
 
     async def _call(self, name: str, args: dict) -> str:
+        # Generic navigation tools must not bypass the checked binding-submit path,
+        # including portals whose final button does not open a native confirm dialog.
+        transition_refs = []
+        if name == "click":
+            transition_refs.append(args.get("ref"))
+        if name in ("fill_fields", "select"):
+            transition_refs.append(args.get("then_click"))
+            transition_refs.extend(f.get("apply") for f in args.get("fields", []) if isinstance(f, dict))
+        for ref in filter(None, transition_refs):
+            try:
+                _, element = await self.site._element(str(ref))
+                descriptor = await element.evaluate("e => ({text:e.innerText || e.value || e.getAttribute('aria-label') || '',id:e.id || '',name:e.name || ''})")
+                words = " ".join(str(v) for v in descriptor.values())
+                final = bool(re.search(r"verbindlich|binding|submit[_ -]?bid|sign[_ -]?bid|offer[_ -]?submit|final[_ -]?submit|angebot\s+abgeben", words, re.I))
+                final |= bool(self.tan and re.search(r"submit|send|senden|abgeben|abschicken|einreichen|übermitteln|confirm|bestätigen", words, re.I))
+                if final:
+                    return "ERROR: binding buttons require submit_bid, which verifies our review before signing."
+            except (PlaywrightError, ValueError, KeyError, TypeError):
+                return "ERROR: transition target could not be verified; observe the page again."
+        if self.tan and ((name == "press_key" and str(args.get("key", "")).lower() in ("enter", "return"))
+                         or (name == "type" and args.get("submit"))):
+            return "ERROR: after requesting TAN, use submit_bid for binding submission; do not press Enter."
+        if name in ("remember_form_plan", "apply_form_plan"):
+            if os.environ.get("RFQ_FORM_PLANS") != "1" or not hasattr(self, "form_plans"):
+                return "ERROR: form plans are disabled"
+            try:
+                if name == "remember_form_plan":
+                    answer = self.orchestrator.result.answer
+                    if not any(parse.norm_id(p["position"]) == parse.norm_id(args["position"]) for p in answer["positions"]):
+                        return "ERROR: position is absent from our computed bid"
+                    return await self.form_plans.remember(self.site, **args)
+                return await self.form_plans.apply(self.site, answer=self.orchestrator.result.answer, **args)
+            except (ValueError, KeyError, TypeError, PlaywrightError) as error:
+                return f"ERROR: form plan not applied: {error}; use ordinary fill_fields"
         if name == "get_tan":
             return await self._get_tan()
         if name == "submit_bid":
@@ -120,14 +176,14 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         review = validate_review(answer, await self._read("bid_review", page_text), skipped)
         log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
             verified=len(review["verified"]))
-        left = orch.end - time.time()
-        wrong_reference = any(m.startswith("tender_reference") for m in review["mismatches"])
-        # A wrong reference makes the bid ineligible anyway: keep fixing it until the last minute. Other critical
-        # mismatches get three fixing rounds while time allows; afterwards a partial bid beats no bid.
-        if review["blocking"] and ((wrong_reference and left > 60) or (self.review_blocks < 3 and left > 150)):
+        # Missing model readback is uncertainty, not permission to sign. Let the explorer repair/re-read;
+        # neither elapsed time nor repeated attempts can turn a contradictory review into a correct bid.
+        if review["blocking"]:
             self.review_blocks += 1
             return ("ERROR: the review page does not match our bid; fix before signing (use the form's back/edit "
-                    "functions, keep the TAN step for last):\n- " + "\n- ".join(review["mismatches"] + review["missing"]))
+                    "functions, keep the TAN step for last). Missing/unreadable values need a fresh read, not a "
+                    "blind edit; only correct a value when the portal actually shows it is wrong:\n- "
+                    + "\n- ".join(review["mismatches"] + review["missing"]))
         if os.environ.get("RFQ_DRY_RUN") == "1":
             self.state, self.stop = "prepared", True
             log("dry_run_stop", review=review, page=page_text[:2000])
@@ -161,7 +217,8 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         """Read the page after the final click (twice if the first look is inconclusive)."""
         for attempt in range(2):
             try:
-                await self.site.act("wait_for", {"condition": "change", "timeout_s": 4})
+                if attempt:
+                    await self.site.act("wait_for", {"condition": "change", "timeout_s": 4})
                 text = await self.site.observe(limit=6000)
             except Exception as error:     # the run may end right after acceptance (logins stop working)
                 log("submit_observe_failed", error=str(error)[:200])
