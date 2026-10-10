@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 from urllib.parse import urljoin
 
-from .. import llm, metrics
+from .. import flags, llm, metrics
 from ..browser import documents
 from ..browser.site import Site
 from ..log import log
@@ -188,7 +188,7 @@ class Explorer:
                 last += "\n\nSTILL EXTRACTING IN THE BACKGROUND (do not request again):\n" + "\n".join(self.pending)
             history = "\n".join(self.history[-20:]) or "-"
             metrics.prompt(tag, intro=intro, history=history, last=last, checklist=checklist, observation=observation)
-            messages = [{"role": "system", "content": EXPLORER_SYSTEM},
+            messages = [{"role": "system", "content": self._system()},
                         {"role": "user", "content": intro},
                         {"role": "user", "content": "STEPS SO FAR:\n" + history + last
                          + (f"\n\nPROGRESS CHECKLIST (computed from what was extracted so far):\n{checklist}" if checklist else "")
@@ -201,9 +201,11 @@ class Explorer:
                 self.history.append(f"{step + 1}. (no tool call) -> please call a tool")
                 continue
             name, args = reply["tool_calls"][0]
-            # The same action on the same page state is a loop; the same ref on a new page is not.
+            # The same action on the same page state is a loop; the same ref on a new page is not. Waiting again for
+            # background extractions is not a loop: each wait returns with a new result.
             signature = name + json.dumps(args, sort_keys=True, ensure_ascii=False) + str(hash(observation))
-            repeats[signature] = repeats.get(signature, 0) + 1
+            if not self._waits_on_background(name):
+                repeats[signature] = repeats.get(signature, 0) + 1
             if name == "finish" and self.pending and self.mission.progress:
                 await self._drain(min(30.0, self.mission.deadline - time.time() - 10))
                 if not self.mission.progress()[1]:
@@ -217,7 +219,7 @@ class Explorer:
                 self.status = "finished" if not self.missing else "incomplete"
                 log("mission_finish", mission=tag, step=step + 1, summary=self.summary[:500], missing=self.missing)
                 return self
-            if repeats[signature] > 2:
+            if repeats.get(signature, 0) > 2:
                 blocked += 1
                 metrics.add("blocked_repeats")
                 if blocked >= self.mission.max_blocked:
@@ -240,8 +242,21 @@ class Explorer:
         self.status, self.missing = "incomplete", self.missing + ["step budget exhausted"]
         return self
 
+    def _system(self) -> str:
+        if flags.WAIT_ON_BACKGROUND and self.mission.background_extraction:
+            return EXPLORER_SYSTEM + WAIT_HINT
+        return EXPLORER_SYSTEM
+
+    def _waits_on_background(self, name: str) -> bool:
+        return name == "wait_for" and bool(self.pending) and flags.WAIT_ON_BACKGROUND
+
     async def _call(self, name: str, args: dict) -> str:
         try:
+            if self._waits_on_background(name):
+                finished = await self._wait_first(20.0)
+                return ("waited for the background extractions: "
+                        + (", ".join(finished) + " finished" if finished else "none finished within 20 s")
+                        + ". Their results are shown now; the page condition was not checked.")
             if name in ACTIONS:
                 return await self.site.act(name, args)
             if name == "read_all_pages":
@@ -304,6 +319,14 @@ class Explorer:
             arrived.append(f"{label} -> {result}")
             self.history.append(f"   (background) {label[:120]} -> {result[:200]}")
         return arrived
+
+    async def _wait_first(self, timeout: float) -> list[str]:
+        """Wait until one background extraction finishes (no model call meanwhile); the labels that finished."""
+        timeout = min(timeout, self.mission.deadline - time.time() - 10)
+        if timeout <= 0 or not self.pending:
+            return []
+        done, _ = await asyncio.wait(list(self.pending.values()), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        return [label for label, task in self.pending.items() if task in done]
 
     async def _drain(self, timeout: float) -> None:
         if self.pending and timeout > 0:
@@ -460,6 +483,11 @@ class Explorer:
 
 async def _joined(*parts) -> str:
     return " | ".join(await asyncio.gather(*parts))
+
+
+WAIT_HINT = """
+- When nothing is left to do but wait for background extractions, call wait_for (any condition): it returns as soon
+  as one of them has finished, with its result."""
 
 
 def _content_lines(text: str) -> set[str]:

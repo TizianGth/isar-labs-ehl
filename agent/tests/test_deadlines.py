@@ -476,3 +476,32 @@ def test_without_a_new_tab_the_missions_take_turns(monkeypatch):
     assert at["tender"][0] is portal and at["specification"][0] is portal
     first, second = sorted(("tender", "specification"), key=lambda n: at[n][1])
     assert at[second][1] >= at[first + ":end"][1]                      # never two missions on one tab at once
+
+
+def test_wait_for_returns_with_the_next_background_result(monkeypatch):
+    """P-3: in sandbox runs the model called wait_for 18-22 times per run while extractions ran in the background
+    (page conditions that never came, 8-10 s each). With the switch on, one wait_for returns as soon as a result is
+    there; repeating it is not a loop."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission
+    monkeypatch.setattr(flags, "WAIT_ON_BACKGROUND", True)
+    state, prompts = {"pages": 0}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.4 if url.endswith("/a") else 0.9)
+        state["pages"] += 1
+        return "facts"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/a", "/b"], "kind": "materials"}),
+                            ("wait_for", {"condition": "text:Konditionen"}),
+                            ("wait_for", {"condition": "text:Konditionen"}),
+                            ("wait_for", {"condition": "text:Konditionen"})], prompts)
+    site = _FakeSite()
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: (f"pages {state['pages']}/2", state["pages"] >= 2), background_extraction=True)
+    started = time.time()
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert explorer.status == "complete" and time.time() - started < 3
+    assert not site.clicks                                         # the page was never waited on
+    assert not any("already did exactly this" in h for h in explorer.history)
+    assert len(prompts) <= 3                                       # extract + at most two waits, no idle loop
