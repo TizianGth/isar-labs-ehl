@@ -445,6 +445,8 @@ def _shared_site_run(monkeypatch, fail_spawn: bool):
 
     async def no_erp(self):
         return []
+    from rfq import flags
+    monkeypatch.setattr(flags, "GAP_RECOVERY", False)            # this test is about tabs, not about recovery
     monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
     monkeypatch.setattr(Orchestrator, "erp_phase", no_erp)
 

@@ -20,7 +20,7 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
-from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
+from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM
 from .submit import submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
@@ -201,6 +201,7 @@ class Orchestrator:
             return (f"{text}\n\n{memory}" if memory else text), complete
 
         with_memory.with_memory = True
+        with_memory.inner = progress          # the checklist without this website's memory (for other websites)
         mission.progress = with_memory
         return mission
 
@@ -450,9 +451,11 @@ search says there are too many results, add the subject keyword.""",
             site = self.role_site(name)
             try:
                 async with self.turn(site):
-                    return await self.run_mission(site, mission, attempts)
+                    explorer = await self.run_mission(site, mission, attempts)
+                await self.recover_elsewhere(name, site, mission)
+                return explorer
             finally:
-                self.done[name].set()        # an ended mission is an event, whatever its outcome
+                self.done[name].set()        # an ended mission (and its recovery) is an event, whatever its outcome
 
         results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec, attempts=3),
                                        tracked("mail", mail), self.erp_phase())
@@ -460,6 +463,46 @@ search says there are too many results, add the subject keyword.""",
         metrics.mark("evidence_done")
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    async def recover_elsewhere(self, role: str, home: Site, mission: Mission) -> None:
+        """A mission ended with its checklist incomplete. The information may be on another website: the model picks
+        the most likely one from their current pages, and one short mission looks there in a tab of its own."""
+        if not flags.GAP_RECOVERY or mission.progress is None or mission.progress()[1]:
+            return
+        if self.evidence_end - time.time() < 120:
+            log("gap_recovery_skipped", role=role, mission=mission.name, reason="not enough time")
+            return
+        home_id = getattr(home, "site_id", None)
+        others = {s.site_id: s for s in self.sites.values() if getattr(s, "site_id", None) not in (None, home_id)}
+        if not others:
+            return
+        progress = getattr(mission.progress, "inner", mission.progress)
+        try:
+            checklist = progress()[0][:2000]
+            candidates = "\n".join(f"- {site_id} ({site.url}): {_page_start(site)}" for site_id, site in others.items())
+            choice = await llm.ask_json(SITE_CHOICE_SYSTEM, f"MISSING (checklist of the mission on website "
+                                        f"'{home_id}'):\n{checklist}\n\nCANDIDATES:\n{candidates}",
+                                        tag=f"gap:{role}", deadline=self.evidence_end)
+            site = others.get(str(choice.get("site") or "").strip())
+            metrics.add("gap_recoveries")
+            log("gap_recovery", role=role, mission=mission.name, site=site.site_id if site else None,
+                reason=str(choice.get("reason"))[:200])
+            if site is None:
+                return
+            await site.wait_started()
+            tab = await site.spawn()
+            try:
+                gap = Mission(name=f"{mission.name}+gap", goal=GAP_GOAL.format(home=home_id, checklist=checklist),
+                              kinds=mission.kinds, max_steps=15, deadline=min(self.evidence_end, time.time() + 150),
+                              context=mission.context, progress=progress)
+                await self.run_mission(tab, gap, attempts=1)
+            finally:
+                await tab.close()
+            log("gap_recovery_done", role=role, mission=mission.name, site=site.site_id, complete=progress()[1])
+        except llm.DeadlineExceeded:
+            log("gap_recovery_skipped", role=role, mission=mission.name, reason="deadline")
+        except Exception as error:      # a recovery must never cost the evidence that was found
+            log("gap_recovery_error", role=role, mission=mission.name, error=f"{type(error).__name__}: {error}"[:300])
 
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
@@ -523,12 +566,18 @@ bid submission.""", ["clarifications"], 14, progress=progress)
 
         async def on_base(mission: Mission):
             async with self.turn(base):                # missions on the base tab run one after another
-                return await self.run_mission(base, mission)
+                explorer = await self.run_mission(base, mission)
+            await self.recover_elsewhere("erp", base, mission)
+            return explorer
 
         async def on_new_tab(mission: Mission):
             # each group opens its own tab in its own task: a tab that loads slowly delays only its group
             site = await self._tab(base)
-            return await (on_base(mission) if site is base else self.run_mission(site, mission))
+            if site is base:
+                return await on_base(mission)
+            explorer = await self.run_mission(site, mission)
+            await self.recover_elsewhere("erp", base, mission)
+            return explorer
         try:
             while time.time() < self.evidence_end - 90:
                 spec_ended, tender_ended = self.done["specification"].is_set(), self.done["tender"].is_set()
@@ -636,6 +685,12 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
         return result
+
+
+def _page_start(site) -> str:
+    """The beginning of the page a website's tab shows (what the model can judge a website by)."""
+    text = getattr(site, "last_observation", "") or ""
+    return " ".join(text[:600].split()) or "not opened yet"
 
 
 def _page_pattern(url) -> str:
