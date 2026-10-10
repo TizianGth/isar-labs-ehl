@@ -3,8 +3,13 @@
   "checkpoint_id": "01M4KT8BFARKXMXZD8FQEQFJA1",
   "strategy": "manual-commit",
   "branch": "wip/batch-cascade",
-  "checkpoints_count": 1,
-  "files_touched": null,
+  "checkpoints_count": 2,
+  "files_touched": [
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/submit.py",
+    "agent/rfq/browser/site.py",
+    "agent/tests/test_browser_tools.py"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,6 +17,12 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
