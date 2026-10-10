@@ -416,3 +416,61 @@ def test_a_slow_new_erp_tab_does_not_hold_up_the_other_groups(monkeypatch):
         return {k: v - began for k, v in started.items()}
     times = asyncio.run(scenario())
     assert len(times) == 3 and sorted(times.values())[1] < 1.5     # base + the fast tab start without waiting
+
+
+class _RoleSite:
+    def __init__(self, site_id, fail_spawn=False):
+        self.site_id, self.url, self.fail_spawn, self.tabs = site_id, f"http://{site_id}.test", fail_spawn, []
+
+    async def wait_started(self):
+        pass
+
+    async def spawn(self):
+        if self.fail_spawn:
+            raise RuntimeError("no new tab")
+        tab = _RoleSite(self.site_id)
+        self.tabs.append(tab)
+        return tab
+
+
+def _shared_site_run(monkeypatch, fail_spawn: bool):
+    portal = _RoleSite("portal", fail_spawn)
+    sites = {"portal": portal, "erp": _RoleSite("erp"), "mail": _RoleSite("mail")}
+    runs = []
+
+    async def fake_mission(self, site, mission, attempts=2):
+        runs.append((mission.name, site, time.time()))
+        await asyncio.sleep(0.3)
+        runs.append((mission.name + ":end", site, time.time()))
+
+    async def no_erp(self):
+        return []
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "erp_phase", no_erp)
+
+    async def scenario():
+        run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+        o = Orchestrator(run, sites, started=time.time())
+        o.brief = {"tender_reference": "XT-1", "authorized_records": [],
+                   "sites": {"tender": "portal", "specification": "portal", "mail": "mail", "erp": "erp"}}
+        await o.gather_evidence()
+        return o
+    o = asyncio.run(scenario())
+    at = {name: (site, t) for name, site, t in runs}
+    return portal, o, at
+
+
+def test_two_roles_on_one_website_get_their_own_tabs(monkeypatch):
+    """G-1: information split differently: the specification lives on the tender website. Each mission gets its
+    own tab and both run at the same time."""
+    portal, o, at = _shared_site_run(monkeypatch, fail_spawn=False)
+    assert at["tender"][0] is portal and at["specification"][0] is portal.tabs[0]
+    assert at["specification"][1] < at["tender:end"][1]               # in parallel
+    assert o.role_site("specification") is portal.tabs[0] and o.role_site("tender") is portal
+
+
+def test_without_a_new_tab_the_missions_take_turns(monkeypatch):
+    portal, o, at = _shared_site_run(monkeypatch, fail_spawn=True)
+    assert at["tender"][0] is portal and at["specification"][0] is portal
+    first, second = sorted(("tender", "specification"), key=lambda n: at[n][1])
+    assert at[second][1] >= at[first + ":end"][1]                      # never two missions on one tab at once

@@ -71,6 +71,8 @@ class Orchestrator:
         self.erp_complete: set[str] = set()               # catalogue groups whose ERP mission completed its checklist
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, asyncio.Future] = {}
+        self.role_sites: dict[str, Site] = {}             # role -> the tab its missions use (assign_role_sites)
+        self._turns: dict[int, asyncio.Lock] = {}         # one mission at a time per tab
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
@@ -142,6 +144,32 @@ class Orchestrator:
             return self.sites[site_id]
         order = ["tender", "specification", "erp", "mail"]
         return list(self.sites.values())[order.index(role) % len(self.sites)]
+
+    def role_site(self, role: str) -> Site:
+        """The tab a role works on: its own tab when it shares the website with another role."""
+        return self.role_sites.get(role) or self.site_for(role)
+
+    def turn(self, site) -> asyncio.Lock:
+        """A tab serves one mission at a time."""
+        return self._turns.setdefault(id(site), asyncio.Lock())
+
+    async def assign_role_sites(self) -> None:
+        """Information may sit on other websites than usual, so two roles can map to the same website. The later
+        role gets its own tab of that website (same session); if no tab can be opened, both missions use the
+        website's tab one after the other (see `turn`)."""
+        first: dict[int, str] = {}
+        for role in ("tender", "specification", "mail", "erp"):
+            site = self.site_for(role)
+            if flags.TAB_ISOLATION and id(site) in first:
+                try:
+                    await site.wait_started()
+                    self.role_sites[role] = await site.spawn()
+                    log("role_tab", role=role, site=site.site_id, shared_with=first[id(site)])
+                    continue
+                except Exception as error:
+                    log("role_tab_failed", role=role, site=site.site_id, error=f"{type(error).__name__}: {error}"[:200])
+            first.setdefault(id(site), role)
+            self.role_sites[role] = site
 
     def mission(self, name: str, goal: str, kinds: list[str], steps: int, progress=None, context: str = "") -> Mission:
         return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
@@ -380,6 +408,7 @@ class Orchestrator:
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
         metrics.mark("evidence_start")
+        await self.assign_role_sites()
         ref = self.brief.get("tender_reference")
         records = self.brief.get("authorized_records") or []
         topics = "\n".join(f"- {r.get('topic')}: subject keyword '{r.get('subject_keyword')}', sender "
@@ -417,15 +446,16 @@ search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
         mail.background_extraction = flags.BACKGROUND_EXTRACTION
 
-        async def tracked(name: str, site: Site, mission: Mission, attempts: int = 2):
+        async def tracked(name: str, mission: Mission, attempts: int = 2):
+            site = self.role_site(name)
             try:
-                return await self.run_mission(site, mission, attempts)
+                async with self.turn(site):
+                    return await self.run_mission(site, mission, attempts)
             finally:
                 self.done[name].set()        # an ended mission is an event, whatever its outcome
 
-        results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
-                                       tracked("specification", self.site_for("specification"), spec, attempts=3),
-                                       tracked("mail", self.site_for("mail"), mail), self.erp_phase())
+        results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec, attempts=3),
+                                       tracked("mail", mail), self.erp_phase())
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         metrics.mark("evidence_done")
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
@@ -438,7 +468,7 @@ search says there are too many results, add the subject keyword.""",
         reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line]
         metrics.mark("no_bid_recheck")
         log("no_bid_recheck", reasons=reasons[:12])
-        site = self.site_for("tender")
+        site = self.role_site("tender")
         site.fresh_start()
         site.collections.clear()
         self._cache = {k: v for k, v in self._cache.items() if not k.startswith("clarifications")}
@@ -489,11 +519,10 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         """One ERP mission per needed catalogue group, in parallel tabs of the ERP browser (shared session).
         Groups start as soon as they are known; nothing waits for a specification mission that has ended.
         Missions never share a tab at the same time, and all of them end with this phase."""
-        base, started = self.site_for("erp"), {}
-        base_free = asyncio.Lock()                    # missions on the base tab run one after another
+        base, started = self.role_site("erp"), {}
 
         async def on_base(mission: Mission):
-            async with base_free:
+            async with self.turn(base):                # missions on the base tab run one after another
                 return await self.run_mission(base, mission)
 
         async def on_new_tab(mission: Mission):

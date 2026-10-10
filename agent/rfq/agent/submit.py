@@ -125,7 +125,9 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
 (highest request number / most recent) and extract it with extract_urls kind 'mail_message'.""",
                           {"mail_message": "one opened e-mail message"}, max_steps=10,
                           deadline=min(orch.end - 20, time.time() + 120), progress=tan_progress)
-        site = orch.site_for("mail")
+        site = orch.role_site("mail")
+        if site is self.site:          # the inbox is on the bid website: never share the submission's tab
+            site = await site.spawn()
         site.fresh_start()
         await site.goto(site.url)
         await Explorer(site, mission, orch.extract).run()
@@ -264,7 +266,7 @@ Procedure and traps:
   the review page against our bid and only reports success when the website confirms the receipt.
 - If the page reports validation errors, fix them and continue."""
     mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000, max_visual=2)
-    site = orch.site_for("tender")
+    site = orch.role_site("tender")
     site.fresh_start()
     if not await site.responsive():          # never start the decisive phase on a hung tab
         await site.recover_tab("before the submission")
