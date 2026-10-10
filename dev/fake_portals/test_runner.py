@@ -56,6 +56,29 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(original, {p: p.read_bytes() for p in original})
             self.assertTrue(all(len(f['sha256']) == 64 for f in provenance['files']))
 
+    def test_frozen_provenance_wins_over_the_enclosing_repos_new_head(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            frozen = root / 'agent-snapshot'
+            (frozen / 'rfq').mkdir(parents=True)
+            (frozen / 'main.py').write_text('# frozen original\n')
+            (frozen / 'rfq/core.py').write_text('# frozen logic\n')
+            parent = snapshot_agent(frozen, root / 'first-copy')
+            parent['commit'] = 'original-candidate'
+            parent['dirty_at_snapshot'] = ''
+            (root / 'provenance.json').write_text(json.dumps(parent))
+            # Git can discover a changed enclosing repository even though the
+            # frozen files live under an ignored dev/runs directory.
+            with patch('run_agent.subprocess.check_output', side_effect=['new-unrelated-head', '']):
+                actual = snapshot_agent(frozen, root / 'child-copy')
+            self.assertEqual(actual['commit'], 'original-candidate')
+            self.assertEqual(actual['matching_parent_provenance'], str(root / 'provenance.json'))
+            (frozen / 'main.py').write_text('# altered frozen file\n')
+            with patch('run_agent.subprocess.check_output', side_effect=['new-unrelated-head', '']):
+                changed = snapshot_agent(frozen, root / 'altered-copy')
+            self.assertIsNone(changed['commit'])
+            self.assertIn('differs', changed['dirty_at_snapshot'])
+
 
 class RunnerCancellationTests(unittest.IsolatedAsyncioTestCase):
     async def test_proxy_failure_is_reported_even_with_zero_process_exit(self):

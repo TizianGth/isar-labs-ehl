@@ -102,12 +102,16 @@ def snapshot_agent(source, dest):
         pass
     lineage = None
     parent_provenance = source.parent / 'provenance.json'
-    if commit is None and source.name == 'agent-snapshot' and parent_provenance.is_file():
+    if source.name == 'agent-snapshot' and parent_provenance.is_file():
         parent = json.loads(parent_provenance.read_text())
         hashes = lambda rows: {r['path']: r['sha256'] for r in rows}
         if hashes(parent.get('files', [])) == hashes(files):
+            # dev/runs can be inside a Git repository. Its current HEAD does not
+            # identify this already-frozen snapshot; matching hashes do.
             commit, dirty = parent.get('commit'), parent.get('dirty_at_snapshot')
             lineage = str(parent_provenance)
+        else:
+            commit, dirty = None, 'snapshot differs from parent provenance'
     return {'source': str(source), 'commit': commit, 'dirty_at_snapshot': dirty, 'files': files,
             'matching_parent_provenance': lineage}
 
