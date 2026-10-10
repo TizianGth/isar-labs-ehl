@@ -13,12 +13,15 @@ import time
 
 from openai import AsyncOpenAI
 
-from . import metrics
+from . import flags, metrics
 from .log import log
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
 _slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "10")))
+# With RFQ_LLM_LANES, navigation (tool) calls get slots of their own, so a burst of background extractions never makes
+# the next navigation step wait; 6 + 10 slots stay well below the team's 32.
+_nav_slots: asyncio.Semaphore | None = None
 usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
@@ -73,7 +76,7 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             log("llm_deadline", tag=tag, attempt=attempt)
             raise DeadlineExceeded(tag)
         started = time.monotonic()
-        slots = _slots
+        slots = _lane(bool(tools))
         lane = "nav" if tools else "json"
         try:
             await asyncio.wait_for(slots.acquire(), timeout=left - 2)
@@ -122,6 +125,15 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         return {"content": message.content or "", "tool_calls": calls,
                 "output_tokens": getattr(tokens, "completion_tokens", None) if tokens else None}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
+
+
+def _lane(tools: bool) -> asyncio.Semaphore:
+    global _nav_slots
+    if tools and flags.LLM_LANES:
+        if _nav_slots is None:
+            _nav_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL_NAV", "6")))
+        return _nav_slots
+    return _slots
 
 
 def _hedge_after(tools: bool) -> float:

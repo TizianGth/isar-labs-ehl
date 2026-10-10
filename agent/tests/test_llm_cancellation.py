@@ -128,3 +128,27 @@ def test_refused_access_is_not_retried(monkeypatch):
     with pytest.raises(llm.DeadlineExceeded):
         asyncio.run(llm.chat([], deadline=time.time() + 30))
     assert len(calls) == 1
+
+
+def test_navigation_has_its_own_lane_when_switched_on(monkeypatch):
+    """P-4: extractions holding every shared slot must not delay a navigation call."""
+    import time
+    from rfq import flags
+
+    class _Completions:
+        async def create(self, **kwargs):
+            message = type("M", (), {"content": "", "tool_calls": []})()
+            return type("R", (), {"choices": [type("C", (), {"message": message})()], "usage": None})()
+    monkeypatch.setattr(llm, "client", lambda: type("X", (), {"chat": type("Y", (), {"completions": _Completions()})()})())
+    monkeypatch.setattr(flags, "LLM_LANES", True)
+    monkeypatch.setattr(llm, "_nav_slots", None)
+
+    async def scenario():
+        busy = asyncio.Semaphore(1)
+        monkeypatch.setattr(llm, "_slots", busy)
+        await busy.acquire()                                   # extractions hold the shared slots
+        tool = [{"type": "function", "function": {"name": "click", "parameters": {"type": "object"}}}]
+        t0 = time.monotonic()
+        await llm.chat([{"role": "user", "content": "x"}], tools=tool, deadline=time.time() + 10)
+        return time.monotonic() - t0
+    assert asyncio.run(scenario()) < 1.0
