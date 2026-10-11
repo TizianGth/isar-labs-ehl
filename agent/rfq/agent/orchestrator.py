@@ -18,7 +18,7 @@ from .. import llm
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
-from ..rules.resolve import Context, Result, build
+from ..rules.resolve import Context, Result, build, index_rate
 from .explorer import Explorer, Mission
 from .extraction_jobs import ExtractionJobs, Snapshot
 from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
@@ -192,6 +192,17 @@ class Orchestrator:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    def invalidate_extractions(self, kind: str) -> None:
+        """Allow a model-selected fresh read after an explicitly detected evidence gap."""
+        self._cache = {k: v for k, v in self._cache.items() if not k.startswith(kind)}
+        if self.jobs:
+            for job in self.jobs.jobs:
+                s = job.snapshot
+                if s.kind == kind:
+                    key = "snapshot:" + hashlib.sha256(json.dumps([s.kind, s.source, s.via, s.text]).encode()).hexdigest()
+                    self._cache.pop(key, None)
+            self.jobs.by_key = {k: j for k, j in self.jobs.by_key.items() if j.snapshot.kind != kind}
 
     def mission(self, name: str, goal: str, kinds: list[str], steps: int, progress=None, context: str = "") -> Mission:
         return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
@@ -556,7 +567,33 @@ class Orchestrator:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
         if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        return "\n".join(lines), not absent and not missing and not unread_pages
+        rate_gaps = self.index_mail_gaps()
+        if rate_gaps:
+            lines.append("needed pricing facts still missing (future/expired or conflicting index windows do not count):\n"
+                         + "\n".join(rate_gaps))
+        return "\n".join(lines), not absent and not missing and not unread_pages and not rate_gaps
+
+    def index_mail_gaps(self) -> list[str]:
+        requirements = list(self.needed_requirements().values())
+        scenario = parse.when(self.brief.get("scenario_datetime_utc"))
+        if not requirements or scenario is None:
+            return []
+        indices = {}
+        ref = parse.norm_id(self.brief.get("tender_reference"))
+        for item in sorted(self.bb.get("mail_message"), key=lambda i:
+                           parse.when(i["data"].get("datetime_utc")).timestamp()
+                           if parse.when(i["data"].get("datetime_utc")) else float("-inf")):
+            mail = item["data"]
+            if mail.get("topic") == "metal_index" and self._mail_problem(mail, ref) is None:
+                indices.update({parse.norm_id(k): v for k, v in ((mail.get("data") or {}).get("indices") or {}).items()})
+        gaps = []
+        for material in self.materials().values():
+            key = parse.norm_id(material.get("price_index_key"))
+            if (material.get("status_meaning") == "active" and not _mismatch(material, requirements)
+                    and (parse.number(material.get("surcharge_mass_g")) or 0) > 0 and key
+                    and index_rate(indices.get(key), scenario) is None):
+                gaps.append(f"{material['material_number']}: a uniquely valid metal-index rate for {key} on {scenario.date()}")
+        return gaps
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
         """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
@@ -630,17 +667,22 @@ search says there are too many results, add the subject keyword.""",
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
         # Other missions can add referenced requirements or delivery constraints
         # after a mission first finishes. Reconcile live dependencies before pricing.
-        await self.reconcile_evidence(spec)
+        await self.reconcile_evidence(spec, mail)
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
 
-    async def reconcile_evidence(self, specification: Mission) -> None:
+    async def reconcile_evidence(self, specification: Mission, mail: Mission | None = None) -> None:
         if self.jobs:
             await self.jobs.drain(self.end - 90)
         if not self.spec_progress()[1] and self.evidence_end - time.time() >= 60:
             log("dependency_repair", mission="specification", reason="live referenced requirements incomplete")
             await self.run_mission(self.site_for("specification"), specification, attempts=1)
+        if mail is not None and self.index_mail_gaps() and self.evidence_end - time.time() >= 60:
+            log("dependency_repair", mission="mail", reason="live required index rates incomplete")
+            self.invalidate_extractions("mail_message")
+            self.site_for("mail").fresh_start()
+            await self.run_mission(self.site_for("mail"), mail, attempts=1)
         for group, reqs in self.erp_groups().items():
             if self.erp_progress(group, reqs)[1]:
                 continue

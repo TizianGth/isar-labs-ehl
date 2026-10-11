@@ -133,6 +133,53 @@ def test_new_requirement_null_needs_explicit_absence_proof(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_late_material_index_dependency_is_reconciled_from_valid_authorized_mail(monkeypatch):
+    o = orch(monkeypatch)
+    o.brief["authorized_records"] = [{"topic": "metal_index", "sender_localpart": "calc"}]
+    o.bb.add("spec_revisions", {"revisions": [{"revision": "SYN-REV", "is_current": True}]}, "https://fixture.example/revisions")
+    o.bb.add("requirements", {"revision": "SYN-REV", "requirements": [
+        {"ref": "SYN-REQ", "catalog_group": "SYN-GROUP", "certification": "none"}]}, "https://fixture.example/spec")
+    o.bb.add("positions", {"positions": [{"position": "SYN-POS", "requirement_ref": "SYN-REQ", "quantity": "2"}]}, "https://fixture.example/tender")
+    o.bb.add("materials", {"materials": [{"material_number": "SYN-MAT", "catalog_group": "SYN-GROUP",
+              "status_meaning": "active", "surcharge_mass_g": "500", "price_index_key": "SYN-INDEX"}]}, "https://fixture.example/material")
+    def record(sender, rate, at="2032-04-19T08:00:00Z"):
+        return {"reference": "RFQ-SYNTH", "sender": sender, "datetime_utc": at, "topic": "metal_index",
+                "data": {"indices": {"SYN-INDEX": [rate]}}}
+    o.bb.add("mail_message", record("calc@synthetic.example", {"eur_per_kg": "4", "valid_from": "2032-05-01"}), "https://fixture.example/future-rate")
+    assert o.index_mail_gaps()
+    o.bb.add("mail_message", record("wrong@synthetic.example", {"eur_per_kg": "9"}), "https://fixture.example/decoy-rate")
+    assert o.index_mail_gaps()
+    o.bb.add("mail_message", record("calc@synthetic.example", {"eur_per_kg": "3", "valid_from": "2032-04-01"},
+                                  at="2032-04-20T07:00:00Z"), "https://fixture.example/current-rate")
+    assert not o.index_mail_gaps()
+
+
+def test_gap_repair_can_reread_same_selected_source_without_invalidating_other_kinds(monkeypatch):
+    async def scenario():
+        o = orch(monkeypatch, True)
+        calls = []
+        async def fake(*args, **kwargs):
+            calls.append(kwargs["tag"])
+            if kwargs["tag"] == "extract:mail_message":
+                return {"subject": "selected index record", "topic": "metal_index", "data": {"indices": {}}}
+            return {"positions": [{"position": "SYN-POS", "quantity": "2"}]}
+        monkeypatch.setattr(llm, "ask_json", fake)
+        message = Snapshot("mail_message", "selected original text", "https://fixture.example/message", "page")
+        positions = Snapshot("positions", "selected positions", "https://fixture.example/list", "page")
+        o.jobs.enqueue("mail", message)
+        o.jobs.enqueue("tender", positions)
+        await o.jobs.drain(time.time() + 1)
+        o.invalidate_extractions("mail_message")
+        o.jobs.enqueue("mail", message)
+        o.jobs.enqueue("tender", positions)
+        await o.jobs.drain(time.time() + 1)
+        assert calls.count("extract:mail_message") == 2
+        assert calls.count("extract:positions") == 1
+        assert len(o.bb.get("mail_message")) == 2
+        await o.close()
+    asyncio.run(scenario())
+
+
 def test_failed_and_cancelled_jobs_are_retryable():
     async def scenario():
         calls = 0

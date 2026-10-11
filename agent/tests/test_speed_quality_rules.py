@@ -2,8 +2,8 @@
 from copy import deepcopy
 
 from rfq.rules.parse import certification_known, merge_certification
-from rfq.rules.resolve import Context, build
-from test_rules import CTX, _evidence
+from rfq.rules.resolve import Context, build, index_rate
+from test_rules import CTX, T, _evidence
 
 
 def test_unknown_certificate_is_not_an_explicit_none():
@@ -93,3 +93,32 @@ def test_partial_requirement_page_preserves_observed_dimensions_and_cert():
     bb["requirements"].append({"data": {"revision": "V2", "requirements": [
         {"ref": "R-A", "bore_mm": None, "certification": None, "certification_known": False}]}})
     assert len(build(CTX, bb).answer["positions"]) == 2
+
+
+def test_index_windows_never_fall_back_to_a_future_or_expired_row():
+    future = {"eur_per_kg": "9", "valid_from": "2030-04-01", "valid_to": "2030-05-01"}
+    expired = {"eur_per_kg": "8", "valid_from": "2030-01-01", "valid_to": "2030-03-09"}
+    assert index_rate([future], T) is None
+    assert index_rate([expired], T) is None
+    assert index_rate([future, expired], T) is None
+    assert index_rate([{"eur_per_kg": "2", "valid_from": "unreadable"}], T) is None
+    assert index_rate({"eur_per_kg": "2"}, T) == 2
+    assert index_rate([{"eur_per_kg": "2", "valid_from": "2030-03-10", "valid_to": "2030-03-10"}], T) == 2
+
+
+def test_conflicting_valid_index_rates_do_not_depend_on_arrival_order():
+    entries = [{"eur_per_kg": "2"}, {"eur_per_kg": "3", "valid_from": "2030-03-01"}]
+    assert index_rate(entries, T) is None
+    assert index_rate(list(reversed(entries)), T) is None
+    assert index_rate([{"eur_per_kg": "2"}, {"eur_per_kg": "2.00"}], T) == 2
+
+
+def test_missing_current_index_never_becomes_zero_surcharge():
+    bb = _evidence()
+    for item in bb["mail_message"]:
+        if item["data"].get("topic") == "metal_index":
+            item["data"]["data"]["indices"]["IX"] = [{"eur_per_kg": "9", "valid_from": "2030-04-01"}]
+    result = build(CTX, bb)
+    assert "1.1" in result.skipped
+    assert all(p["position"] != "1.1" for p in result.answer["positions"])
+    assert any("metal index" in message and "not proven valid" in message for message in result.trace)

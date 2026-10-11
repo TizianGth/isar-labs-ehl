@@ -430,9 +430,11 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             skipped.append(pid)
             continue
         mass = (number(m.get("surcharge_mass_g")) or D(0)) / 1000
-        index = _index_rate(indices.get(norm_id(m.get("price_index_key"))), T) if m.get("price_index_key") else None
-        if m.get("price_index_key") and index is None:
-            note(f"{pid}: metal index {m.get('price_index_key')} not found")
+        index = index_rate(indices.get(norm_id(m.get("price_index_key"))), T) if m.get("price_index_key") else None
+        if mass > 0 and index is None:
+            note(f"{pid}: metal index {m.get('price_index_key')} not proven valid; price unknown")
+            skipped.append(pid)
+            continue
         mass_surcharge = mass * (index or D(0))
         group = latest("condition_group", pid)
         scope = clauses.get(norm_id(group.get("group")), "base_only") if group else "base_only"
@@ -465,17 +467,23 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     return Result(answer, trace, sorted(set(skipped)), breakdown)
 
 
-def _index_rate(entries, T: datetime) -> D | None:
+def index_rate(entries, T: datetime) -> D | None:
     if not entries:
         return None
     if isinstance(entries, dict):
         entries = [entries]
+    rates = set()
     for e in entries:
         start, end = day(e.get("valid_from")), day(e.get("valid_to"))
+        if (clean(e.get("valid_from")) and start is None) or (clean(e.get("valid_to")) and end is None):
+            continue
         if (start is None or start <= T.date()) and (end is None or T.date() <= end):
-            if start or end:
-                return number(e.get("eur_per_kg"))
-    return number(entries[-1].get("eur_per_kg"))
+            rate = number(e.get("eur_per_kg"))
+            if rate is not None:
+                rates.add(rate)
+    # Never take a future/expired last row or use arrival order to resolve
+    # conflicting valid windows. A single undated scalar is valid for this record.
+    return next(iter(rates)) if len(rates) == 1 else None
 
 
 def _lead_time(m: dict, pooled_qty: int, commitment: dict | None) -> int:
