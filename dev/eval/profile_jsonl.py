@@ -41,19 +41,25 @@ def analyze(text):
             'inclusive_metrics': dict(metrics), 'milestones': milestones}
 
 
+def read_log_text(path):
+    text = path.read_text()
+    if path.suffix == '.jsonl':
+        chunks = [json.loads(line) for line in text.splitlines() if line.strip()]
+        if any('stream' in c and 'text' in c for c in chunks):
+            # --follow also emits a terminal run status without stream/text.
+            text = ''.join(c['text'] for c in chunks if c.get('stream') == 'stdout' and 'text' in c)
+    elif path.suffix == '.json':
+        data = json.loads(text)
+        text = '\n'.join(c.get('text', '') for c in data.get('result', {}).get('content', []) if c.get('type') == 'text')
+    return text
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
-    text = args.input.read_text()
-    if args.input.suffix == '.jsonl':
-        chunks = [json.loads(line) for line in text.splitlines() if line.strip()]
-        if chunks and all('stream' in c and 'text' in c for c in chunks):
-            text = ''.join(c['text'] for c in chunks if c['stream'] == 'stdout')
-    elif args.input.suffix == '.json':
-        data = json.loads(text)
-        text = '\n'.join(c.get('text', '') for c in data.get('result', {}).get('content', []) if c.get('type') == 'text')
+    text = read_log_text(args.input)
     report = analyze(text)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + '\n')
