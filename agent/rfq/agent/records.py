@@ -68,15 +68,30 @@ class Observation:
             raise ValueError('quote is absent or ambiguous across source frames')
         return next(iter(sources))
 
-    def view(self, limit=6500):
+    def copy_span(self, start, end):
+        """Copy an exact model-selected span, never infer which text is relevant."""
+        if not isinstance(start, str) or not isinstance(end, str) or not start or not end:
+            raise ValueError('copy span needs nonempty exact boundaries')
+        if self.text.count(start) != 1 or self.text.count(end) != 1:
+            raise ValueError('copy boundaries are absent or ambiguous')
+        first, last = self.text.index(start), self.text.index(end)
+        if last < first:
+            raise ValueError('copy boundaries are reversed')
+        value = self.text[first:last + len(end)]
+        if re.search(r'^=== frame \d+: ', value, re.M):
+            raise ValueError('copy span crosses source frames')
+        return value
+
+    def view(self, limit=6500, sample_rows=3):
         """Include controls and exact content regions; omitted regions stay addressable."""
+        sample_rows = max(1, min(3, sample_rows))
         lines = [f'snapshot={self.id}; changed={self.changed}; URL={self.url}']
         table_lines = {'| ' + ' | '.join(row) + ' |' for rows in self.tables.values() for row in rows[1:]}
         lines.extend(dict.fromkeys(line for line in self.controls.values() if line not in table_lines))
         for key, rows in self.tables.items():
-            for row in rows[1:4]:
+            for row in rows[1:1 + sample_rows]:
                 lines.append(f'{key} sample: ' + ' | '.join(row))
-            for row in rows[4:]:
+            for row in rows[1 + sample_rows:]:
                 # Row controls remain observable, without repeatedly copying all
                 # business values. The full row remains in its evidence region.
                 for cell in row:
@@ -84,10 +99,10 @@ class Observation:
                         lines.append(f'{key} row control: {cell}')
         lines.extend(f'table {key}: header={rows[0]!r}; rows={len(rows)-1}' for key, rows in self.tables.items())
         for key, rows in self.tables.items():
-            if len(rows) > 4:
+            if len(rows) > 1 + sample_rows:
                 handles = [region for region, text in self.regions.items()
-                           if any('| ' + ' | '.join(row) + ' |' in text for row in rows[4:])]
-                lines.append(f'{key}: rows 4–{len(rows)-1} values omitted; read_region ' + ', '.join(handles))
+                           if any('| ' + ' | '.join(row) + ' |' in text for row in rows[1 + sample_rows:])]
+                lines.append(f'{key}: rows {1 + sample_rows}–{len(rows)-1} values omitted; read_region ' + ', '.join(handles))
         used = sum(len(x) for x in lines)
         for key, text in self.regions.items():
             # Interactive lines were already listed; removing duplicate copies

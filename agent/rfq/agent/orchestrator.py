@@ -12,6 +12,7 @@ import json
 import os
 import re
 import time
+from types import SimpleNamespace
 from urllib.parse import parse_qsl, urlparse, urljoin
 
 from .. import llm
@@ -24,6 +25,7 @@ from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
 from .fused import FusedExplorer
 from .records import Coverage, digest, table_data
+from .reuse import SourceReads, TableBindings
 from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
 from .submit import submit_bid
 
@@ -72,7 +74,10 @@ class Orchestrator:
         self.bb = Blackboard()
         started = started or time.time()
         self.end = min(run["expires_at"] / 1000 - 30, started + RUN_BUDGET)
-        self.evidence_end = self.end - SUBMIT_RESERVE
+        reserve = SUBMIT_RESERVE
+        if RUN_BUDGET <= reserve:
+            reserve = min(max(12, RUN_BUDGET * .2), max(0, RUN_BUDGET - 5))
+        self.evidence_end = self.end - reserve
         llm.set_run_deadline(self.end)
         self.brief: dict = {}
         self.result: Result | None = None
@@ -83,6 +88,9 @@ class Orchestrator:
         self.source_evidence: dict[str, dict] = {}
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, asyncio.Future] = {}
+        self.source_reads = SourceReads(limit=max(1, min(8, int(os.environ.get('RFQ_SOURCE_PARALLEL', '4')))))
+        self.table_bindings = TableBindings()
+        self.table_readings = {}
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
@@ -114,14 +122,30 @@ class Orchestrator:
                 continue
             try:
                 source = snapshot.source_for_quote(quote)
+                if fact.get("copy_fields"):
+                    if kind != "mail_message" or set(fact["copy_fields"]) != {"body"}:
+                        raise ValueError("only an original mail body may use copy_fields")
+                    span = fact["copy_fields"]["body"]
+                    body = snapshot.copy_span(span["start"], span["end"])
+                    if snapshot.source_for_quote(body) != source:
+                        raise ValueError("mail body and fact quote belong to different frames")
+                    data = {**data, "body": body}
                 notes.append(self._store(kind, data, source, "page", {"snapshot_id": snapshot.id, "quote": quote}))
-            except ValueError as error:
+            except (ValueError, KeyError, TypeError) as error:
                 notes.append('ERROR: ' + str(error))
         for binding in decision.bindings:
             try:
                 kind = binding["kind"]
                 data = table_data(snapshot, binding)
-                notes.append(self._store(kind, data, snapshot.source_for_quote("| " + " | ".join(binding["headers"]) + " |"), "table", {"snapshot_id": snapshot.id, "table": binding["table"], "headers": binding["headers"]}))
+                if kind not in KINDS:
+                    raise ValueError("unknown fact kind")
+                summary = self._store(kind, data, snapshot.source_for_quote("| " + " | ".join(binding["headers"]) + " |"), "table", {"snapshot_id": snapshot.id, "table": binding["table"], "headers": binding["headers"]})
+                notes.append(summary)
+                if not summary.startswith("extraction returned nothing"):
+                    scope = self.binding_scope(mission, snapshot)
+                    self.table_bindings.remember(snapshot, binding, scope)
+                    if binding.get("source_complete") is True and set(binding.get("columns", {}).values()) == set(range(len(binding["headers"]))):
+                        self.table_readings.setdefault((scope, snapshot.id, kind), {})[binding["table"]] = summary
             except (KeyError, ValueError, TypeError) as error:
                 notes.append("ERROR: table binding: " + str(error))
         for proof in decision.coverage:
@@ -146,6 +170,21 @@ class Orchestrator:
             self.coverage[key] = Coverage(scope, tuple(str(x) for x in sources),
                                           proof.get("complete") is True, tuple(proof.get("gaps") or []),
                                           str(proof.get("ordering", "")))
+        return notes
+
+    def binding_scope(self, mission, snapshot):
+        session = next((getattr(site, "session_generation", 0) for site in self.sites.values()
+                        if urlparse(getattr(site, "url", "")).netloc == urlparse(snapshot.url).netloc), 0)
+        return (mission, session)
+
+    def reuse_tables(self, snapshot, mission):
+        notes = []
+        scope = self.binding_scope(mission, snapshot)
+        for stamp, binding in self.table_bindings.candidates(snapshot, scope):
+            notes.extend(self.accept_decision(SimpleNamespace(
+                facts=[], bindings=[{**binding, "reuse": False}], coverage=[]), snapshot, mission))
+            if notes and not notes[-1].startswith(("ERROR", "extraction returned nothing")):
+                self.table_bindings.accepted(stamp)
         return notes
 
     async def extract(self, kind: str, text: str, url: str, via: str = "page") -> str:
@@ -200,7 +239,8 @@ class Orchestrator:
                     if future is not None and not future.done():
                         future.set_result(self._cache.get(key))
         groups = list(owned.items())
-        tasks = [asyncio.create_task(group_work(groups[i:i + 3])) for i in range(0, len(groups), 3)]
+        batch = max(1, min(4, int(os.environ.get('RFQ_EXTRACT_BATCH', '3'))))
+        tasks = [asyncio.create_task(group_work(groups[i:i + batch])) for i in range(0, len(groups), batch)]
         try:
             if tasks:
                 await asyncio.gather(*tasks)
@@ -295,7 +335,7 @@ class Orchestrator:
         mission = self._remembering(site, mission)
         explorer = None
         for attempt in range(attempts):
-            if mission.deadline - time.time() < 60:
+            if mission.deadline - time.time() < 5:
                 break
             explorer = await FusedExplorer(site, mission, self.extract).run()
             complete = mission.progress()[1] if mission.progress else explorer.status in ("complete", "finished")
@@ -533,6 +573,7 @@ search says there are too many results, add the subject keyword.""",
                 return await self.run_mission(site, mission, attempts)
             finally:
                 self.done[name].set()        # an ended mission is an event, whatever its outcome
+                self.bb.changed.set()
 
         results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
                                        tracked("specification", self.site_for("specification"), spec, attempts=3),
@@ -649,7 +690,8 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         base, started, fingerprints = self.site_for("erp"), {}, {}
         base_chain: asyncio.Task | None = None       # missions that have to run on the base tab, one after another
         try:
-            while time.time() < self.evidence_end - 90:
+            while time.time() < self.evidence_end - 5:
+                self.bb.changed.clear()
                 spec_ended, tender_ended = self.done["specification"].is_set(), self.done["tender"].is_set()
                 known_positions = bool(self.positions()) or tender_ended
                 if known_positions:
@@ -665,14 +707,14 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                             started[group] = base_chain = asyncio.create_task(self._after(previous, base, mission))
                         else:
                             started[group] = asyncio.create_task(self.run_mission(site, mission))
+                        started[group].add_done_callback(lambda task: self.bb.changed.set())
                         log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=site is not base)
                 if spec_ended and tender_ended and all(t.done() for t in started.values()):
                     break
                 try:
-                    await asyncio.wait_for(self.bb.changed.wait(), 1)
+                    await asyncio.wait_for(self.bb.changed.wait(), max(.1, self.evidence_end - 5 - time.time()))
                 except asyncio.TimeoutError:
-                    pass
-                self.bb.changed.clear()
+                    break
             results = list(await asyncio.gather(*started.values())) if started else []
         finally:   # never leave research running into the submission phase
             pending = [t for t in started.values() if not t.done()]
@@ -749,10 +791,12 @@ The progress checklist tells you what is still missing per material.""", ["mater
             else:
                 await self.read_brief()
                 with span("evidence", agent="orchestrator", category="phase"):
-                    await asyncio.wait_for(self.gather_evidence(), timeout=max(30, self.evidence_end - time.time()))
+                    await asyncio.wait_for(self.gather_evidence(), timeout=max(.1, self.evidence_end - time.time()))
                     await self.route_missing_records()
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
+        finally:
+            await self.source_reads.close()
         try:
             with span("resolve", agent="orchestrator", category="compute"):
                 result = self.resolve()
@@ -766,9 +810,11 @@ The progress checklist tells you what is still missing per material.""", ["mater
         self.result = result
         try:
             with span("submission", agent="submit", category="phase"):
-                await asyncio.wait_for(submit_bid(self, result), timeout=max(30, self.end - time.time()))
+                await asyncio.wait_for(submit_bid(self, result), timeout=max(.1, self.end - time.time()))
         except (Exception, asyncio.TimeoutError) as error:
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
+        await self.source_reads.close()
+        log("reuse_summary", source=self.source_reads.stats, tables=self.table_bindings.stats)
         log("usage", **llm.usage)
         return result
 

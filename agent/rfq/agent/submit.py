@@ -18,6 +18,7 @@ from .explorer import TOOLS, Explorer, Mission, _tool
 from .fused import FusedExplorer
 from .prompts import EXTRACT_SYSTEM, KINDS
 from .review import validate_review
+from .records import digest
 
 SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
                 ("read_all_pages", "read_collection", "extract", "extract_urls", "read_document")] + [
@@ -97,6 +98,8 @@ class SubmitExplorer(FusedExplorer):
                 '/bidder/company, /signing/tan. Bind one observed control per field. Use apply only for a dependent filter.')
 
     async def bind_fields(self, args):
+        if not hasattr(self, 'form_stats'):
+            self.form_stats = {'stored': 0, 'hits': 0, 'misses': 0}
         fields = []
         for binding in args.get('fields') or []:
             path = binding.get('path', '')
@@ -136,6 +139,58 @@ class SubmitExplorer(FusedExplorer):
             fields.append(field)
         with span('submission_bindings', agent='submit', category='browser', count=len(fields)):
             result = await self.site.act('fill_fields', {'fields': fields, 'then_click': args.get('then_click')})
+        if args.get('reuse') is True and fields and not args.get('then_click') and not any(f.get('apply') for f in fields):
+            if not any(word in result for word in ('ERROR', 'STOPPED', 'OUTCOME UNKNOWN')):
+                templates = []
+                for binding, field in zip(args.get('fields') or [], fields):
+                    if binding.get('path') == '/signing/tan':
+                        return result
+                    identity = await self.site.field_identity(field['ref'])
+                    templates.append({'path': binding['path'], 'format': binding.get('format', 'text'),
+                                      'identity': {key: identity[key] for key in ('url', 'frame', 'identity')}})
+                handle = digest(templates)
+                if not hasattr(self, 'field_templates'):
+                    self.field_templates = {}
+                self.field_templates[handle] = (self.site.session_generation, templates)
+                self.form_stats['stored'] += 1
+                result += '\nValidated field template: ' + handle + '; reuse_fields(handle,position) only fills matching fields.'
+        return result
+
+    async def reuse_fields(self, args):
+        if not hasattr(self, 'form_stats'):
+            self.form_stats = {'stored': 0, 'hits': 0, 'misses': 0}
+        saved = getattr(self, 'field_templates', {}).get(args.get('handle'))
+        if not saved or saved[0] != self.site.session_generation:
+            return 'ERROR: field template missing or session changed; bind current fields'
+        position = str(args.get('position', ''))
+        if position and position not in self.values()['positions']:
+            return 'ERROR: unknown answer position'
+        refs = [ref for ref, line in self.snapshot.controls.items()
+                if re.search(r'] (textbox|combobox|checkbox|radio|spinbutton)\b', line)]
+        async def identity(ref):
+            try:
+                value = await self.site.field_identity(ref)
+                return ref, {key: value[key] for key in ('url', 'frame', 'identity')}
+            except Exception:
+                return ref, None
+        current = await asyncio.gather(*(identity(ref) for ref in refs))
+        bindings = []
+        for template in saved[1]:
+            matches = [ref for ref, value in current if value == template['identity']]
+            if len(matches) != 1:
+                self.form_stats['misses'] += 1
+                return 'ERROR: changed or ambiguous form template; bind current fields'
+            path = template['path']
+            parts = path.split('/')
+            if position and len(parts) >= 4 and parts[1] in ('positions', 'filters'):
+                parts[2] = position.replace('~', '~0').replace('/', '~1')
+                path = '/'.join(parts)
+            bindings.append({'ref': matches[0], 'path': path, 'format': template['format']})
+        if len({item['ref'] for item in bindings}) != len(bindings):
+            return 'ERROR: template maps multiple values onto one control'
+        result = await self.bind_fields({'fields': bindings})
+        if not any(word in result for word in ('ERROR', 'STOPPED', 'OUTCOME UNKNOWN')):
+            self.form_stats['hits'] += 1
         return result
 
     async def _call(self, name: str, args: dict) -> str:

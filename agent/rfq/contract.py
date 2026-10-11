@@ -13,10 +13,10 @@ USER_AGENT = "isar-labs-rfq-agent/0.1"  # the API's edge refuses Python's defaul
 LOCAL_RUN_SECONDS = 20 * 60  # locally we pretend to have the same budget as a scored run
 
 
-def _get(url: str, token: str) -> tuple[int, str]:
+def _get(url: str, token: str, timeout: float = 30) -> tuple[int, str]:
     request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT, "x-api-key": token})
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=timeout) as response:
             return response.status, response.read().decode("utf-8", errors="replace")
     except HTTPError as error:
         return error.code, error.read().decode("utf-8", errors="replace")
@@ -35,16 +35,22 @@ def load_run(env=os.environ) -> tuple[dict, str | None]:
         return run, None
     url = env["CHALLENGE_API_URL"].rstrip("/") + "/v1/runs/current"
     status, body = 0, ""
+    # Bound startup independently of retries; monotonic time cannot jump with the clock.
+    budget = max(.1, min(30, float(env.get("RFQ_RUN_BUDGET", "1080")) * .1))
+    end = time.monotonic() + budget
     for attempt in range(6):
+        left = end - time.monotonic()
+        if left <= 0:
+            break
         try:
-            status, body = _get(url, token)
+            status, body = _get(url, token, timeout=left)
         except (URLError, OSError) as error:
             status, body = 0, str(error)
         if status == 200:
             return json.loads(body), token
         if status in (401, 403, 404):
             break
-        time.sleep(1.5 * (attempt + 1))
+        time.sleep(max(0, min(1.5 * (attempt + 1), end - time.monotonic())))
     raise SystemExit(f"Cannot read the run: HTTP {status} {body[:300]}")
 
 

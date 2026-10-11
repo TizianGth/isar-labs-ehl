@@ -70,10 +70,12 @@ async def main() -> int:
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs
-            result = await asyncio.wait_for(orchestrator.run_all(replay), timeout=max(60, orchestrator.end - time.time() + 45))
+            result = await asyncio.wait_for(orchestrator.run_all(replay), timeout=max(.1, orchestrator.end - time.time()))
         except asyncio.TimeoutError:
             log("watchdog_timeout")
             result = orchestrator.result
+        finally:
+            await orchestrator.source_reads.close()
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
