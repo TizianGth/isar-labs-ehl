@@ -20,10 +20,13 @@ The cancelled baseline consumes run 1; it does not justify an extra run. Ranked
 submission and cancellation remain separate human-authorized actions.
 
 The first private development run also consumes a slot despite its authentication
-failure. Replace the second-development-world confirmation slot with a valid
-Qwen development retry after hosted login succeeds. Keep the paired routing
-comparison, six frozen holdouts and two public confirmations within the 12-run
-limit. Do not start another agent run while authentication is unverified.
+failure. A public Qwen development run of the fused candidate was subsequently
+created, then cancelled by the human during setup. Three slots have now been
+used without a valid unchanged-baseline or fused-candidate quality measurement.
+The remaining allocation is one development run, six frozen holdouts and two
+public confirmations. Omit the optional paired Clef comparison and second-world
+development confirmation to retain the 12-run limit. Private agent runs require
+verified hosted authentication; preserve all cancelled-run resource records.
 
 ## Captured starting point
 
@@ -130,6 +133,15 @@ All four sites rejected their supplied credentials. This prevents interpreting
 the result as a valid task-quality or normal-runtime benchmark. It still counts
 toward the run allocation and resource report. The approved cancellation was
 attempted after completion and returned an already-finished response.
+
+The fused public development package from commit `b8c8635` has platform package
+SHA-256 `67c6b00aa80a594147a185f5deef57251e15e2f8204d2b6b563cbe0cca2db836`.
+Its run `run_3b0c7d117173d1f1` was cancelled by `@varialbe` during setup, before
+any candidate quality or inference performance measurement. Upload responses
+timed out; matching the exact archive hash recovered the actual run identity.
+The other contemporaneous run had a different package and is not part of this
+task's allocation. Do not treat a failed upload response as proof that no run
+was created, and do not replay an ambiguous upload without checking run identity.
 
 ### Runtime and offline instrumentation
 
