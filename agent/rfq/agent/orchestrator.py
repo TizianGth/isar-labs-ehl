@@ -20,8 +20,9 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
-from .prompts import BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, SITE_CHOICE_SYSTEM, kinds
-from .submit import submit_bid
+from .prompts import (BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, PREPARE_BID_GOAL,
+                      SITE_CHOICE_SYSTEM, kinds)
+from .submit import SUBMIT_TOOLS, submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
@@ -479,12 +480,38 @@ the revision list.
             await self.full_brief()          # the mail mission needs the authorized senders and topics
             return await tracked("mail", self.mail_mission())
 
-        results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec, attempts=3),
-                                       mail_role(), self.erp_phase())
+        preparing = asyncio.create_task(self.prepare_bid()) if flags.PREPARE_BID else None
+        try:
+            results = await asyncio.gather(tracked("tender", tender), tracked("specification", spec, attempts=3),
+                                           mail_role(), self.erp_phase())
+        finally:      # the preparation never delays the evidence: unfinished, it simply stops here
+            if preparing is not None and not preparing.done():
+                preparing.cancel()
+            if preparing is not None:
+                await asyncio.gather(preparing, return_exceptions=True)
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         metrics.mark("evidence_done")
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    async def prepare_bid(self) -> None:
+        """X-5: while ERP and mail are still being researched, the tender tab is free. Fill the part of the bid form
+        that does not depend on the answer (registration, bidder data), so the submission starts further on. Its
+        tools cannot sign or submit."""
+        await self.done["tender"].wait()
+        await self.full_brief()
+        if self.evidence_end - time.time() < 120:
+            return
+        site = self.role_site("tender")
+        goal = PREPARE_BID_GOAL.format(ref=self.brief.get("tender_reference"), company=self.brief.get("bidder_company"),
+                                       vat=self.brief.get("bidder_vat_id"))
+        mission = Mission("prepare_bid", goal, {}, max_steps=12, deadline=min(self.evidence_end, time.time() + 90),
+                          max_visual=1)
+        tools = [t for t in SUBMIT_TOOLS if t["function"]["name"] not in ("get_tan", "submit_bid")]
+        async with self.turn(site):
+            explorer = await Explorer(site, mission, self.extract).run(tools)
+        metrics.mark("bid_prepared")
+        log("bid_prepared", status=explorer.status, summary=explorer.summary[:300])
 
     def mail_mission(self) -> Mission:
         ref = self.brief.get("tender_reference")

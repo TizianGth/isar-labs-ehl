@@ -558,3 +558,48 @@ def test_extraction_results_list_the_new_links_of_the_extracted_page(monkeypatch
     monkeypatch.setattr(flags, "LINKS_IN_RESULTS", False)
     assert "links there" not in asyncio.run(Explorer(_Site(), Mission("erp:G", "goal", {}), extractor)
                                             ._extract_url("http://erp.test/stock", "materials"))
+
+
+def test_bid_form_is_prepared_after_the_tender_mission_without_signing_tools(monkeypatch):
+    """X-5: the free tender tab fills registration and bidder data during the evidence phase; it can neither sign
+    nor submit, and nothing happens with the switch off."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer
+    sites = {"portal": _RoleSite("portal"), "supplier": _RoleSite("supplier"), "erp": _RoleSite("erp"),
+             "mail": _RoleSite("mail")}
+    order, prepared = [], []
+
+    async def fake_mission(self, site, mission, attempts=2):
+        order.append(mission.name)
+
+    async def fake_run(self, tools=None):
+        prepared.append((self.mission.name, [t["function"]["name"] for t in tools], self.mission.goal))
+        order.append(self.mission.name)
+        self.status = "finished"
+        return self
+
+    async def no_erp(self):
+        return []
+    monkeypatch.setattr(flags, "GAP_RECOVERY", False)
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "erp_phase", no_erp)
+    monkeypatch.setattr(Explorer, "run", fake_run)
+
+    def scenario(switch):
+        monkeypatch.setattr(flags, "PREPARE_BID", switch)
+        order.clear(), prepared.clear()
+
+        async def go():
+            run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+            o = Orchestrator(run, sites, started=time.time())
+            o.brief = {"tender_reference": "XT-1", "bidder_company": "B GmbH", "bidder_vat_id": "DE1",
+                       "authorized_records": [],
+                       "sites": {"tender": "portal", "specification": "supplier", "mail": "mail", "erp": "erp"}}
+            await o.gather_evidence()
+        asyncio.run(go())
+    scenario(True)
+    assert len(prepared) == 1 and order.index("prepare_bid") > order.index("tender")
+    name, tools, goal = prepared[0]
+    assert "get_tan" not in tools and "submit_bid" not in tools and "B GmbH" in goal and "Do NOT" in goal
+    scenario(False)
+    assert not prepared

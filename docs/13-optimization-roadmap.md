@@ -36,17 +36,17 @@ Die Datei `13-winning-backlog.md` ist ein älteres, separates Dokument.
 | X-2 | Neue Links extrahierter Seiten im Ergebnis | `RFQ_LINKS_IN_RESULTS` (aus) | umgesetzt, **Test-Runs offen** |
 | X-4 | Material-Schema ohne `description` | `RFQ_SCHEMA_TRIM` (aus) | Offline bestanden (33/33, −16 % Output); Mail-Kürzung **verworfen** (8/27 falsche Entwurfs-Flags); Test-Runs offen |
 | X-3 | Historie verdichten (letzte 6 Schritte wörtlich, ältere einzeilig) | `RFQ_COMPACT_HISTORY` (deklariert) | **offen**: erst die O-1-Daten zu `prompt_chars_avg.history` abwarten; nur bauen, wenn die Historie ≥ 25 % der Prompt-Zeichen ausmacht |
-| X-5 | Bieterdaten-Schritt des Angebotsformulars während der Evidenzphase füllen | `RFQ_PREPARE_BID` (deklariert) | **offen** |
+| X-5 | Bieterdaten-Schritt des Angebotsformulars während der Evidenzphase füllen (Tools ohne `get_tan`/`submit_bid`, ≤ 12 Schritte, ≤ 90 s, endet spätestens mit der Evidenzphase) | `RFQ_PREPARE_BID` (aus) | umgesetzt, **Test-Runs offen** |
 | X-6 | ERP-Vorbereitung vor Bekanntsein der Kataloggruppen | – | **offen**; entscheiden nach O-1: nur wenn `first:requirements − brief_done` > 45 s |
 
 ## 3. Validierung (fester Ablauf)
 1. **Basisläufe mit O-1:** 2 Test-Runs von `agent/` unverändert, also mit dem `run_summary`. Prüfen, ob die Zeilen erscheinen und die Zeitlinie ab t = 0 vollständig ist. Danach X-3, X-6 und P-4 anhand der Daten entscheiden.
 2. **Kandidat erzeugen:**
 
-       uv run --project agent python dev/eval/make_variant.py cand RFQ_WAIT_ON_BACKGROUND=1 RFQ_BRIEF_SPLIT=1 RFQ_EXTRACT_THEN=1 RFQ_LINKS_IN_RESULTS=1 RFQ_SCHEMA_TRIM=1
+       uv run --project agent python dev/eval/make_variant.py cand RFQ_WAIT_ON_BACKGROUND=1 RFQ_BRIEF_SPLIT=1 RFQ_EXTRACT_THEN=1 RFQ_LINKS_IN_RESULTS=1 RFQ_SCHEMA_TRIM=1 RFQ_PREPARE_BID=1
 
    - Erst als Bündel testen.
-   - Bei REJECT einzeln testen, in dieser Reihenfolge: P-3, P-2, X-1, X-2, X-4.
+   - Bei REJECT einzeln testen, in dieser Reihenfolge: P-3, P-2, X-1, X-2, X-4, X-5.
 3. **Gepaarte Läufe:** ≥ 3 Paare, Basis (`agent/`) und Kandidat (`dev/variants/cand`) jeweils gleichzeitig starten:
 
        atira test-run agent
