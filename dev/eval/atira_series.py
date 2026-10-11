@@ -8,6 +8,7 @@ import argparse
 from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -16,6 +17,7 @@ import statistics
 import subprocess
 import threading
 import time
+import urllib.request
 
 
 def manifest(root):
@@ -30,10 +32,49 @@ def save(path, data):
     temp.replace(path)
 
 
+def cli_environment():
+    env = os.environ.copy()
+    options = env.get('NODE_OPTIONS', '')
+    if '--dns-result-order' not in options:
+        env['NODE_OPTIONS'] = (options + ' --dns-result-order=ipv4first').strip()
+    return env
+
+
+def readonly_api(path):
+    """The same signed-in administrative GET used by the CLI, alternate HTTP client.
+
+    This developer tool never posts an upload or accesses scenario website APIs.
+    Credentials stay in memory and are never included in saved status/log output.
+    """
+    secret = subprocess.check_output(['atira', 'token'], text=True, timeout=8, env=cli_environment()).strip()
+    api = os.environ.get('ATIRA_API', 'https://ehl-challenge.atira.ai').rstrip('/')
+    request = urllib.request.Request(api + path, headers={'x-api-key': secret})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        return json.load(response)
+
+
+def read_status(run_id):
+    try:
+        result = subprocess.run(['atira', 'status', run_id, '--json'], capture_output=True, text=True,
+                                timeout=25, env=cli_environment())
+        view = json.loads(result.stdout)
+        if result.returncode == 0 and view.get('run_id') == run_id:
+            return view
+    except (subprocess.TimeoutExpired, ValueError):
+        pass
+    feed = readonly_api(f'/v1/runs/{run_id}/feed?frames=0')
+    detail = readonly_api(f'/v1/runs/{run_id}')
+    if detail.get('run_id') != run_id:
+        raise ValueError('status fallback returned a different run')
+    fields = ('status', 'phase', 'started_at', 'finished_at', 'calls', 'cost_micro_usd', 'error')
+    return {'run_id': run_id, **{key: feed.get(key) for key in fields}, 'score': detail.get('score'),
+            'kind': detail.get('kind'), 'read_transport': 'python HTTP fallback'}
+
+
 class MCP:
     def __init__(self):
         self.process = subprocess.Popen(['atira', 'mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, text=True)
+                                        stderr=subprocess.DEVNULL, text=True, env=cli_environment())
         self.inbox, self.counter = queue.Queue(), 0
         threading.Thread(target=self._read, daemon=True).start()
         self._request('initialize', {'protocolVersion': '2024-11-05', 'capabilities': {},
@@ -85,7 +126,8 @@ def live_logs(run_id, folder):
     Closing this local read-only client never cancels the platform run.
     """
     with (folder / 'live_log_chunks.jsonl').open('a') as output, (folder / 'live_logs.stderr').open('a') as errors:
-        process = subprocess.Popen(['atira', 'logs', run_id, '--follow', '--json'], stdout=output, stderr=errors)
+        process = subprocess.Popen(['atira', 'logs', run_id, '--follow', '--json'], stdout=output, stderr=errors,
+                                   env=cli_environment())
         try:
             yield
         finally:
@@ -114,6 +156,13 @@ def stats(rows, required_count):
             'failures': [r['run_id'] for r in rows if not r.get('quality_ok')],
             'release_gate_passed': len(rows) == required_count and required_count >= 10
             and all(r.get('quality_ok') for r in rows) and mean is not None and mean <= 300}
+
+
+def accepted_by_platform(view):
+    # Both terminal statuses have been returned by the live API for a scored,
+    # eligible browser bid. Neither a pending status nor quality alone is proof.
+    return (view.get('phase') == 'done' and view.get('status') in {'submitted', 'scored'}
+            and (view.get('score') or {}).get('eligible') is True)
 
 
 def main():
@@ -180,15 +229,12 @@ def main():
                     if manifest(frozen) != frozen_manifest:
                         raise RuntimeError('frozen package changed during series')
                     try:
-                        completed = subprocess.run(['atira', 'status', run_id, '--json'], capture_output=True, text=True, timeout=25)
-                        view = json.loads(completed.stdout)
-                        if completed.returncode != 0 or view.get('run_id') != run_id:
-                            raise ValueError('status unavailable')
+                        view = read_status(run_id)
                         save(folder / 'status.json', view)
                         print(json.dumps({'event': 'status', 'run_id': run_id, 'phase': view.get('phase'), 'calls': view.get('calls')}), flush=True)
                         if view.get('phase') == 'done':
                             break
-                    except (subprocess.TimeoutExpired, ValueError):
+                    except (subprocess.TimeoutExpired, ValueError, OSError, subprocess.CalledProcessError):
                         print(json.dumps({'event': 'status_unavailable', 'run_id': run_id}), flush=True)
                     time.sleep(20)
             evidence = {}
@@ -208,7 +254,7 @@ def main():
                 seconds = (view['finished_at'] - view['started_at']) / 1000
             cost = score.get('cost_micro_usd', view.get('cost_micro_usd', 0)) / 1e6
             receipt = bool(re.search(r'"event"\s*:\s*"(?:submission_accepted|submitted)"', evidence.get('run_logs', '')))
-            platform_accepted = view.get('status') == 'submitted' and score.get('eligible') is True
+            platform_accepted = accepted_by_platform(view)
             row = {'run_id': run_id, 'status': view['status'], 'quality': score.get('quality'),
                    'eligible': score.get('eligible'), 'confirmed_receipt': receipt,
                    'accepted_by_platform': platform_accepted, 'seconds': seconds,

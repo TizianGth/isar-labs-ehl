@@ -6,10 +6,18 @@ import subprocess
 import tempfile
 from unittest.mock import Mock, patch
 
-from atira_series import live_logs, stats
+from atira_series import accepted_by_platform, live_logs, read_status, stats
 
 
 class GateTests(unittest.TestCase):
+    def test_terminal_platform_statuses_require_done_and_eligible(self):
+        for status in ('submitted', 'scored'):
+            view = {'phase': 'done', 'status': status, 'score': {'eligible': True, 'quality': 100}}
+            self.assertTrue(accepted_by_platform(view))
+            self.assertFalse(accepted_by_platform({**view, 'phase': 'running'}))
+            self.assertFalse(accepted_by_platform({**view, 'score': {'quality': 100, 'eligible': False}}))
+        self.assertFalse(accepted_by_platform({'phase': 'done', 'status': 'failed', 'score': {'eligible': True}}))
+
     def rows(self):
         return [{'run_id': f'synthetic-{i}', 'seconds': 280, 'cost_usd': .1,
                  'cost_time_usd_seconds': 28, 'quality_ok': True} for i in range(10)]
@@ -37,6 +45,23 @@ class GateTests(unittest.TestCase):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_status_fallback_keeps_score_and_omits_unrequested_secrets(self):
+        cli = Mock(returncode=1, stdout='{"error":"transport unavailable"}')
+        feed = {'phase': 'done', 'status': 'scored', 'calls': 12, 'access_secret': 'never-save-this'}
+        detail = {'run_id': 'run_synthetic', 'kind': 'rehearsal', 'score': {'quality': 100, 'eligible': True}}
+        with patch('atira_series.subprocess.run', return_value=cli), patch('atira_series.readonly_api', side_effect=[feed, detail]) as read:
+            result = read_status('run_synthetic')
+        self.assertTrue(accepted_by_platform(result))
+        self.assertNotIn('access_secret', result)
+        self.assertEqual([c.args[0] for c in read.call_args_list],
+                         ['/v1/runs/run_synthetic/feed?frames=0', '/v1/runs/run_synthetic'])
+
+    def test_status_fallback_rejects_a_mismatched_run(self):
+        with patch('atira_series.subprocess.run', return_value=Mock(returncode=1, stdout='{}')):
+            with patch('atira_series.readonly_api', side_effect=[{}, {'run_id': 'run_other'}]):
+                with self.assertRaisesRegex(ValueError, 'different run'):
+                    read_status('run_synthetic')
+
     def test_log_client_closes_on_failure_without_cancelling_platform(self):
         process = Mock(returncode=-15)
         process.wait.side_effect = [subprocess.TimeoutExpired('local logs client', 5), None]
