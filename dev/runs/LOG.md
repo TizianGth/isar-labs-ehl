@@ -21,3 +21,6 @@
 | 2026-10-10 22:19 | fc2c5cc (main) | run_af2c9746c819df92 | **100 · eligible** | 14:07 (Plattform-Störung) | $0.118 (268 Calls) | lief durch, obwohl CLI/Modell-Host zeitweise nicht erreichbar waren |
 | 2026-10-10 22:48 | fc2c5cc (main, parallel) | run_3c2af28a03720c51 | **100 · eligible** | 8:39 | $0.087 (217 Calls) | Evidenz 334 s; Abgabe 26 Schritte (6× verkettetes fill_fields, 0 Abbrüche), 187 s |
 | 2026-10-10 22:47 | fc2c5cc (main, parallel) | run_6ed27b8b18f38d85 | **100 · eligible** | 8:05 | $0.079 (212 Calls) | Evidenz 330 s; Abgabe 24 Schritte (vorher 47), 158 s |
+| 2026-10-11 00:42 | 3feed5c (fix/spec-values) | run_d5734b160416bc3a | **100 · eligible** | **6:10** | $0.100 (237 Calls) | Schema „certification“ präzisiert, Gegenprüfung liest Anforderungen neu, feldweises Zusammenführen |
+| 2026-10-11 00:5x | 3feed5c (fix/spec-values) | run_68c3334e56608de4 | **100 · eligible** | **4:43** | $0.091 (221 Calls) | |
+| 2026-10-11 00:5x | 3feed5c (fix/spec-values) | run_21bdb7757c80d963 | **100 · eligible** | **5:07** | $0.084 (221 Calls) | |
