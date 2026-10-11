@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MS1P14QJ7DXCA3FZ1YAR6C",
   "strategy": "manual-commit",
   "branch": "claude/sixty",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "agent/rfq/agent/explorer.py",
     "agent/rfq/agent/orchestrator.py",
@@ -28,6 +28,12 @@
       "transcript": "/1/full.jsonl",
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
       "prompt": ""
     }
   ],
