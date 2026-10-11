@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4M4CM43TM8FBXXWH86C7T2W",
   "strategy": "manual-commit",
   "branch": "feat/agent-improvements",
-  "checkpoints_count": 4,
+  "checkpoints_count": 5,
   "files_touched": [
     "agent/rfq/agent/orchestrator.py",
     "agent/rfq/agent/prompts.py",
@@ -17,6 +17,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
-  ]
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 5218,
+    "cache_read_tokens": 2410306,
+    "output_tokens": 5497,
+    "api_call_count": 3
+  }
 }
