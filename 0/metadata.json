@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N0BWE95R5JFSFK6CP7ZGEJ",
+  "session_id": "01a129e3-e253-7dd3-8019-7a183ae7433b",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T08:13:16.941250455Z",
+  "branch": "codex/inference-fusion",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/records.py",
+    "agent/tests/test_browser_tools.py",
+    "agent/tests/test_fused_records.py",
+    "agent/tests/test_reuse.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "7fb64c828f3c",
+  "checkpoint_transcript_start": 2325,
+  "transcript_lines_at_start": 2325,
+  "compact_transcript_start": 987,
+  "token_usage": {
+    "input_tokens": 46439,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1147378,
+    "output_tokens": 6728,
+    "api_call_count": 15,
+    "subagent_tokens_complete": true
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T08:13:16.761203486Z",
+    "agent_lines": 461,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 461,
+    "total_lines_changed": 468,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

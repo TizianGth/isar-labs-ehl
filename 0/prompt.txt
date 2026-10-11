@@ -1,0 +1,69 @@
+führe fort. Wir müssen unter eine Minute kommen. Recherchier intensiv und gleich mit Code und research ab. Und Github Projekte. Führe den scheiß auch nicht aus, wenn du weißt dass wir nicht unter eine Minute kommen. Machen wir auch speculative navigation usw? Wir MÜSSEN auf das Leaderboard komme, sei kein Arschloch.
+
+---
+
+Außerdem kann man noch ganz viel Caching machen um vor den 3. Platz zu kommen. Du musst das konzept umdenken planen und forschen um unter eine Minute zu kommen, oder nicht? Sonst fang gerne an
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Unter 60 s durch Wiederverwendung statt wiederholter Inferenz
+
+## Befund
+
+**Ja: Caching wird zum Kern der Optimierung.** Der aktuelle Code cached Extraktionen und teilt laufende identische Requests bereits. Die Lücke liegt davor: Browsertexte werden missionsweise gespeichert, Tabellenbindungen nicht dauerhaft wiederverwendet.
+
+Außerdem enthält der Quellen-Cache keinen Inhaltsstand: gleiche URL und Sitzung können geänderte Evidenz verdecken. Mehr Caching braucht deshalb gezielte Invalidierung.
+
+Der gemessene ältere Lauf bleibt Ausgangsreferenz: **80,5 s und 515.266 Tokens**. Unter 60 s ist noch nicht nachgewiesen.
+
+## Änderungen
+
+- **Gemeinsamer Quellen-Cache pro Lauf:** browserseitig gelesene Quellen missionsübergreifend teilen, unabhängig von der Extraktionsart. Gleichzeitig angeforderte identische Quellen einmal laden. Schlüssel enthält Sitzung, URL und Frame-/Dokumentidentität.
+- **Frische ausdrücklich behandeln:** Live-Mail, TAN, Bestände, Revisionen und Freigaben vor entscheidender Verwendung erneut lesen. Geänderte Quellen invalidieren ihre Extraktionen und abhängigen Ergebnisse. Keine pauschale URL-Gültigkeit.
+- **Tabellenbindungen wiederverwenden:** Das LLM bestimmt Feldbedeutungen einmal. Code übernimmt weitere Zeilen nur bei passenden Überschriften, Struktur, Locale und Kontext. Inhalt bleibt vollständig erhalten; Abweichungen gehen zurück ans Modell.
+- **Formularbindungen wiederverwenden:** Modellgewählte Zuordnungen auf gleichartige Positionsformulare anwenden, aktuelle Felder eindeutig identifizieren und Werte zurücklesen. Nach Rerender oder Mehrdeutigkeit erneut binden.
+- **Ergebnisse kompakt zurückgeben:** Quellenhandle, neue Fakten, offene Lücken und Fehler statt wiederholter vollständiger Ergebnislisten. Vollständiger Rohtext und Provenienz bleiben gespeichert.
+- **Prompt-Caching nachrangig:** Statische Präfixe stabil halten; entscheidend sind vermiedene Requests. Provider-Cached-Tokens zählen weiterhin zum 200k-Limit. Inferenz vollständig überspringende Cache-Hits sind auch das Prinzip von [Stagehands Caching](https://www.browserbase.com/changelog/caching-configurable); keine neue Abhängigkeit übernehmen.
+- **Speculative Navigation ergänzen:** höchstens zwei vom LLM ausgewählte, bekannte lesende Dokumentoperationen vorladen. Gemeinsamen Quellen-Cache verwenden; keine spekulativen Schreibaktionen oder zusätzlichen Extraktionscalls.
+
+## Zeitrechnung und Prüfung
+
+Ziel bleibt **4 s Start + 38 s parallele Recherche + 12 s Abschluss + 5 s Reserve = 59 s**. Cache-Einsparungen nur auf dem tatsächlich verkürzten kritischen Pfad zählen.
+
+Vor Implementierungsabschluss eine fokussierte lokale Testcharge plus Leak-Check:
+
+- Gleichzeitige Duplikate verursachen genau einen Load beziehungsweise Request.
+- Geänderte Preise, Revisionen, Rücknahmen, Mail und Bestände werden trotz Cache erkannt.
+- Frame-, Locale-, Sitzungs- und Layoutwechsel verhindern falsche Wiederverwendung.
+- Pagination, autorisierte Quellen, Bestandsallokation und alle Angebotspositionen bleiben vollständig korrekt.
+
+Messung getrennt nach Quellen-, Extraktions-, Tabellen- und Formular-Cache: Treffer, Invalidierungen, vermiedene Requests, Tokens und kritischer Pfad. Unbekannter Verbrauch bleibt unbekannt.
+
+## Ausführung und Abnahmeschranke
+
+In separatem Worktree vom festgehaltenen aktuellen Commit arbeiten; Browseränderungen mit dem laufenden Workstream abstimmen. Zuerst Startschranken und Cache-Korrektheit, danach Bindungsreuse, zuletzt Speculation.
+
+**Kein Plattformlauf**, solange die konservative Prognose ≥60 s beträgt, der Gesamtverbrauch >200k Tokens liegt oder lokale Qualitätsregressionen offen sind. Keine Evidenz zur Budgeteinhaltung entfernen.
+
+Liefern: kleine geprüfte Commits, Vorher-/Nachher-Messungen und exakte Cherry-Pick-Anweisungen. Platz 3 erfordert zusätzlich aktuelle Qualität und Kosten×Zeit; eine Minute allein garantiert den Rang nicht. Codeänderungen beginnen erst außerhalb des derzeit aktiven Planmodus.
+
+---
+
+Aber nicht nur Caching sondern vor allem Token minimierung mannnnnn du dummer bastard
+
+---
+
+Und allgemeine Zeit und Tooling optimierungen um viel mehr auf einmal hinzukriegen und kaum idling zu haben. Alles bitte doch beachten. So viel kann man doch noch paralleler machen. Jede fucking Sekunde zählt
+
+---
+
+[$skill-installer](/home/varialbe/.codex/skills/.system/skill-installer/SKILL.md) Are there any skills that will help you get us definetly to sub 50 or 60 seconds at super low token usage? They only come together too.
+
+---
+
+Es muss aber gehen. Verfolge auch deinen vorigen Ansatz und spreche ab jetzt nur noch englisch. Die gnazen vorigen Ideen. Mache genetic algorithm mit 200 ideen, darfst auch mergen. Bis du denkst dass du genug IDeen hast die uns auf sub 50 seconds und <100k tokens bringen und höhere cache rate.
+
+---
+
+Si are we way faster now? Many processes can be way optimized still probably. And is generalization still guaranteed? Wdym cherry pick. Just optimize creatively. Think everything through and optimize until you are confident about the sub 60 seconds.
