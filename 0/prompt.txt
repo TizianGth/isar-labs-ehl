@@ -1,17 +1,1 @@
-write a prompt for claude to have it evaluate our options for integrating clef in order to optimize speed and cost. Have it evaluate all options and weigh tradeoffs against eaach other
-
----
-
-schreibe einen prompt für claude opus 5 max. Ziel ist es, den aktuellen ansatz zur Lösung der challange zu überdenken und verschiedene ansätze zur optimierung heruaszuarbeiten. Am Ende soll dabei eine roadmap zur konkreten optimisierung der laufzeit und kosten des agenten herausgearbeitet werden, die ein schwächeres opus modell dann implementiern kann.
-
----
-
-kopiere es zum clipboard
-
----
-
-starte einen test run in diesem repo
-
----
-
 können wir durch ein regressionsmodell die geschwindigkeit erhöhen?
