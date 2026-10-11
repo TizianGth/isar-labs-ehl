@@ -535,3 +535,26 @@ def test_extract_then_starts_the_extraction_and_opens_the_next_page(monkeypatch)
     monkeypatch.setattr(flags, "EXTRACT_THEN", False)
     assert "then_click" not in {t["function"]["name"]: t["function"]["parameters"]["properties"]
                                 for t in explorer_tools()}["extract"]
+
+
+def test_extraction_results_list_the_new_links_of_the_extracted_page(monkeypatch):
+    """X-2: sub-views (stock levels, price scales) are linked from the pages the model extracts; listing them lets
+    it extract them next without clicking there first. Each link is listed once."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission
+    monkeypatch.setattr(flags, "LINKS_IN_RESULTS", True)
+
+    class _Site(_FakeSite):
+        async def read_url(self, url):
+            return f"URL: {url}\nLager\n[e3] link \"Bestand je Lagerort\" -> /stock?level=2\n[e4] link \"Staffeln\" -> /scales"
+
+    async def extractor(kind, text, url, via="page"):
+        return "facts"
+    explorer = Explorer(_Site(), Mission("erp:G", "goal", {}), extractor)
+    first = asyncio.run(explorer._extract_url("http://erp.test/stock", "materials"))
+    again = asyncio.run(explorer._extract_url("http://erp.test/stock?view=b", "materials"))
+    assert "links there: Bestand je Lagerort" in first and "http://erp.test/scales" in first
+    assert "links there" not in again
+    monkeypatch.setattr(flags, "LINKS_IN_RESULTS", False)
+    assert "links there" not in asyncio.run(Explorer(_Site(), Mission("erp:G", "goal", {}), extractor)
+                                            ._extract_url("http://erp.test/stock", "materials"))

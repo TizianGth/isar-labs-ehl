@@ -141,6 +141,7 @@ class Explorer:
     visual_used: int = 0
     last_result: str = ""
     pending: dict[str, asyncio.Task] = field(default_factory=dict)   # background extractions: label -> task
+    offered_links: set[str] = field(default_factory=set)             # links already listed in extraction results
 
     @property
     def tag(self) -> str:
@@ -379,7 +380,18 @@ class Explorer:
         text = await self.site.read_url(url)
         if text.startswith("ERROR"):
             return f"{url}: {text}"
-        return f"{url}: " + await self.extractor(kind, text, url, via="page")
+        return f"{url}: " + await self.extractor(kind, text, url, via="page") + self._new_links(url, text)
+
+    def _new_links(self, url: str, text: str) -> str:
+        """X-2: the links on an extracted page not listed before, so the model can extract the next views directly
+        (they count as seen: the page was read in this session)."""
+        if not flags.LINKS_IN_RESULTS:
+            return ""
+        page = url.split("#")[0]
+        found = [(label, href) for label, href in _links([(url, text)])
+                 if href.split("#")[0] != page and href not in self.offered_links][:8]
+        self.offered_links.update(href for _, href in found)
+        return ("\n  links there: " + "; ".join(f"{label[:60]} -> {href}" for label, href in found)) if found else ""
 
     def _collection(self, collection_id) -> Collection | None:
         collections = self.site.collections
