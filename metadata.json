@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MVVWCP9N1DACAH3QGF760X",
   "strategy": "manual-commit",
   "branch": "claude/sixty",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "agent/rfq/browser/site.py",
     "agent/rfq/llm.py"
@@ -21,6 +21,12 @@
       "transcript": "/1/full.jsonl",
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
       "prompt": ""
     }
   ],
