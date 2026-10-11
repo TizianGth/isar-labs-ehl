@@ -18,7 +18,7 @@ from .. import llm
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
-from ..rules.mail_evidence import eligible_mails, keyed_records, mailbox_domain, mail_problem, nonnegative, valid_bonus_plan
+from ..rules.mail_evidence import eligible_mails, keyed_records, mailbox_domain, mail_problem, newer_payload_unknown, nonnegative, valid_bonus_plan
 from ..rules.resolve import Context, Result, build, index_rate
 from .explorer import Explorer, Mission
 from .extraction_jobs import ExtractionJobs, Snapshot
@@ -544,6 +544,10 @@ class Orchestrator:
                 record = records.get(key)
                 valid = (valid_bonus_plan(record) if amount is None else
                          isinstance(record, dict) and nonnegative(record.get(amount)))
+                if newer_payload_unknown(mails, topic, field, key):
+                    gaps.append(f"{topic}: a newer eligible message has an empty/unreadable {field} payload; "
+                                f"re-read it before treating older key {key} as final")
+                    continue
                 if not valid:
                     gaps.append(f"{topic}: required key {key} needs " +
                                 ("readable, non-overlapping marginal bands (including an explicit upper bound or null)"

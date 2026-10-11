@@ -49,8 +49,23 @@ def keyed_records(mails, topic, field):
     return records
 
 
+def newer_payload_unknown(mails, topic, field, key):
+    """An empty later extraction may conceal an update to a previously read key."""
+    seen, unknown = False, False
+    for mail in mails:
+        if mail.get("topic") != topic:
+            continue
+        data = mail.get("data")
+        values = data.get(field) if isinstance(data, dict) else None
+        if not isinstance(values, dict) or not values:
+            unknown |= seen
+        elif key in {norm_id(k) for k in values}:
+            seen, unknown = True, False
+    return unknown
+
+
 def amount(value):
-    if isinstance(value, bool):
+    if isinstance(value, (bool, dict, list, tuple, set)):
         return None
     try:
         return number(value)
@@ -72,7 +87,7 @@ def valid_bonus_plan(plan):
         if not isinstance(band, dict) or "to_eur" not in band:
             return False
         low, high, rate = (amount(band.get(k)) for k in ("from_eur", "to_eur", "rate_percent"))
-        if not nonnegative(low) or not nonnegative(rate) or rate > 100:
+        if not nonnegative(low) or not nonnegative(rate):
             return False
         if band["to_eur"] is not None and (not nonnegative(high) or high <= low):
             return False

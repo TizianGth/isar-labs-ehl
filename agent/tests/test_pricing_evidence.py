@@ -94,6 +94,35 @@ def test_latest_key_record_must_be_readable():
     assert not o.mail_progress()[1]
 
 
+def test_empty_newer_payload_cannot_hide_a_key_update():
+    o = mail_fixture("setup_pool", "pools", {"SYN-KEY": {"amount_eur": "2"}})
+    assign(o, "setup_pool_key")
+    add_mail(o, "setup_pool", {"pools": {}}, datetime_utc="2032-04-19T09:00:00Z")
+    text, complete = o.mail_progress()
+    assert not complete and "newer eligible message" in text
+    # Re-reading an older message does not resolve the unknown newer update.
+    add_mail(o, "setup_pool", {"pools": {"SYN-KEY": {"amount_eur": "2"}}})
+    assert not o.mail_progress()[1]
+    add_mail(o, "setup_pool", {"pools": {"SYN-KEY": {"amount_eur": "3"}}},
+             datetime_utc="2032-04-19T09:00:00Z")
+    assert o.mail_progress()[1]
+
+
+def test_old_empty_payload_is_superseded_by_a_newer_proven_key():
+    o = mail_fixture("setup_pool", "pools", {})
+    assign(o, "setup_pool_key")
+    add_mail(o, "setup_pool", {"pools": {"SYN-KEY": {"amount_eur": "2"}}},
+             datetime_utc="2032-04-19T09:00:00Z")
+    assert o.mail_progress()[1]
+
+
+def test_bonus_validation_does_not_invent_a_percentage_cap():
+    o = mail_fixture("project_bonus", "plans", {"SYN-KEY": {
+        "bands": [{"from_eur": "0", "to_eur": None, "rate_percent": "125"}]}})
+    assign(o, "bonus_plan_key")
+    assert o.mail_progress()[1]
+
+
 def test_withdrawn_or_future_assignment_does_not_require_a_plan():
     o = mail_fixture("project_bonus", "plans", {})
     assign(o, "bonus_plan_key", datetime_utc="2032-04-21T08:00:00Z")
