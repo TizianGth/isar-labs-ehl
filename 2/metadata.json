@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MW65GBNPTZPRAHQFN79QEW",
+  "session_id": "76abc8de-2e9b-4d72-99dc-d8c889cd0eb9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T07:00:16.127792269Z",
+  "branch": "claude/sixty",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/browser/site.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "3f142d36acf4",
+  "checkpoint_transcript_start": 414,
+  "transcript_lines_at_start": 414,
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T07:00:16.101340524Z",
+    "agent_lines": 0,
+    "agent_removed": 45,
+    "human_added": 158,
+    "human_modified": 307,
+    "human_removed": 0,
+    "total_committed": 429,
+    "total_lines_changed": 510,
+    "agent_percentage": 8.823529411764707,
+    "metric_version": 2
+  }
+}
