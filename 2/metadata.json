@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M5F84Q0Q7ZBR76K8SNH14T",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:23:18.429621604Z",
+  "branch": "fix/spec-values",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_deadlines.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:23:18.402617692Z",
+    "agent_lines": 38,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 38,
+    "total_lines_changed": 43,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
