@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M49RT3G8VYTW6F2XHH8N18",
+  "session_id": "9fce6d6a-c487-47a3-9e99-3f4ee4ca7b5b",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:02:48.109369Z",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/13-optimization-roadmap.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "a3dde11c0ac8",
+  "checkpoint_transcript_start": 3022,
+  "transcript_lines_at_start": 3022,
+  "compact_transcript_start": 317,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 6004,
+    "cache_read_tokens": 3191252,
+    "output_tokens": 5306,
+    "api_call_count": 4
+  },
+  "session_metrics": {
+    "turn_count": 18
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:02:48.022062Z",
+    "agent_lines": 80,
+    "agent_removed": 0,
+    "human_added": 2,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 82,
+    "total_lines_changed": 82,
+    "agent_percentage": 97.5609756097561,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 457,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/12-optimization-analysis.md": 457
+      }
+    }
+  ]
+}
