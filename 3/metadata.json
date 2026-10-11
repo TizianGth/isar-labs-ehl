@@ -1,0 +1,124 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MVVWCP9N1DACAH3QGF760X",
+  "session_id": "8b2fba4f-5fae-4353-8497-eff610211e9c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T06:54:39.609400979Z",
+  "branch": "claude/sixty",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "agent/rfq/browser/site.py",
+    "agent/rfq/llm.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "c5857edcf7fb",
+  "checkpoint_transcript_start": 1497,
+  "transcript_lines_at_start": 1497,
+  "compact_transcript_start": 224,
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 34165,
+    "cache_read_tokens": 15119585,
+    "output_tokens": 16630,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T06:54:39.497548757Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 80,
+    "human_modified": 499,
+    "human_removed": 0,
+    "total_committed": 80,
+    "total_lines_changed": 592,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 3168,
+      "user_lines_removed": 406,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "agent/main.py": 13,
+        "agent/rfq/agent/fused.py": 67,
+        "agent/rfq/agent/orchestrator.py": 150,
+        "agent/rfq/agent/prompts.py": 8,
+        "agent/rfq/agent/records.py": 35,
+        "agent/rfq/agent/routing.py": 75,
+        "agent/rfq/agent/submit.py": 105,
+        "agent/rfq/browser/site.py": 271,
+        "agent/rfq/llm.py": 49,
+        "agent/rfq/log.py": 27,
+        "agent/rfq/profile.py": 122,
+        "agent/rfq/rules/evidence.py": 56,
+        "agent/rfq/rules/resolve.py": 13,
+        "agent/tests/test_deadlines.py": 4,
+        "agent/tests/test_fused_records.py": 65,
+        "agent/tests/test_llm_hedging.py": 1,
+        "agent/tests/test_navigation_budget.py": 221,
+        "agent/tests/test_profile.py": 129,
+        "agent/tests/test_review_regressions.py": 164,
+        "agent/tests/test_submit.py": 2,
+        "agent/tests/test_token_optimizations.py": 15,
+        "dev/check_no_leaks.py": 142,
+        "dev/evals/README.md": 93,
+        "dev/evals/build.py": 59,
+        "dev/evals/deployments.json": 175,
+        "dev/evals/suite.json": 34,
+        "dev/evals/tests/test_world.py": 351,
+        "dev/evals/world.py": 237,
+        "dev/profile_ledger.py": 227,
+        "dev/tests/test_no_leaks.py": 61,
+        "docs/14-inference-budget.md": 197
+      },
+      "user_removed_per_file": {
+        "agent/main.py": 11,
+        "agent/rfq/agent/fused.py": 13,
+        "agent/rfq/agent/orchestrator.py": 87,
+        "agent/rfq/agent/prompts.py": 4,
+        "agent/rfq/agent/records.py": 7,
+        "agent/rfq/agent/submit.py": 26,
+        "agent/rfq/browser/site.py": 108,
+        "agent/rfq/llm.py": 14,
+        "agent/rfq/log.py": 3,
+        "agent/rfq/rules/resolve.py": 24,
+        "agent/tests/test_deadlines.py": 4,
+        "agent/tests/test_submit.py": 2,
+        "agent/tests/test_token_optimizations.py": 18,
+        "dev/check_no_leaks.py": 29,
+        "dev/evals/build.py": 7,
+        "dev/evals/suite.json": 8,
+        "dev/evals/world.py": 41
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3168,
+      "agent_lines_removed": 406
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3168,
+      "agent_lines_removed": 406
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 3168,
+      "agent_lines_removed": 406
+    }
+  ]
+}

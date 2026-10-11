@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MVVWCP9N1DACAH3QGF760X",
   "strategy": "manual-commit",
   "branch": "claude/sixty",
-  "checkpoints_count": 3,
+  "checkpoints_count": 6,
   "files_touched": [
     "agent/rfq/browser/site.py",
     "agent/rfq/llm.py"
@@ -28,13 +28,20 @@
       "transcript": "/2/full.jsonl",
       "content_hash": "/2/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "compact_transcript": "/3/transcript.jsonl",
+      "content_hash": "/3/content_hash.txt",
+      "prompt": "/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 0,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 0,
-    "output_tokens": 0,
-    "api_call_count": 0
+    "input_tokens": 66,
+    "cache_creation_tokens": 34165,
+    "cache_read_tokens": 15119585,
+    "output_tokens": 16630,
+    "api_call_count": 33
   }
 }
