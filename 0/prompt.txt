@@ -1,0 +1,247 @@
+Test how much our current latest commited project can achieve on the leaderboard and then your job is to do intensive online reserachw ith code inspirations and a lot of papers in order to optimize token usage below 100-200k and maximize quality whilst having lowest time which has to be less than 90 seconds. Plan extensively and be sure that you can achieve the goal before executing anything. Continue from the last commit. You have to break the innovation wall. Something has to change big time. Make no mistake by not being a fucking idot. And ensure the generalization/overfitting since thats really important too. Furthermore we can publish our "custom evals" now which are the fake-sites that we've developed on our own (also they might be too similar), so they can run on the backend (using antira eval deploy, etc.). Lastly, don't use the testing too often and batch.
+
+---
+
+Quick note, I don't want to interrupt you, but Timeouts are a major issue too (sometimes only). And its navigation timeouts for 20s
+
+---
+
+another quick note: continue as before: 20s is not primary bottle neck. Its token usage. We need to scale down WAY more. A lot of upgrades and merging processes maybe to do. You forgot to do intensive competitor and paper research! Thats one of the most important things you fuckhead.
+Continue as before
+
+---
+
+Like check what the others do. They have 2 cent at 100k requests only. Both top ones. And they both have like 30 seconds!!! Fucking get creative and think dude. BE SURE you can solve it before implementing really. Research enough. And do so efficiently. So you're as fast as possible and as good as possible. And generalization
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Reduce inference work while preserving correctness on unseen sites
+
+## 1. Starting point and measurable goals
+
+Continue from **commit `7de9cda`**. Its backend performance is still unverified: the best scored team package and the active test package both differ from this commit. No new backend run or deployment has been started during planning.
+
+The fresh public leaderboard shows:
+
+| Team | Quality | Cost | Time |
+|---|---:|---:|---:|
+| Plite | 100 | $0.0258 | 38 seconds |
+| PolyETHylen | 100 | $0.0242 | 98 seconds |
+| isar-labs | 100 | $0.0846 | 150 seconds |
+
+Both leaders are near two cents; only Plite currently finishes near 30 seconds. Their public records do **not** expose token counts. I checked their team histories and members’ public GitHub repositories and found no published RFQ implementation. Their architecture cannot be established from cost alone. [Leaderboard](https://ehl-challenge.atira.ai/challenges/rfq/leaderboard.md), [Plite history](https://ehl-challenge.atira.ai/teams/team_81f9047f929e24f4.md), [PolyETHylen history](https://ehl-challenge.atira.ai/teams/team_e0e009d842135371.md)
+
+Our measured quality-reference package used **212 model calls and 446,628 total tokens**, including 346,432 cached input tokens. Reaching 200k requires approximately **55% fewer tokens**; reaching 100k requires **78% fewer**. Cached input still counts toward the requested token limit.
+
+Acceptance remains:
+
+- Eligible, **100 public quality**.
+- **Under 90 seconds**, measured by the platform.
+- **At most 200k total tokens**, counting cached input, output, reasoning, retries, and metered speculative calls.
+- Aim for **approximately 100k tokens and 40–60 seconds**.
+- Preserve correctness on unfamiliar sites and during bounded recovery. An over-budget recovery remains a recorded performance failure.
+
+At equal quality, compare the actual cost × time product against the current leader. At 90 seconds, beating Plite’s current product would require approximately **$0.011 or less**; meeting the 90-second limit alone is insufficient. [Ranking rules](https://ehl-challenge.atira.ai/challenges/rfq/leaderboard.md)
+
+Local preflight found **76 passing tests and one failing progress-message assertion**. The leak checker passed, but inspection found a public pathname in a runtime comment that it misses. Address both after capturing the unchanged baseline.
+
+**Research establishes a plausible approach, not a guarantee.** Before implementation, the unchanged-commit run must establish the call and critical-path ledger. No claim of achieving the goal will precede measurement.
+
+## 2. Research conclusions and code inspirations
+
+The major change will be **removing repeated interpretation and value copying**, with navigation decisions retained by the model.
+
+| Research | Decision for this project |
+|---|---|
+| [AgentOccam](https://arxiv.org/abs/2410.13825) and [Agent-E](https://arxiv.org/abs/2407.13032) | Use compact, purpose-specific observations and report meaningful page changes. Preserve currencies, minus signs, percentages, units, dates, and contextual legends when pruning. |
+| [LLMCompiler](https://arxiv.org/abs/2312.04511) | Start dependency-ready work immediately. Implement scheduling in Python; avoid another LLM planner on every scheduling cycle. |
+| [Efficient Agents](https://arxiv.org/abs/2508.02694) and the recent [budget-constrained web-agent study](https://arxiv.org/html/2606.15017v2) | Merge actor responsibilities and measure every auxiliary call. Do not introduce separate memory-induction, workflow-learning, or routine verification models. |
+| [Agent Workflow Memory](https://arxiv.org/html/2409.07429v1), [Agentic Compilation](https://arxiv.org/html/2604.09718v1), and [PACE](https://arxiv.org/html/2610.02932v1) | Reuse validated table/form mappings within the current run. Avoid shipped navigation scripts learned from public sites. Full compilation’s reuse assumptions and human repair requirements do not establish unseen-site reliability. |
+| [TraceCompiler](https://arxiv.org/html/2608.02680v1) | Represent copied values through explicit provenance and data dependencies. Its call reductions are not evidence of net token savings, so count mapping creation and recovery costs too. |
+| [TALE](https://arxiv.org/abs/2412.18547), [AgentFold](https://arxiv.org/html/2510.24699v1), and [LongSeeker](https://arxiv.org/html/2605.05191v1) | Keep bounded decision outputs and exact evidence snippets outside repeated prompts. Do not truncate facts or assume prompting reproduces results requiring trained models. |
+| [Mind2Web](https://arxiv.org/abs/2306.06070), [WebLINX](https://arxiv.org/abs/2402.05930), and [WorkArena++](https://arxiv.org/abs/2407.05291) | Hold out navigation structures, information placement, and business-rule combinations—not just labels and CSS. |
+| [BrowserGym](https://arxiv.org/abs/2412.05467) and [AI Agents That Matter](https://arxiv.org/html/2407.01502v1) | Pin packages and eval versions; report quality, resource use, failures, and repeat variation together. |
+
+Concrete source inspirations already inspected include [AgentOccam’s observation optimizer](https://github.com/amazon-science/AgentOccam/blob/c078ba629212ea7cee35b2718dc8df72c05e57c7/AgentOccam/obs_opt.py), [Agent-E’s DOM views](https://github.com/EmergenceAI/Agent-E/blob/f218c3cb4b2b3e33ed08ea12da5514ab1e89cdd7/ae/core/skills/get_dom_with_content_type.py), and [LLMCompiler’s dependency scheduler](https://github.com/SqueezeAILab/LLMCompiler/blob/a00c9d35507507da70e8c637eee64efc8c1857ae/src/llm_compiler/task_fetching_unit.py). Adapt their relevant mechanisms into the existing lightweight stack.
+
+Use [browser-use’s guarded action batching](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/service.py) and [Stagehand’s observed-action approach](https://docs.stagehand.dev/v3/basics/observe) as references for safe execution and bindings. No heavy framework dependency is needed.
+
+## 3. Architecture changes
+
+### Merge navigation and extraction
+
+Replace the separate navigation → extraction → progress interpretation cycle with one structured decision per observed state.
+
+That decision may:
+
+- Emit sparse facts from the current page.
+- Select relevant document links, table regions, or list pagination.
+- Define a table/form mapping.
+- Choose up to eight actions whose targets are already observable.
+- Identify unresolved evidence gaps.
+
+Use separate extraction calls only for selected documents or content too large for the current decision. Capture the source snapshot before background work proceeds.
+
+The model continues choosing where to navigate, what to search, and which sources matter. After navigation, obtain a new observation and decision. Code executes model-selected pagination and field operations; it does not invent routes or crawl all sources.
+
+### Introduce explicit internal interfaces
+
+Keep the public answer schema and Decimal resolver. Add lightweight internal records:
+
+| Record | Purpose |
+|---|---|
+| `Observation` | Snapshot ID, URL, frame, controls, content regions, table structure, and change summary. |
+| `Decision` | Snapshot-bound facts, selected sources/regions, bindings, actions, and missing evidence. |
+| `ActionResult` | Applied operations, field readbacks, errors, and resulting snapshot. |
+| `Coverage` | Which selected records/pages were read, ordering, exclusions, and completeness evidence. |
+
+Adapt extracted records into existing `KINDS`. Preserve raw values, locale, source IDs, and evidence excerpts.
+
+### Replace repeated rows and copied values with bindings
+
+For regular tables, the model chooses the relevant table and maps headers to fact fields once. Python then parses the selected rows exactly, including raw number strings and row provenance.
+
+For forms, the model maps visible fields to computed answer data paths. Python supplies values and verifies readbacks. The model no longer needs to reproduce the full bid repeatedly.
+
+Reuse mappings only within the same run and matching structure. Invalidate on changed headers, field meaning, frame, or control identity. Irregular prose and ambiguous tables return to Qwen.
+
+Stop action batches on unexpected navigation, changed target identity, rerender, ambiguity, or errors. Keep TAN requests and final signing outside speculative batches.
+
+### Shrink repeated context without discarding evidence
+
+Each decision receives:
+
+- Current mission and unresolved gaps.
+- Current relevant region and control map.
+- The last two action outcomes.
+- Only needed facts and applicable extraction fields.
+
+Remove repeated full histories, large null-filled schemas, the complete tool catalogue, and repeated full answers. Keep exact source evidence available through handles rather than reinserting it.
+
+Replace silent document truncation with complete, tracked chunks. Unread chunks remain explicit gaps.
+
+Unify extraction caching and concurrent duplicate suppression. Keys include run/session, source identity, content hash, schema version, and relevant reference/date context. Replace substring URL matching with exact source IDs.
+
+### Schedule work from facts, not mission barriers
+
+Overlap brief extraction with browser attachment. Start each site worker when its own browser is ready.
+
+Start ERP work for a requirement group as soon as that group’s specification is usable. Do not wait for the entire specification mission. Let the model route unresolved facts when private sites distribute information differently.
+
+Use one UI owner per tab and structured cancellation. Await cancelled work before freezing final evidence.
+
+Default to eight concurrent Qwen calls per run, with four slots available for interactive decisions and four for background work. Reserve a separate limit of four Clef decisions.
+
+### Make completion prove correctness
+
+Replace “a fact exists” early exits with coverage sufficient for the resolver:
+
+- Exact reference and authorized sender.
+- Latest applicable dated record before the cutoff.
+- Required revision and withdrawal handling.
+- Relevant price tiers, stock, conditions, and candidate coverage.
+- Evidence supporting a no-bid decision.
+
+Share eligibility checks with the resolver to prevent contradictory rules. Recheck specific contradictions or missing evidence instead of rereading whole collections.
+
+Preserve deterministic financial validation and exact-reference TAN correlation. Final submission requires verified field readbacks, summary consistency, and a signed acceptance receipt.
+
+### Model routing and timeouts
+
+Qwen remains the default, with thinking disabled. Test Clef only for choosing among at most eight observed controls, with an abstain option. Qwen handles interpretation, commercial facts, revisions, ambiguity, and signing.
+
+Accept Clef routing only if the paired development comparison preserves full quality and reduces both total tokens and runtime. Invalid choices or abstention return to Qwen. Do not add a Qwen validation call after every Clef choice. [Hosted-model interfaces](https://ehl-challenge.atira.ai/start.md)
+
+For navigation, replace stacked 20-second waits with a whole-attempt fast-path budget: four seconds to commit plus two seconds for functional readiness, with one read-only recovery attempt and a maximum of twelve seconds across both attempts. Apply this consistently to guards, helpers, back navigation, and popups.
+
+Use readable current-document state and actionability, not network-idle or character count alone. Never blindly replay an ambiguous write, TAN request, or final submission. [Playwright navigation semantics](https://playwright.dev/python/docs/api/class-page#page-goto), [actionability](https://playwright.dev/python/docs/actionability)
+
+If fast recovery fails, retain the existing deadline-bounded quality recovery and record the speed miss.
+
+**Engineering forecast:** about 40 decisions × 1,800 input tokens, 8k output tokens, and 20k recovery allowance gives approximately 100k tokens. Target evidence completion by 45 seconds and signing by 75 seconds, leaving recovery headroom. These are design budgets to validate, not measured results.
+
+## 4. Private backend evals and generalization
+
+Copy the existing fake-site implementation into development-only eval packages. Keep the original fixtures intact and keep all scenarios, expected answers, and oracle code outside `agent/`.
+
+Existing skins share substantial structure, so create **eight private worlds**:
+
+| Use | World |
+|---|---|
+| Development | Classic baseline |
+| Development | Workbench with locale boundaries |
+| Holdout | Legacy navigation, future withdrawal, relocated commercial facts |
+| Holdout | Busy-office workflow with shared stock |
+| Holdout | Scanned specification workflow |
+| Holdout | Modern blocked-material case |
+| Holdout | New document-centric navigation and cross-site evidence placement |
+| Holdout | New search-centric catalogue and shared-stock allocation |
+
+Generate fresh counterfactual data and freeze holdout versions before tuning. Vary references, quantities, prices, dates, approvals, position counts, catalogue groups, locales, and evidence placement. The two new worlds must have distinct interaction structures.
+
+Adapt the server to Atira’s persistent shared-world protocol:
+
+- Root manifest, brief, and official expected-answer schema.
+- Platform-provided ports and public origins.
+- Authentication through `/v1/eval-worlds/verify`.
+- Isolated state, messages, draft bids, and TANs per run/preview.
+- Final UI submission forwarded through `/v1/eval-worlds/answer`.
+- Expected answers and evaluator credentials inaccessible to the agent.
+- Independent oracle implementation; no import of the agent’s resolver.
+
+Deploy privately using a verified task-local CLI supporting `eval`. The installed CLI currently lacks that command. [Atira eval protocol](https://ehl-challenge.atira.ai/docs/evals.md)
+
+Include deterministic faults for delayed commit, readable pages with stuck subresources, changing frames/controls, expired sessions, and foreign TANs. Record infrastructure failures separately while retaining them in performance reporting.
+
+Once holdout results are inspected, those worlds become development data. Do not tune against them and continue calling them unseen.
+
+## 5. Execution order, limited testing, and release gates
+
+Use at most **12 backend runs**, in planned batches with one active run at a time to limit inference contention:
+
+| Batch | Runs | Purpose |
+|---|---:|---|
+| Baseline | 1 | Public test of an immutable export of `7de9cda`. |
+| Development comparison | 2 | Qwen-only versus Qwen/Clef on the same development world. |
+| Development confirmation | 1 | Selected route on the second development world. |
+| Frozen holdouts | 6 | Same candidate package across all holdout worlds. |
+| Public confirmation | 2 | Two runs of the identical final package. |
+| **Total** | **12** | |
+
+Before implementation, analyze the unchanged baseline’s source visits, repeated tokens, extraction output, critical path, and submission overhead. Reconstruct the proposed compact requests from captured observations. Proceed with the redesign only when that ledger supports ≤200k tokens and a plausible sub-90-second critical path without skipping required evidence.
+
+Implement in order: internal records and provenance → compact observations → fused decisions and bindings → dependency scheduling → completion validation → submission bindings → recovery → optional model routing.
+
+Before backend validation, run one consolidated local batch covering:
+
+- Existing unit tests and independent fake-site oracle replay.
+- Newer/future/withdrawn records and unauthorized approvals.
+- Complete document chunking and exact source attribution.
+- Changed table headers, ambiguous fields, rerenders, and interrupted batches.
+- Decimal rounding, shared stock, and all bid positions.
+- Two simultaneous isolated eval sessions and final-answer forwarding.
+- Navigation recovery without duplicate writes or TAN requests.
+- Expanded scenario-leak checks, including comments and paths.
+
+Replace tests that reward prompt padding with tests that verify preserved information and correct decisions.
+
+Freeze the candidate before holdouts. Require both final public runs to achieve **eligible, 100 quality, <90 seconds, and ≤200k tokens**. Require full holdout correctness and the same resource envelope for a claim of meeting the overall goal. Report every failure and budget miss; two public repetitions cannot establish a reliable tail-latency guarantee.
+
+Deliver the package hash, eval versions, field-level results, total token ledger, critical-path timing, cost × time comparison, and remaining limitations. Preserve the quality reference if the candidate fails a gate.
+
+Ranked submission remains a separate human-approved action under `AGENTS.md`. No submission, cancellation, public eval publication, or implementation occurs in Plan Mode.
+
+---
+
+Quick side note: Go back to what you were doing, but: If you plan on using subagents for shitty simplier tasks feel free to use Antigravity CLI with agy. But it likes to mess stuff up, be careful.
+
+---
+
+# Files pasted by the user:
+
+## "ery prompt); │ ✕ x with several queries │ source: Current ▾ (in parallel helper…": /home/varialbe/.codex/attachments/68a2059d-574d-41b4-ba6b-af2857ec575d/Pasted text.txt
+
+## My request:
+Side question, no interrupt: What branch are you on? Is there anything I can tell Claude to do?
+Here is the last output before tokens died. Now you are doing that and stuff

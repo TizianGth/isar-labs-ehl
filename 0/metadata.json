@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MNTCXD8FZWKNY3R6BQGJ49",
+  "session_id": "01a12943-7707-77f2-b15a-fdbff6a98f5a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T05:08:57.62105195Z",
+  "branch": "codex/inference-fusion",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "agent/rfq/agent/fused.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/records.py",
+    "agent/rfq/llm.py",
+    "dev/evals/build.py",
+    "dev/evals/world.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "16555a7a3ec8",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 411845,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 8971392,
+    "output_tokens": 52687,
+    "api_call_count": 68
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T05:08:57.493395358Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 768,
+    "human_modified": 137,
+    "human_removed": 0,
+    "total_committed": 768,
+    "total_lines_changed": 905,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 3613,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".gitignore": 3,
+        "dev/evals/build.py": 199,
+        "dev/evals/kernel/PORTAL_SPEC.md": 107,
+        "dev/evals/kernel/cases.json": 796,
+        "dev/evals/kernel/extra_cases.py": 128,
+        "dev/evals/kernel/profile_busy_office.py": 124,
+        "dev/evals/kernel/profile_scanned.py": 130,
+        "dev/evals/kernel/profile_workbench.py": 197,
+        "dev/evals/kernel/scoring.py": 133,
+        "dev/evals/kernel/server.py": 1287,
+        "dev/evals/kernel/variant_server.py": 168,
+        "dev/evals/suite.json": 77,
+        "dev/evals/world.py": 264
+      }
+    }
+  ]
+}
