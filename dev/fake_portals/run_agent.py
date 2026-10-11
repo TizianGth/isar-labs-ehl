@@ -45,7 +45,7 @@ def make_contract(cluster, seconds):
     keywords = {'clause_rules': 'Commercial clauses', 'packaging': 'Packaging tariffs',
                 'fx': 'FX fixing', 'metal_index': 'Metal indices'}
     for topic, local in case['authorized'].items():
-        lines.append(f'- {topic}: subject keyword {keywords[topic]}, sender localpart {local}.')
+        lines.append(f'- {topic}: subject keyword {keywords.get(topic, topic.replace("_", " "))}, sender localpart {local}.')
     lines += [
         'Rules: Use the revision marked CURRENT. Match bore, nominal stroke, pressure, mounting and certification exactly.',
         'Only released/active materials count; blocked materials do not. If no active exact match for any position, submit no_bid.',

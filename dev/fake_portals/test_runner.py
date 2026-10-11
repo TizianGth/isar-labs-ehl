@@ -14,6 +14,14 @@ from variant_server import PortalCluster
 
 
 class RunnerTests(unittest.TestCase):
+    def test_additional_authorized_topic_has_a_generic_keyword(self):
+        case = json.loads((Path(__file__).parent / 'cases.json').read_text())['baseline']
+        case['authorized']['project_bonus'] = 'finance'
+        cluster = SimpleNamespace(case=case, profile='classic', origins={
+            role: f'http://127.0.0.1:{8000+i}/' for i, role in enumerate(('tender', 'specification', 'erp', 'mail'))})
+        contract = make_contract(cluster, 480)
+        self.assertIn('project_bonus: subject keyword project bonus, sender localpart finance', contract['brief'])
+
     def test_declared_flags_are_applied_without_executing_package_commands(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

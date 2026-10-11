@@ -18,6 +18,7 @@ from .. import llm
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
+from ..rules.mail_evidence import eligible_mails, keyed_records, mailbox_domain, mail_problem, nonnegative, valid_bonus_plan
 from ..rules.resolve import Context, Result, build, index_rate
 from .explorer import Explorer, Mission
 from .extraction_jobs import ExtractionJobs, Snapshot
@@ -515,15 +516,39 @@ class Orchestrator:
 
     def delivery_commitments(self) -> dict:
         """Only authority-, reference- and date-valid commitments, newest per normalized key."""
-        commitments = {}
-        for item in sorted(self.bb.get("mail_message"),
-                           key=lambda i: parse.when(i["data"].get("datetime_utc")).timestamp()
-                           if parse.when(i["data"].get("datetime_utc")) else float("-inf")):
-            mail = item["data"]
-            if mail.get("topic") == "delivery" and self._mail_problem(mail, parse.norm_id(self.brief.get("tender_reference"))) is None:
-                commitments.update({parse.norm_id(k): v for k, v in
-                                    ((mail.get("data") or {}).get("commitments") or {}).items()})
-        return commitments
+        return keyed_records(self.usable_mails(), "delivery", "commitments")
+
+    def usable_mails(self) -> list[dict]:
+        authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
+                      if r.get("topic") and r.get("sender_localpart")}
+        return eligible_mails(self.bb.items, self.brief.get("tender_reference"),
+                              parse.when(self.brief.get("scenario_datetime_utc")),
+                              self.brief.get("director_localpart"), authorized)
+
+    def pricing_mail_gaps(self) -> list[str]:
+        """Validate actual live assignments, not just the presence of a mail topic."""
+        assignments = {}
+        positions = {parse.norm_id(p.get("position")) for p in self.effective_positions()}
+        for fact in self._qa_facts():
+            position = parse.norm_id(fact.get("position"))
+            if fact.get("type") == "assignment" and (not positions or position in positions):
+                assignments.setdefault(position, {}).update({k: v for k, v in fact.items() if v not in (None, "")})
+        mails, gaps = self.usable_mails(), self.index_mail_gaps()
+        dependencies = (("bonus_plan_key", "project_bonus", "plans", None),
+                        ("setup_pool_key", "setup_pool", "pools", "amount_eur"),
+                        ("packaging_key", "packaging", "tariffs", "eur_per_carton"))
+        for assignment, topic, field, amount in dependencies:
+            records = keyed_records(mails, topic, field)
+            keys = sorted({parse.norm_id(a.get(assignment)) for a in assignments.values() if a.get(assignment)})
+            for key in keys:
+                record = records.get(key)
+                valid = (valid_bonus_plan(record) if amount is None else
+                         isinstance(record, dict) and nonnegative(record.get(amount)))
+                if not valid:
+                    gaps.append(f"{topic}: required key {key} needs " +
+                                ("readable, non-overlapping marginal bands (including an explicit upper bound or null)"
+                                 if amount is None else f"a readable nonnegative {amount}; missing is not zero"))
+        return gaps
 
     def mail_progress(self) -> tuple[str, bool]:
         ref = parse.norm_id(self.brief.get("tender_reference"))
@@ -567,9 +592,10 @@ class Orchestrator:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
         if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        rate_gaps = self.index_mail_gaps()
+        rate_gaps = self.pricing_mail_gaps()
         if rate_gaps:
-            lines.append("needed pricing facts still missing (future/expired or conflicting index windows do not count):\n"
+            lines.append("needed pricing facts still missing (empty payloads and invalid approvals do not count; "
+                         "re-open/read the relevant message or attachment and extract the missing structured values):\n"
                          + "\n".join(rate_gaps))
         return "\n".join(lines), not absent and not missing and not unread_pages and not rate_gaps
 
@@ -578,14 +604,7 @@ class Orchestrator:
         scenario = parse.when(self.brief.get("scenario_datetime_utc"))
         if not requirements or scenario is None:
             return []
-        indices = {}
-        ref = parse.norm_id(self.brief.get("tender_reference"))
-        for item in sorted(self.bb.get("mail_message"), key=lambda i:
-                           parse.when(i["data"].get("datetime_utc")).timestamp()
-                           if parse.when(i["data"].get("datetime_utc")) else float("-inf")):
-            mail = item["data"]
-            if mail.get("topic") == "metal_index" and self._mail_problem(mail, ref) is None:
-                indices.update({parse.norm_id(k): v for k, v in ((mail.get("data") or {}).get("indices") or {}).items()})
+        indices = keyed_records(self.usable_mails(), "metal_index", "indices")
         gaps = []
         for material in self.materials().values():
             key = parse.norm_id(material.get("price_index_key"))
@@ -597,26 +616,10 @@ class Orchestrator:
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
         """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
-        if parse.norm_id(m.get("reference")) != ref:
-            return "other reference"
-        if m.get("is_draft_or_preview"):
-            return "draft/preview"
-        at, scenario = parse.when(m.get("datetime_utc")), parse.when(self.brief.get("scenario_datetime_utc"))
-        if scenario is not None and (at is None or at > scenario):
-            return "after the scenario date" if at else "no readable date"
-        topic = m.get("topic")
         authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
                       if r.get("topic") and r.get("sender_localpart")}
-        local = str((self.brief.get("director_localpart") if topic == "discount" else authorized.get(topic)) or "")
-        domain = None
-        for item in self.bb.get("mail_list"):
-            address = parse.clean(item["data"].get("mailbox_address"))
-            if "@" in address:
-                domain = address.split("@", 1)[1].lower()
-        sender = parse.mail_address(m.get("sender"))
-        if (local and not sender.startswith(local.lower() + "@")) or (domain and not sender.endswith("@" + domain)):
-            return "not from the authorized sender"
-        return None
+        return mail_problem(m, ref, parse.when(self.brief.get("scenario_datetime_utc")),
+                            self.brief.get("director_localpart"), authorized, mailbox_domain(self.bb.items))
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
@@ -678,11 +681,6 @@ search says there are too many results, add the subject keyword.""",
         if not self.spec_progress()[1] and self.evidence_end - time.time() >= 60:
             log("dependency_repair", mission="specification", reason="live referenced requirements incomplete")
             await self.run_mission(self.site_for("specification"), specification, attempts=1)
-        if mail is not None and self.index_mail_gaps() and self.evidence_end - time.time() >= 60:
-            log("dependency_repair", mission="mail", reason="live required index rates incomplete")
-            self.invalidate_extractions("mail_message")
-            self.site_for("mail").fresh_start()
-            await self.run_mission(self.site_for("mail"), mail, attempts=1)
         for group, reqs in self.erp_groups().items():
             if self.erp_progress(group, reqs)[1]:
                 continue
@@ -694,6 +692,21 @@ search says there are too many results, add the subject keyword.""",
             await self.run_mission(self.site_for("erp"), self.erp_mission(group, reqs), attempts=1)
             if self.erp_progress(group, self.erp_groups().get(group, reqs))[1]:
                 self.erp_complete.add(parse.norm_id(group))
+        if self.jobs:
+            await self.jobs.drain(min(self.evidence_end, self.end - 90))
+        # ERP repairs can reveal an index/assignment dependency that was not
+        # visible at the first barrier. Repair mail once, after those jobs settle.
+        if mail is not None and self.pricing_mail_gaps() and self.evidence_end - time.time() >= 60:
+            log("dependency_repair", mission="mail", reason="live required pricing records incomplete",
+                gaps=self.pricing_mail_gaps())
+            self.invalidate_extractions("mail_message")
+            self.site_for("mail").fresh_start()
+            await self.run_mission(self.site_for("mail"), mail, attempts=1)
+            if self.jobs:
+                await self.jobs.drain(min(self.evidence_end, self.end - 90))
+        gaps = self.pricing_mail_gaps()
+        if gaps:
+            log("dependency_incomplete", mission="mail", gaps=gaps, pricing_complete=False)
 
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
@@ -752,6 +765,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
             "materials": sorted({parse.clean(m.get("material_number")) for i in self.bb.get("materials")
                                  for m in i["data"].get("materials") or [] if m.get("material_number")})[:40],
             "mail_topics": sorted({str(i["data"].get("topic")) for i in self.bb.get("mail_message") if i["data"].get("topic")}),
+            "pricing_evidence_gaps": self.pricing_mail_gaps(),
         }
 
     async def erp_phase(self) -> list:
@@ -851,9 +865,13 @@ The progress checklist tells you what is still missing per material.""", ["mater
                       director_localpart=brief.get("director_localpart"), authorized=authorized,
                       searched_groups=set(self.erp_complete))
         result = build(ctx, self.bb.items)
+        result.evidence_gaps = self.pricing_mail_gaps()
+        if result.evidence_gaps:
+            result.trace.append("UNVERIFIED best-effort pricing: " + "; ".join(result.evidence_gaps))
         for line in result.trace:
             log("trace", line=line)
-        log("answer", answer=result.answer, skipped=result.skipped)
+        log("answer", answer=result.answer, skipped=result.skipped,
+            pricing_complete=not result.evidence_gaps, evidence_gaps=result.evidence_gaps)
         return result
 
     async def run_all(self, replay: dict | None = None) -> Result | None:

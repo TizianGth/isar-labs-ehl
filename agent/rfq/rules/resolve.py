@@ -10,7 +10,8 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, certification_known, clean, day, integer, mail_address, merge_certification, merge_requirement, norm_id, number, qa_number, revision_is_current, same_text, when
+from .parse import cert, certification_known, clean, day, integer, merge_certification, merge_requirement, norm_id, number, qa_number, revision_is_current, same_text, when
+from .mail_evidence import amount as mail_amount, eligible_mails, keyed_records, mailbox_domain, nonnegative, valid_bonus_plan
 
 CENT = D("0.01")
 
@@ -35,6 +36,7 @@ class Result:
     trace: list[str]
     skipped: list[str]                # positions we could not complete
     breakdown: dict                   # per position, unrounded components (for logs)
+    evidence_gaps: list[str] = field(default_factory=list)  # best effort is not verified complete pricing
 
 
 def largest_remainder(total: D, weights: dict[str, D]) -> dict[str, D]:
@@ -137,43 +139,14 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
                 merge_requirement(target, r)
 
     # ---------------------------------------------------------------- mails (authority and time)
-    domain = ctx.mailbox_domain
-    for item in bb.get("mail_list", []):
-        address = clean(item["data"].get("mailbox_address"))
-        if "@" in address:
-            domain = address.split("@", 1)[1].lower()
-    mails = []
-    for item in bb.get("mail_message", []):
-        m = item["data"]
-        at = when(m.get("datetime_utc"))
-        if m.get("is_draft_or_preview"):
-            continue
-        if norm_id(m.get("reference")) != ref_id:
-            continue
-        if at is None or at > T:
-            note(f"mail '{clean(m.get('subject'))}' dated {at} is after the scenario date or undated; ignored")
-            continue
-        mails.append((at, m))
-    mails.sort(key=lambda x: x[0])
-
-    def authorized(topic: str, sender: str) -> bool:
-        local = (ctx.director_localpart if topic == "discount" else ctx.authorized.get(topic)) or ""
-        sender = mail_address(sender)
-        if local and not sender.startswith(local.lower() + "@"):
-            return False
-        if domain and not sender.endswith("@" + domain):
-            return False
-        return True
+    domain = mailbox_domain(bb, ctx.mailbox_domain)
+    mails = eligible_mails(bb, ctx.tender_reference, T, ctx.director_localpart, ctx.authorized, domain)
 
     def topic_records(topic: str) -> list[dict]:
-        return [m for _, m in mails if m.get("topic") == topic and authorized(topic, m.get("sender", ""))]
+        return [m for m in mails if m.get("topic") == topic]
 
     def keyed(topic: str, field_name: str) -> dict[str, dict]:
-        out: dict[str, dict] = {}
-        for m in topic_records(topic):                    # ascending by date: newer records replace older ones
-            for k, v in ((m.get("data") or {}).get(field_name) or {}).items():
-                out[norm_id(k)] = v
-        return out
+        return keyed_records(mails, topic, field_name)
 
     clauses = keyed("clause_rules", "groups")
     reserves = keyed("tech_release", "entries")
@@ -399,9 +372,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             bonus_members[norm_id(a["bonus_plan_key"])].append(pid)
     pool_share: dict[str, D] = defaultdict(D)
     for key, members in pool_members.items():
-        amount = number((pools.get(key) or {}).get("amount_eur"))
-        if amount is None:
-            note(f"setup pool {key}: amount not found")
+        pool = pools.get(key)
+        amount = mail_amount(pool.get("amount_eur")) if isinstance(pool, dict) else None
+        if not nonnegative(amount):
+            note(f"setup pool {key}: amount not found or unreadable; best effort without proven pool share")
             continue
         weights = {p: D(resolved[p]["q"]) * (number(resolved[p]["material"].get("allocation_weight_g")) or D(0)) for p in members}
         for p, share in largest_remainder(amount, weights).items():
@@ -411,8 +385,8 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     for key, members in bonus_members.items():
         plan = bonus_plans.get(key)
         eligible = {p: resolved[p]["q"] * resolved[p]["base"] for p in members if resolved[p]["base"] is not None}
-        if not plan or not eligible:
-            note(f"bonus plan {key}: not found or no eligible prices")
+        if not valid_bonus_plan(plan) or not eligible:
+            note(f"bonus plan {key}: not found, incomplete or no eligible prices; best effort without proven credit")
             continue
         credit = marginal_bonus(sum(eligible.values()), plan.get("bands") or [])
         for p, share in largest_remainder(credit, eligible).items():
@@ -442,7 +416,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         setup = (number(setup_fact.get("amount_eur")) or D(0)) if setup_fact else D(0)
         setup += pool_share.get(pid, D(0))
         a = assignments[pid]
-        tariff = number((tariffs.get(norm_id(a.get("packaging_key"))) or {}).get("eur_per_carton")) if a.get("packaging_key") else None
+        tariff_record = tariffs.get(norm_id(a.get("packaging_key"))) if a.get("packaging_key") else None
+        tariff = mail_amount(tariff_record.get("eur_per_carton")) if isinstance(tariff_record, dict) else None
+        if not nonnegative(tariff):
+            tariff = None
         carton = integer(m.get("pieces_per_carton"))
         packaging = D(ceil(q / carton)) * tariff if tariff is not None and carton else D(0)
         bonus = bonus_share.get(pid, D(0))
