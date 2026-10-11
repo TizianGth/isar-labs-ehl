@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MQF59BRHD19RA5EF4AK2EV",
   "strategy": "manual-commit",
   "branch": "claude/prompt-budget",
-  "checkpoints_count": 4,
+  "checkpoints_count": 5,
   "files_touched": [
     "agent/main.py",
     "agent/rfq/agent/fused.py",
@@ -50,6 +50,12 @@
       "transcript": "/2/full.jsonl",
       "compact_transcript": "/2/transcript.jsonl",
       "content_hash": "/2/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "content_hash": "/3/content_hash.txt",
       "prompt": ""
     }
   ],

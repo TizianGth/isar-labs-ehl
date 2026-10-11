@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MQF59BRHD19RA5EF4AK2EV",
+  "session_id": "76abc8de-2e9b-4d72-99dc-d8c889cd0eb9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T05:37:49.811161299Z",
+  "branch": "claude/prompt-budget",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/browser/site.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "3f142d36acf4",
+  "checkpoint_transcript_start": 414,
+  "transcript_lines_at_start": 414,
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T05:37:49.787325788Z",
+    "agent_lines": 271,
+    "agent_removed": 108,
+    "human_added": 2884,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3155,
+    "total_lines_changed": 3550,
+    "agent_percentage": 10.676056338028168,
+    "metric_version": 2
+  }
+}
