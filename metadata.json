@@ -3,8 +3,10 @@
   "checkpoint_id": "01M4M6561KP6APBJVMEQ2HHZ7E",
   "strategy": "manual-commit",
   "branch": "fix/spec-values",
-  "checkpoints_count": 6,
-  "files_touched": null,
+  "checkpoints_count": 7,
+  "files_touched": [
+    "agent/rfq/agent/prompts.py"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -18,6 +20,12 @@
       "transcript": "/1/full.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
