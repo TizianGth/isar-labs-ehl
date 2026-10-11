@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MWTH5GSEJ1N8CD3FY52GD0",
+  "session_id": "76abc8de-2e9b-4d72-99dc-d8c889cd0eb9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T07:11:23.089037363Z",
+  "branch": "claude/sixty",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/explorer.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "3f142d36acf4",
+  "checkpoint_transcript_start": 414,
+  "transcript_lines_at_start": 414,
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T07:11:23.066838697Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 518,
+    "human_modified": 60,
+    "human_removed": 0,
+    "total_committed": 518,
+    "total_lines_changed": 583,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
