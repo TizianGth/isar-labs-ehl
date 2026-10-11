@@ -18,8 +18,10 @@ from .profile import span, model_usage, prompt_metrics
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
-_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "8")))
-_interactive = asyncio.Semaphore(4)
+PARALLEL = max(1, int(os.environ.get("RFQ_LLM_PARALLEL", "8")))
+_slots = asyncio.Semaphore(PARALLEL)
+# Background extraction stays capped; navigation can use otherwise idle slots.
+_interactive = asyncio.Semaphore(PARALLEL)
 _background = asyncio.Semaphore(4)
 usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator

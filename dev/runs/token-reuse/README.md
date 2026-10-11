@@ -93,3 +93,30 @@ retries and speculation must all count toward the release token gate.
 Keep the platform gate closed until a conservative critical-path forecast is
 below 60 seconds, total predicted tokens are within the chosen limit, and no
 local quality regression is open. Do not remove evidence to satisfy that gate.
+
+## Follow-up: remove idle capacity and serial recovery
+
+Navigation may now use all configured model slots when background work is absent;
+background extraction retains its four-call cap and the shared global semaphore
+still bounds total concurrency. This removes the former four-navigation-call
+bottleneck, without enabling extra speculative model calls. Throughput improvement
+depends on real proxy contention; doubling available capacity does not prove a
+twofold speedup.
+
+Commercial recovery observes distinct site instances concurrently (aliases read
+once), then runs the model's selected missions concurrently on independent sites.
+Missions targeting the same site remain serial. Independent observation waves
+therefore change from four to one, and two independent recovery missions from
+two waves to one. Evidence recovery and no-bid rechecks now respect their phase
+deadline rather than extending into the submission reserve.
+
+Follow-up focused batch: **58 passed in 13.14 s**, covering reuse, recovery,
+deadlines, cancellation and hedging; leak checking and whitespace checks passed.
+No real model or platform run. Existing character measurements are unchanged.
+
+The historical 80.5-second run would need more than 20.5 seconds removed to reach
+60 seconds, and at least 415,266 of its 515,266 metered tokens removed to reach
+100k (80.6%). Its 140 mapping calls accounted for 288,880 tokens and 300.64 summed
+request seconds; those overlapping seconds cannot be subtracted from wall time.
+That older package is a diagnostic lead, not a current forecast or valid quality
+baseline. Current full-run bounds remain unknown; the release gate stays closed.

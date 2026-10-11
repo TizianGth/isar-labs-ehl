@@ -593,14 +593,16 @@ search says there are too many results, add the subject keyword.""",
             missing = {topic: keyword for topic, keyword in wanted.items() if topic not in found}
             if not missing or time.time() > self.evidence_end - 20:
                 return
-            observations = {}
-            for role in ('tender', 'specification', 'erp', 'mail'):
-                site = self.site_for(role)
+            roles = {role: self.site_for(role) for role in ('tender', 'specification', 'erp', 'mail')}
+            async def observe(site):
                 try:
-                    text = await site.observe(limit=5000)
-                    observations[role] = text
+                    return await site.observe(limit=5000)
                 except Exception:
-                    observations[role] = 'unavailable'
+                    return 'unavailable'
+            unique = {id(site): site for site in roles.values()}
+            texts = await asyncio.gather(*(observe(site) for site in unique.values()))
+            by_site = dict(zip(unique, texts))
+            observations = {role: by_site[id(site)] for role, site in roles.items()}
             prompt = ('Unresolved commercial evidence may live on any website, or truly be absent. '
                       'Choose at most two observed site roles to investigate using their observed navigation, or [] if exhausted. '
                       'Return {"routes":[{"role":"tender|specification|erp|mail","goal":"specific evidence gap and source direction"}]}. '
@@ -608,7 +610,7 @@ search says there are too many results, add the subject keyword.""",
                                     'observations': observations}, ensure_ascii=False))
             routes = await llm.ask_json('Route unresolved evidence from runtime observations. Never invent URLs or use site-specific scripts.',
                                        prompt, tag='route', deadline=self.evidence_end, max_tokens=600)
-            selected = []
+            selected, jobs = [], {}
             for route in routes.get('routes') or []:
                 role = route.get('role')
                 if role not in observations or role in selected:
@@ -620,11 +622,19 @@ search says there are too many results, add the subject keyword.""",
                                        ['mail_message'], 12)
                 mission.context = json.dumps({'authorized_records': self.brief.get('authorized_records'),
                                               'director_localpart': self.brief.get('director_localpart'), 'missing': missing}, ensure_ascii=False)
-                await self.run_mission(self.site_for(role), mission, attempts=1)
+                site = roles[role]
+                jobs.setdefault(id(site), []).append((site, mission))
                 if len(selected) == 2:
                     break
             if not selected:
                 return
+            async def recover(group):
+                for site, mission in group:
+                    await self.run_mission(site, mission, attempts=1)
+            results = await asyncio.gather(*(recover(group) for group in jobs.values()), return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log('recovery_error', error=f'{type(result).__name__}: {result}'[:300])
 
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
@@ -657,7 +667,7 @@ Bieterfragen) and read ALL their pages again with read_all_pages(kind='clarifica
 bid submission.""", ["clarifications"], 14, progress=progress)
         mission.deadline = min(self.evidence_end, time.time() + 150)
         try:
-            await asyncio.wait_for(self.run_mission(site, mission, attempts=1), timeout=max(10, mission.deadline - time.time() + 5))
+            await asyncio.wait_for(self.run_mission(site, mission, attempts=1), timeout=max(.1, mission.deadline - time.time()))
         except (Exception, asyncio.TimeoutError) as error:
             log("no_bid_recheck_error", error=f"{type(error).__name__}: {error}"[:300])
         checked = self.resolve()
@@ -792,7 +802,7 @@ The progress checklist tells you what is still missing per material.""", ["mater
                 await self.read_brief()
                 with span("evidence", agent="orchestrator", category="phase"):
                     await asyncio.wait_for(self.gather_evidence(), timeout=max(.1, self.evidence_end - time.time()))
-                    await self.route_missing_records()
+                    await asyncio.wait_for(self.route_missing_records(), timeout=max(.1, self.evidence_end - time.time()))
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
         finally:
