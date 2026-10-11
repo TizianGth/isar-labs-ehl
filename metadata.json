@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N652WQE390YCCB6KPKJMN6",
+  "strategy": "manual-commit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/VARIANT.txt",
+    "agent/agent.json",
+    "agent/main.py",
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/rfq/agent/submit.py",
+    "agent/rfq/browser/observe.js",
+    "agent/rfq/browser/site.py",
+    "agent/rfq/flags.py",
+    "agent/rfq/llm.py",
+    "agent/rfq/metrics.py",
+    "agent/rfq/rules/parse.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_browser_tools.py",
+    "agent/tests/test_deadlines.py",
+    "agent/tests/test_evidence_gaps.py",
+    "agent/tests/test_flags.py",
+    "agent/tests/test_llm_cancellation.py",
+    "agent/tests/test_llm_hedging.py",
+    "agent/tests/test_metrics.py",
+    "agent/tests/test_review.py",
+    "agent/tests/test_rules.py",
+    "agent/tests/test_submit.py",
+    "agent/tests/test_token_optimizations.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 62913,
+    "cache_read_tokens": 1164271,
+    "output_tokens": 9043,
+    "api_call_count": 17
+  }
+}
