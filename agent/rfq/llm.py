@@ -17,7 +17,9 @@ from .log import log
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
-_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "10")))
+_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "8")))
+_interactive = asyncio.Semaphore(4)
+_background = asyncio.Semaphore(4)
 usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
@@ -25,7 +27,7 @@ _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Measured over 3,000+ calls of our runs: tool calls p50 2.2 s / p99 9.7 s, JSON extractions p50 7.9 s / p99 30 s;
 # a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s).
 HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
-MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
+MAX_HEDGES = int(os.environ.get("RFQ_LLM_HEDGES", "0"))
 _hedging = 0
 MAX_ATTEMPTS = 60   # a model outage of a few minutes must not end a mission: 5xx, 429, timeouts are retried (≤ 8 s apart)
 QUIET_CALLS = bool(os.environ.get("CHALLENGE_RUN_TOKEN"))   # in a run the platform keeps only the end of the log
@@ -51,7 +53,7 @@ def client() -> AsyncOpenAI:
 
 async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinking: bool = False,
                json_mode: bool = False, temperature: float = 0.1, tag: str = "", timeout: float | None = None,
-               deadline: float | None = None) -> dict:
+               deadline: float | None = None, max_tokens: int | None = None) -> dict:
     """One chat completion; returns {"content": str, "tool_calls": [(name, args_dict)]}.
     Raises DeadlineExceeded when the deadline does not leave room for another attempt."""
     kwargs: dict = {"model": MODEL, "messages": messages, "temperature": temperature,
@@ -61,6 +63,8 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         kwargs["tool_choice"] = "required"
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
     end = min(deadline or float("inf"), _run_deadline)
     per_call = timeout or (60 if tools else 150)   # a hung call must not eat minutes
     delay, refusals = 1.0, 0
@@ -71,8 +75,14 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             raise DeadlineExceeded(tag)
         started = time.monotonic()
         slots = _slots
+        lane = _background if tag.startswith(("extract", "brief", "vision", "submit:")) else _interactive
         try:
-            await asyncio.wait_for(slots.acquire(), timeout=left - 2)
+            await asyncio.wait_for(lane.acquire(), timeout=left - 2)
+            try:
+                await asyncio.wait_for(slots.acquire(), timeout=max(.1, end - time.time() - 2))
+            except BaseException:
+                lane.release()
+                raise
         except asyncio.TimeoutError:
             log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
             raise DeadlineExceeded(tag)
@@ -83,6 +93,7 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
                 _recent[bool(tools)][:] = _recent[bool(tools)][-29:] + [time.monotonic() - requested]
             finally:
                 slots.release()
+                lane.release()
         except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
             status = getattr(error, "status_code", None)
@@ -99,20 +110,14 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         message = response.choices[0].message
         tokens = response.usage
         cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0 if tokens else 0
-        if tokens:
-            usage["input"] += tokens.prompt_tokens or 0
-            usage["output"] += tokens.completion_tokens or 0
-            usage["cached"] += cached
-        usage["calls"] += 1
         usage["seconds"] += seconds
         calls = []
         for call in message.tool_calls or []:
             calls.append((call.function.name, _loads(call.function.arguments) or {}))
         if tools and not calls:  # some replies put the call into the text
             calls = _calls_from_text(message.content or "")
-        if not QUIET_CALLS or seconds > 8 or attempt:   # sandbox: only slow or retried calls (usage has the totals)
-            log("llm", tag=tag, s=round(seconds, 2),
-                tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
+        log("llm", tag=tag, s=round(seconds, 2),
+            tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
         return {"content": message.content or "", "tool_calls": calls}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
 
@@ -124,7 +129,15 @@ def _hedge_after(tools: bool) -> float:
 
 
 async def _request(kwargs: dict, timeout: float):
-    return await client().chat.completions.create(**kwargs, timeout=timeout)
+    usage["attempts"] = usage.get("attempts", 0) + 1
+    response = await client().chat.completions.create(**kwargs, timeout=timeout)
+    tokens = response.usage
+    if tokens:
+        usage["input"] += tokens.prompt_tokens or 0
+        usage["output"] += tokens.completion_tokens or 0
+        usage["cached"] += getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+    usage["calls"] += 1
+    return response
 
 
 async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: float | None, tag: str):
@@ -161,14 +174,16 @@ async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: 
                 task.cancel()
             elif not task.cancelled():
                 task.exception()   # a failed loser: retrieved, no warning
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def ask_json(system: str, user: str | list, *, thinking: bool = False, tag: str = "",
-                   deadline: float | None = None) -> dict:
+                   deadline: float | None = None, max_tokens: int | None = None) -> dict:
     """A JSON object from the model; one repair round if the reply does not parse. `user` may be multimodal parts."""
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     for attempt in range(2):
-        reply = await chat(messages, thinking=thinking, json_mode=True, temperature=0, tag=tag, deadline=deadline)
+        reply = await chat(messages, thinking=thinking, json_mode=True, temperature=0, tag=tag, deadline=deadline,
+                           max_tokens=max_tokens * (attempt + 1) if max_tokens else None)
         data = _loads(reply["content"])
         if isinstance(data, dict):
             return data

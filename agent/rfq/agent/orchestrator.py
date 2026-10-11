@@ -20,6 +20,8 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
+from .fused import FusedExplorer
+from .records import Coverage, digest, table_data
 from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
 from .submit import submit_bid
 
@@ -27,7 +29,7 @@ from .submit import submit_bid
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
-CHUNK_CHARS, MAX_CHUNKS = 60000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
+CHUNK_CHARS, MAX_CHUNKS = 12000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -37,9 +39,15 @@ class Blackboard:
 
     def __init__(self):
         self.items: dict[str, list[dict]] = {}
+        self.changed = asyncio.Event()
+        self._seen = set()
 
     def add(self, kind: str, data: dict, url: str, via: str = "page") -> None:
-        self.items.setdefault(kind, []).append({"data": data, "url": url, "via": via, "t": time.time()})
+        key = digest([kind, url, data])
+        if key not in self._seen:
+            self._seen.add(key)
+            self.items.setdefault(kind, []).append({"data": data, "url": url, "via": via, "t": time.time()})
+            self.changed.set()
 
     def get(self, kind: str) -> list[dict]:
         return self.items.get(kind, [])
@@ -68,134 +76,149 @@ class Orchestrator:
         self.result: Result | None = None
         self.status: dict[str, str] = {}                  # mission -> last status
         self.done = {name: asyncio.Event() for name in ("tender", "specification", "mail")}
+        self.coverage: dict[str, Coverage] = {}
         self.erp_complete: set[str] = set()               # catalogue groups whose ERP mission completed its checklist
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, asyncio.Future] = {}
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
 
     # ---------------------------------------------------------------- extraction helper (model-selected pages only)
+    def _cache_key(self, kind: str, text: str, url: str, via: str) -> str:
+        normalized = re.sub(r"\[(?:f\d+)?e\d+\]", "", text)
+        session = next((getattr(site, "session_generation", 0) for site in self.sites.values()
+                        if urlparse(site.url).netloc == urlparse(url).netloc), 0)
+        return kind + ":" + digest([self.run.get("run_id"), url, via, session, normalized,
+                                  self.brief.get("tender_reference"), self.brief.get("scenario_datetime_utc"),
+                                  KINDS[kind]["schema"]])
+
+    def _store(self, kind: str, data: dict, url: str, via: str) -> str:
+        if not valid_data(kind, data):
+            return "extraction returned nothing: invalid fact shape"
+        self.bb.add(kind, data, url, via)
+        log("extracted", kind=kind, url=url, via=via, data=data)
+        return _summary(kind, data)
+
+    def accept_decision(self, decision, snapshot, mission: str) -> list[str]:
+        notes = []
+        for fact in decision.facts:
+            kind, data, quote = fact.get("kind"), fact.get("data"), fact.get("quote")
+            if kind not in KINDS or not isinstance(quote, str) or not quote.strip() or quote not in snapshot.text:
+                notes.append("ERROR: fact needs a known kind and exact current-source quote")
+                continue
+            notes.append(self._store(kind, data, snapshot.url, "page"))
+        for binding in decision.bindings:
+            try:
+                kind = binding["kind"]
+                data = table_data(snapshot, binding)
+                notes.append(self._store(kind, data, snapshot.url, "table"))
+            except (KeyError, ValueError, TypeError) as error:
+                notes.append("ERROR: table binding: " + str(error))
+        for proof in decision.coverage:
+            scope, sources = proof.get("scope"), proof.get("sources") or []
+            if scope not in ("mail_folders", "catalogue") or not sources:
+                continue
+            if scope == "mail_folders":
+                read = {parse.clean(i["data"].get("folder")).lower() for i in self.bb.get("mail_list")}
+                if not set(str(x).lower() for x in sources).issubset(read):
+                    notes.append("ERROR: coverage names folders not yet read")
+                    continue
+                key = scope
+            else:
+                group = mission.split(":", 1)[1] if mission.startswith("erp:") else None
+                if not group or parse.norm_id(group) not in {parse.norm_id(x) for x in sources}:
+                    continue
+                key = "catalogue:" + parse.norm_id(group)
+            self.coverage[key] = Coverage(scope, tuple(str(x) for x in sources),
+                                          proof.get("complete") is True, tuple(proof.get("gaps") or []),
+                                          str(proof.get("ordering", "")))
+        return notes
+
     async def extract(self, kind: str, text: str, url: str, via: str = "page") -> str:
-        spec = KINDS.get(kind)
-        if spec is None:
-            return f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"
-        key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
-        if key in self._cache:
-            return "already extracted earlier: " + self._cache[key]
-        if key in self._inflight:                    # the same page is being extracted right now: share its result
-            shared = await asyncio.shield(self._inflight[key])
-            if shared is not None:
-                return "already extracted earlier: " + shared
-        future = asyncio.get_running_loop().create_future()
-        self._inflight[key] = future
-        try:
-            summary = await self._extract_new(kind, spec, text, url, via)
-            if summary.startswith("extraction returned nothing"):
-                return summary
-            self._cache[key] = summary               # empty/failed results are not cached as facts
-            return summary
-        finally:   # waiters get the summary, or None (failed/cancelled here): then they extract themselves
-            if self._inflight.get(key) is future:
-                del self._inflight[key]
-            future.set_result(self._cache.get(key))
+        return (await self.extract_many(kind, [(url, text)], via))[0]
 
     async def extract_many(self, kind: str, items: list[tuple[str, str]], via: str = "page") -> list[str]:
-        """Extract multiple pages of the same kind efficiently: check cache first, then batch up to 3 uncached items."""
-        if not items:
-            return []
-        spec = KINDS.get(kind)
-        if spec is None:
-            return [f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"] * len(items)
-
-        results = [None] * len(items)
-        pending_indices = []
-        for idx, (url, text) in enumerate(items):
-            key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
-            if key in self._cache:
-                results[idx] = "already extracted earlier: " + self._cache[key]
-            else:
-                pending_indices.append(idx)
-
-        if not pending_indices:
-            return results
-
-        async def process_chunk(chunk_idxs):
-            if len(chunk_idxs) == 1:
-                idx = chunk_idxs[0]
-                u, t = items[idx]
-                results[idx] = await self.extract(kind, t, u, via=via)
-                return
-
-            chunk_items = [(idx, items[idx][0], items[idx][1]) for idx in chunk_idxs]
-            body_parts = []
-            for i, (idx, u, t) in enumerate(chunk_items):
-                body_parts.append(f"<<<SOURCE {i + 1} URL: {u}>>>\n{t[:25000]}\n<<<END SOURCE {i + 1}>>>")
-
-            prompt = (
-                f"KIND: {kind} ({spec['describe']})\n"
-                f"For EACH source below, extract facts matching this shape:\n{spec['schema']}\n\n"
-                f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
-                f"{self.brief.get('scenario_datetime_utc')}.\n\n"
-                f"Return a single JSON object with a 'results' array where each item has 'url' and 'data':\n"
-                f'{{"results": [{{"url": "<exact source url>", "data": <extracted shape>}}]}}\n\n'
-                + "\n\n".join(body_parts)
-            )
-
+        if kind not in KINDS:
+            return ["ERROR: unknown fact kind " + str(kind)] * len(items)
+        keys = [self._cache_key(kind, text, url, via) for url, text in items]
+        owned = {}
+        for index, key in enumerate(keys):
+            if key not in self._cache and key not in self._inflight:
+                self._inflight[key] = asyncio.get_running_loop().create_future()
+                owned[key] = index
+        async def group_work(group):
+            records = [(key, items[index][0], items[index][1]) for key, index in group]
             try:
-                res = await llm.ask_json(EXTRACT_SYSTEM, prompt, thinking=THINKING_EXTRACT, tag=f"extract_batch:{kind}")
-                extracted_list = res.get("results") if isinstance(res, dict) else None
-                if isinstance(extracted_list, list) and len(extracted_list) > 0:
-                    matched = set()
-                    for item_data in extracted_list:
-                        if isinstance(item_data, dict):
-                            src_url = item_data.get("url")
-                            data = item_data.get("data")
-                            if src_url and isinstance(data, dict):
-                                for idx, u, t in chunk_items:
-                                    if u == src_url or src_url in u or u in src_url:
-                                        self.bb.add(kind, data, u, via)
-                                        k = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", t.split("\n", 1)[-1]).encode()).hexdigest()
-                                        summary = _summary(kind, data)
-                                        self._cache[k] = summary
-                                        results[idx] = summary
-                                        matched.add(idx)
-                                        break
-                    for idx, u, t in chunk_items:
-                        if idx not in matched:
-                            results[idx] = await self.extract(kind, t, u, via=via)
-                    return
-            except Exception as e:
-                log("extract_batch_failed", error=str(e)[:200], kind=kind)
-
-            for idx, u, t in chunk_items:
-                results[idx] = await self.extract(kind, t, u, via=via)
-
-        chunk_size = 3
-        chunks = [pending_indices[i:i + chunk_size] for i in range(0, len(pending_indices), chunk_size)]
-        await asyncio.gather(*(process_chunk(chunk) for chunk in chunks))
-        return results
+                if len(records) == 1 or any(len(text) > CHUNK_CHARS for _, _, text in records):
+                    for key, url, text in records:
+                        summary = await self._extract_new(kind, KINDS[kind], text, url, via)
+                        if not summary.startswith("extraction returned nothing"):
+                            self._cache[key] = summary
+                else:
+                    body = "\n".join(f"<<<source_id=s{i}; URL={url}>>>\n{text}\n<<<END>>>"
+                                     for i, (_, url, text) in enumerate(records))
+                    prompt = (f"KIND: {kind}; sparse shape: {KINDS[kind]['schema']}\n"
+                              f"Context: reference={self.brief.get('tender_reference')}; "
+                              f"cutoff={self.brief.get('scenario_datetime_utc')}\n"
+                              'Return {"results":[{"source_id":"s0","data":{...}}]}; '
+                              "use the EXACT source_id for EACH source, never match URL substrings.\n" + body)
+                    response = await llm.ask_json(EXTRACT_SYSTEM, prompt, thinking=THINKING_EXTRACT,
+                                                  tag=f"extract_batch:{kind}", deadline=self.evidence_end)
+                    found = {}
+                    for record in response.get("results") or []:
+                        source_id = record.get("source_id")
+                        if source_id in found:
+                            found[source_id] = None
+                        else:
+                            found[source_id] = record.get("data")
+                    for i, (key, url, text) in enumerate(records):
+                        data = found.get(f"s{i}")
+                        summary = self._store(kind, data, url, via) if valid_data(kind, data) else \
+                            await self._extract_new(kind, KINDS[kind], text, url, via)
+                        if not summary.startswith("extraction returned nothing"):
+                            self._cache[key] = summary
+            finally:
+                for key, _, _ in records:
+                    future = self._inflight.pop(key, None)
+                    if future is not None and not future.done():
+                        future.set_result(self._cache.get(key))
+        groups = list(owned.items())
+        tasks = [asyncio.create_task(group_work(groups[i:i + 3])) for i in range(0, len(groups), 3)]
+        try:
+            if tasks:
+                await asyncio.gather(*tasks)
+            results = []
+            for key, (url, text) in zip(keys, items):
+                if key in self._cache:
+                    results.append(("already extracted earlier: " if key not in owned else "") + self._cache[key])
+                    continue
+                future = self._inflight.get(key)
+                if future is not None:
+                    shared = await asyncio.shield(future)
+                    if shared is not None:
+                        results.append("already extracted earlier: " + shared)
+                        continue
+                    results.append(await self.extract(kind, text, url, via))
+                else:
+                    results.append("extraction returned nothing")
+            return results
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _extract_new(self, kind: str, spec: dict, text: str, url: str, via: str) -> str:
-        # Long documents are read in parts (not silently cut): each part is extracted, list fields are merged.
         parts = _chunks(text, CHUNK_CHARS)
-        skipped = 0
-        if len(parts) > MAX_CHUNKS:              # keep the beginning and the end (closing sections matter too)
-            skipped = len(parts) - MAX_CHUNKS
-            parts = parts[:MAX_CHUNKS - 1] + parts[-1:]
-            log("extract_parts_skipped", kind=kind, url=url[:160], skipped=skipped)
         results = await asyncio.gather(*(llm.ask_json(EXTRACT_SYSTEM, (
-            f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n{spec['schema']}\n\n"
-            f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
-            f"{self.brief.get('scenario_datetime_utc')}.\nPAGE URL: {url}"
-            + (f" (part {i + 1} of {len(parts)})" if len(parts) > 1 else "")
-            + f"\n<<<PAGE TEXT>>>\n{part}\n<<<END>>>"), thinking=THINKING_EXTRACT, tag=f"extract:{kind}")
+            f"KIND: {kind}; sparse shape: {spec['schema']}\n"
+            f"Context: reference={self.brief.get('tender_reference')}; cutoff={self.brief.get('scenario_datetime_utc')}\n"
+            f"URL: {url}; part {i + 1}/{len(parts)}\n<<<DATA>>>\n{part}\n<<<END>>>"),
+            thinking=THINKING_EXTRACT, tag=f"extract:{kind}", deadline=self.evidence_end)
             for i, part in enumerate(parts)))
-        data = _merge_parts(kind, [r for r in results if r])
-        if not data:
-            return "extraction returned nothing"
-        self.bb.add(kind, data, url, via)
-        log("extracted", kind=kind, url=url[:160], via=via, parts=len(parts), data=data)
-        note = f" (very long document: {skipped} middle parts were not read)" if skipped else ""
-        return _summary(kind, data) + note
+        if any(not valid_data(kind, result) for result in results):
+            return "extraction returned nothing: incomplete document coverage; retry the selected document"
+        return self._store(kind, _merge_parts(kind, results), url, via)
 
     # ---------------------------------------------------------------- brief
     async def read_brief(self) -> None:
@@ -256,7 +279,7 @@ class Orchestrator:
         for attempt in range(attempts):
             if mission.deadline - time.time() < 60:
                 break
-            explorer = await Explorer(site, mission, self.extract).run()
+            explorer = await FusedExplorer(site, mission, self.extract).run()
             complete = mission.progress()[1] if mission.progress else explorer.status in ("complete", "finished")
             self.status[mission.name] = "complete" if complete else explorer.status
             log("mission_status", mission=mission.name, attempt=attempt + 1, status=self.status[mission.name],
@@ -482,9 +505,8 @@ Do not start the bid submission, do not ask questions.""", ["tender_overview", "
         spec = self.mission("specification", f"""Find the buyer's technical specification (Lastenheft / technical
 specification / data sheet) for tender {ref} and collect the requirements of the revision MARKED CURRENT
 (status such as "gültig"/"aktuell"; the viewer may open an old revision first; dates may use mixed formats).
-The revision history and the requirement sheets are INSIDE the specification document: find the document (e.g. in
-a document register, possibly paged), then OPEN it via its own link/action. A register or list of documents is not
-the revision list.
+Find the revision history and requirement sheets through observed document links, registers, viewers or
+separate records. Their location varies. A register without revision statuses is not sufficient.
 1. Pass any document-release form honestly: choose the binding/reference option (not archive copy, not preview),
    copy the receipt number shown, tick the required acknowledgement, request read access.
 2. Extract the revision list with statuses (kind 'spec_revisions'); statuses may be tooltips ([info: …]).
@@ -494,10 +516,10 @@ the revision list.
         mail = self.mission("mail", f"""In the sales mailbox, collect every message about tender {ref} that is one of:
 - the sales director's discount approval (sender '{self.brief.get('director_localpart')}@<bidder domain>')
 {topics}
-Mail search combines words with AND. Strategy: search the exact reference alone; read the result list completely
+Discover the search semantics from the interface. Start with the exact reference alone; read the result list completely
 with read_all_pages(next_ref=<'next page' link>, kind='mail_list'); then extract_urls with kind 'mail_message' for
 EVERY listed message whose subject contains the reference (skip signing-TAN messages; look-alike references are fine
-to open, they are filtered later). Then switch to the archive folder (and any other folder) and do the same. If a
+to open, they are filtered later). Then check ALL discovered relevant folders, whatever their names, and mark mail_folders coverage complete. If a
 search says there are too many results, add the subject keyword.""",
             ["mail_list", "mail_message"], 40, progress=self.mail_progress)
 
@@ -591,7 +613,11 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                         log("erp_group_started", group=group, refs=[r.get("ref") for r in reqs], own_tab=site is not base)
                 if spec_ended and tender_ended and all(t.done() for t in started.values()):
                     break
-                await asyncio.sleep(1)
+                try:
+                    await asyncio.wait_for(self.bb.changed.wait(), 1)
+                except asyncio.TimeoutError:
+                    pass
+                self.bb.changed.clear()
             results = list(await asyncio.gather(*started.values())) if started else []
         finally:   # never leave research running into the submission phase
             pending = [t for t in started.values() if not t.done()]
@@ -633,7 +659,8 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                               f"{r.get('certification') or 'none'}" for r in reqs)
         return self.mission(f"erp:{group}", f"""Collect ERP data for catalogue group {group} ({described}).
 1. Search the materials with the group key (material search / search help; at most ~20 hits are shown, empty or too
-   broad searches show nothing) and extract kind 'materials' from the result list.
+   broad searches show nothing) and extract kind 'materials' from the COMPLETE result list, including pagination. Mark catalogue coverage complete
+with sources=[the catalogue group] only after all search pages are read.
 2. For EVERY material of the group (look-alikes differ in one attribute or in status) open its detail views and
    extract kind 'materials' from each: technical data, status (+ its legend) and lead times, stock down to the
    storage-location level (freely usable stock), and ALL price condition records with their quantity scales (scales
@@ -688,9 +715,20 @@ The progress checklist tells you what is still missing per material.""", ["mater
 
 
 def _page_pattern(url) -> str:
-    """'/vk13?material=X-1&view=scales' -> '/vk13?material=*&view=scales': keeps the page type, hides record values."""
+    """Keep runtime-discovered page types while hiding record values."""
     query = "&".join(f"{k}={v if v.isalpha() and len(v) <= 16 else '*'}" for k, v in parse_qsl(url.query, keep_blank_values=True))
     return url.path + (f"?{query}" if query else "")
+
+
+def valid_data(kind: str, data) -> bool:
+    if not isinstance(data, dict) or not data or kind not in KINDS:
+        return False
+    fields = {"positions": "positions", "clarifications": "entries", "spec_revisions": "revisions",
+              "requirements": "requirements", "materials": "materials", "mail_list": "messages"}
+    field = fields.get(kind)
+    if field:
+        return isinstance(data.get(field), list) and all(isinstance(row, dict) for row in data[field])
+    return True
 
 
 def _chunks(text: str, size: int) -> list[str]:

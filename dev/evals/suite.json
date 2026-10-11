@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "worlds": [
+    {
+      "slug": "dev-classic",
+      "seed": 701,
+      "profile": "classic",
+      "case": "baseline",
+      "topology": null,
+      "split": "development",
+      "data_sha256": "578a4e2980c79f0cbb1c4968618cbae4b116ff3c147e7cad1f206724a6125447"
+    },
+    {
+      "slug": "dev-locale",
+      "seed": 702,
+      "profile": "workbench",
+      "case": "locale-boundary",
+      "topology": null,
+      "split": "development",
+      "data_sha256": "5a94685130d8460804b2ccae3352bdd4c0624b61276367c88140295fffbf85fb"
+    },
+    {
+      "slug": "holdout-withdrawal",
+      "seed": 1701,
+      "profile": "legacy",
+      "case": "future-withdrawal",
+      "topology": null,
+      "split": "holdout",
+      "data_sha256": "88577f73a472f4efc80f4790ffee1050299530f03e358e3ceb13203c120d2023"
+    },
+    {
+      "slug": "holdout-stock",
+      "seed": 1702,
+      "profile": "busy-office",
+      "case": "shared-stock",
+      "topology": null,
+      "split": "holdout",
+      "data_sha256": "c3380551d8482fe616da5ccbf5712b4fe6f1b68190611d9794cee02618d97ffc"
+    },
+    {
+      "slug": "holdout-scanned",
+      "seed": 1703,
+      "profile": "scanned",
+      "case": "baseline",
+      "topology": null,
+      "split": "holdout",
+      "data_sha256": "7f15cc103ed3eb810c11672c713b0174a209829a1596e756197254c67bd29a42"
+    },
+    {
+      "slug": "holdout-blocked",
+      "seed": 1704,
+      "profile": "modern",
+      "case": "blocked",
+      "topology": null,
+      "split": "holdout",
+      "data_sha256": "ae5a36c8211db5e3a5d217d705a10e909007b3fa8ba04c81ec29a4d35d4df326"
+    },
+    {
+      "slug": "holdout-documents",
+      "seed": 1705,
+      "profile": "modern",
+      "case": "locale-boundary",
+      "topology": "documents",
+      "split": "holdout",
+      "data_sha256": "203279fb8238e0d55cc8dce3225f958e99fa24589f48e44e71595dd89dead1a9"
+    },
+    {
+      "slug": "holdout-search",
+      "seed": 1706,
+      "profile": "modern",
+      "case": "shared-stock",
+      "topology": "search",
+      "split": "holdout",
+      "data_sha256": "78a1390565182adbd97f935304c9faec537f0def4b0682e9464a9489b47c1c74"
+    }
+  ]
+}

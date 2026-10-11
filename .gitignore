@@ -34,6 +34,9 @@ evidence.json
 dev/runs/*.json
 dev/runs/*.jsonl
 dev/runs/sandbox/
+dev/runs/optimization-*/
+dev/evals/bundles/
+.atira/
 
 # OS metadata
 .DS_Store

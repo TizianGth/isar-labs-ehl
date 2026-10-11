@@ -1,0 +1,796 @@
+{
+  "baseline": {
+    "name": "baseline",
+    "reference": "SYN-RFQ-4401",
+    "scenario_datetime_utc": "2044-05-20T12:00:00Z",
+    "company": "Boreal Motion Test GmbH",
+    "vat_id": "TEST-VAT-4401",
+    "mailbox": "sales@boreal.example",
+    "director": "director",
+    "authorized": {
+      "clause_rules": "pricing",
+      "packaging": "logistics",
+      "fx": "finance",
+      "metal_index": "pricing"
+    },
+    "positions": [
+      {
+        "position": "X-01",
+        "quantity": "10",
+        "unit": "Stk",
+        "requirement_ref": "REQ-A"
+      },
+      {
+        "position": "X-02",
+        "quantity": "2",
+        "unit": "Satz",
+        "requirement_ref": "REQ-B"
+      }
+    ],
+    "revision": "REV-C",
+    "old_revision": "REV-A",
+    "requirements": [
+      {
+        "ref": "REQ-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "catalog_group": "CAT-A",
+        "pieces_per_set": null
+      },
+      {
+        "ref": "REQ-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "catalog_group": "CAT-B",
+        "pieces_per_set": 3
+      }
+    ],
+    "qa": [
+      {
+        "number": "99",
+        "datetime_utc": "2044-05-05T09:00:00Z",
+        "text": "Position X-01 is changed to 11 pieces."
+      },
+      {
+        "number": "2",
+        "datetime_utc": "2044-05-06T09:00:00Z",
+        "text": "Position X-01 is changed to 12 pieces."
+      },
+      {
+        "number": "3",
+        "datetime_utc": "2044-05-07T09:00:00Z",
+        "text": "Position X-01 is changed to 99 pieces."
+      },
+      {
+        "number": "4",
+        "datetime_utc": "2044-05-08T09:00:00Z",
+        "text": "Answer 3 is withdrawn without replacement."
+      },
+      {
+        "number": "5",
+        "datetime_utc": "2044-05-09T09:00:00Z",
+        "text": "Position X-01 uses condition group CLAUSE-A; one-time setup cost EUR 24.00; packaging tariff PACK-A. Position X-02 uses condition group CLAUSE-B and packaging tariff PACK-B. No setup pool or project bonus applies."
+      }
+    ],
+    "materials": [
+      {
+        "material_number": "SYN-MAT-AX",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-BX",
+        "catalog_group": "CAT-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "4",
+        "surcharge_mass_g": "0",
+        "price_index_key": null,
+        "allocation_weight_g": "900",
+        "unrestricted_stock": "6",
+        "inspection_stock": "100",
+        "blocked_stock": "0",
+        "lead_time_stock_weeks": "3",
+        "lead_time_production_weeks": "11",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "USD",
+            "price_unit_qty": "10",
+            "number_format": "en-US",
+            "fx_key": "FX-USD",
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "1,200.00"
+              },
+              {
+                "from_qty": "5",
+                "price": "1,100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-DECOY",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "121",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "id": "approval",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4401",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-18T09:00:00Z",
+        "body": "For SYN-RFQ-4401 I approve an order discount of 8 percent. No minimum order value condition applies."
+      },
+      {
+        "id": "clause",
+        "folder": "inbox",
+        "subject": "Commercial clauses SYN-RFQ-4401",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T10:00:00Z",
+        "body": "For SYN-RFQ-4401, condition group CLAUSE-A discounts both the base price and the mass-dependent material surcharge. CLAUSE-B discounts the base price only. Setup and packaging costs are never discounted."
+      },
+      {
+        "id": "packing",
+        "folder": "archive",
+        "subject": "Packaging tariffs SYN-RFQ-4401",
+        "sender": "logistics@boreal.example",
+        "datetime_utc": "2044-05-17T09:00:00Z",
+        "body": "For SYN-RFQ-4401, PACK-A costs EUR 2.50 per started carton; PACK-B costs EUR 5.00 per started carton. Compute cartons separately per position."
+      },
+      {
+        "id": "fx",
+        "folder": "archive",
+        "subject": "FX fixing SYN-RFQ-4401",
+        "sender": "finance@boreal.example",
+        "datetime_utc": "2044-05-17T10:00:00Z",
+        "body": "For SYN-RFQ-4401, key FX-USD fixes USD at EUR 0.80 per 1 USD."
+      },
+      {
+        "id": "index",
+        "folder": "inbox",
+        "subject": "Metal indices SYN-RFQ-4401",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T11:00:00Z",
+        "body": "For SYN-RFQ-4401, INDEX-A is EUR 19.00 per kg from 2044-01-01 through 2044-05-19 inclusive; EUR 4.50 per kg from 2044-05-20 through 2044-12-31 inclusive. Only the window containing the scenario date applies."
+      },
+      {
+        "id": "future",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4401",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-21T09:00:00Z",
+        "body": "For SYN-RFQ-4401 I approve a discount of 80 percent."
+      },
+      {
+        "id": "other",
+        "folder": "archive",
+        "subject": "Discount approval SYN-RFQ-4401-OTHER",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-19T09:00:00Z",
+        "body": "For SYN-RFQ-4401-OTHER I approve a discount of 60 percent."
+      }
+    ]
+  },
+  "blocked": {
+    "name": "blocked",
+    "reference": "SYN-RFQ-4402",
+    "scenario_datetime_utc": "2044-05-20T12:00:00Z",
+    "company": "Boreal Motion Test GmbH",
+    "vat_id": "TEST-VAT-4401",
+    "mailbox": "sales@boreal.example",
+    "director": "director",
+    "authorized": {
+      "clause_rules": "pricing",
+      "packaging": "logistics",
+      "fx": "finance",
+      "metal_index": "pricing"
+    },
+    "positions": [
+      {
+        "position": "X-01",
+        "quantity": "10",
+        "unit": "Stk",
+        "requirement_ref": "REQ-A"
+      },
+      {
+        "position": "X-02",
+        "quantity": "2",
+        "unit": "Satz",
+        "requirement_ref": "REQ-B"
+      }
+    ],
+    "revision": "REV-C",
+    "old_revision": "REV-A",
+    "requirements": [
+      {
+        "ref": "REQ-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "catalog_group": "CAT-A",
+        "pieces_per_set": null
+      },
+      {
+        "ref": "REQ-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "catalog_group": "CAT-B",
+        "pieces_per_set": 3
+      }
+    ],
+    "qa": [
+      {
+        "number": "99",
+        "datetime_utc": "2044-05-05T09:00:00Z",
+        "text": "Position X-01 is changed to 11 pieces."
+      },
+      {
+        "number": "2",
+        "datetime_utc": "2044-05-06T09:00:00Z",
+        "text": "Position X-01 is changed to 12 pieces."
+      },
+      {
+        "number": "3",
+        "datetime_utc": "2044-05-07T09:00:00Z",
+        "text": "Position X-01 is changed to 99 pieces."
+      },
+      {
+        "number": "4",
+        "datetime_utc": "2044-05-08T09:00:00Z",
+        "text": "Answer 3 is withdrawn without replacement."
+      },
+      {
+        "number": "5",
+        "datetime_utc": "2044-05-09T09:00:00Z",
+        "text": "Position X-01 uses condition group CLAUSE-A; one-time setup cost EUR 24.00; packaging tariff PACK-A. Position X-02 uses condition group CLAUSE-B and packaging tariff PACK-B. No setup pool or project bonus applies."
+      }
+    ],
+    "materials": [
+      {
+        "material_number": "SYN-MAT-AX",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "blocked",
+        "status_code": "B",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-BX",
+        "catalog_group": "CAT-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "status_meaning": "blocked",
+        "status_code": "B",
+        "pieces_per_carton": "4",
+        "surcharge_mass_g": "0",
+        "price_index_key": null,
+        "allocation_weight_g": "900",
+        "unrestricted_stock": "6",
+        "inspection_stock": "100",
+        "blocked_stock": "0",
+        "lead_time_stock_weeks": "3",
+        "lead_time_production_weeks": "11",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "USD",
+            "price_unit_qty": "10",
+            "number_format": "en-US",
+            "fx_key": "FX-USD",
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "1,200.00"
+              },
+              {
+                "from_qty": "5",
+                "price": "1,100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-DECOY",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "121",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "id": "approval",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4402",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-18T09:00:00Z",
+        "body": "For SYN-RFQ-4402 I approve an order discount of 8 percent. No minimum order value condition applies."
+      },
+      {
+        "id": "clause",
+        "folder": "inbox",
+        "subject": "Commercial clauses SYN-RFQ-4402",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T10:00:00Z",
+        "body": "For SYN-RFQ-4402, condition group CLAUSE-A discounts both the base price and the mass-dependent material surcharge. CLAUSE-B discounts the base price only. Setup and packaging costs are never discounted."
+      },
+      {
+        "id": "packing",
+        "folder": "archive",
+        "subject": "Packaging tariffs SYN-RFQ-4402",
+        "sender": "logistics@boreal.example",
+        "datetime_utc": "2044-05-17T09:00:00Z",
+        "body": "For SYN-RFQ-4402, PACK-A costs EUR 2.50 per started carton; PACK-B costs EUR 5.00 per started carton. Compute cartons separately per position."
+      },
+      {
+        "id": "fx",
+        "folder": "archive",
+        "subject": "FX fixing SYN-RFQ-4402",
+        "sender": "finance@boreal.example",
+        "datetime_utc": "2044-05-17T10:00:00Z",
+        "body": "For SYN-RFQ-4402, key FX-USD fixes USD at EUR 0.80 per 1 USD."
+      },
+      {
+        "id": "index",
+        "folder": "inbox",
+        "subject": "Metal indices SYN-RFQ-4402",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T11:00:00Z",
+        "body": "For SYN-RFQ-4402, INDEX-A is EUR 19.00 per kg from 2044-01-01 through 2044-05-19 inclusive; EUR 4.50 per kg from 2044-05-20 through 2044-12-31 inclusive. Only the window containing the scenario date applies."
+      },
+      {
+        "id": "future",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4402",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-21T09:00:00Z",
+        "body": "For SYN-RFQ-4402 I approve a discount of 80 percent."
+      },
+      {
+        "id": "other",
+        "folder": "archive",
+        "subject": "Discount approval SYN-RFQ-4402-OTHER",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-19T09:00:00Z",
+        "body": "For SYN-RFQ-4402-OTHER I approve a discount of 60 percent."
+      }
+    ]
+  },
+  "future-withdrawal": {
+    "name": "future-withdrawal",
+    "reference": "SYN-RFQ-4403",
+    "scenario_datetime_utc": "2044-05-20T12:00:00Z",
+    "company": "Boreal Motion Test GmbH",
+    "vat_id": "TEST-VAT-4401",
+    "mailbox": "sales@boreal.example",
+    "director": "director",
+    "authorized": {
+      "clause_rules": "pricing",
+      "packaging": "logistics",
+      "fx": "finance",
+      "metal_index": "pricing"
+    },
+    "positions": [
+      {
+        "position": "X-01",
+        "quantity": "10",
+        "unit": "Stk",
+        "requirement_ref": "REQ-A"
+      },
+      {
+        "position": "X-02",
+        "quantity": "2",
+        "unit": "Satz",
+        "requirement_ref": "REQ-B"
+      }
+    ],
+    "revision": "REV-C",
+    "old_revision": "REV-A",
+    "requirements": [
+      {
+        "ref": "REQ-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "catalog_group": "CAT-A",
+        "pieces_per_set": null
+      },
+      {
+        "ref": "REQ-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "catalog_group": "CAT-B",
+        "pieces_per_set": 3
+      }
+    ],
+    "qa": [
+      {
+        "number": "99",
+        "datetime_utc": "2044-05-05T09:00:00Z",
+        "text": "Position X-01 is changed to 11 pieces."
+      },
+      {
+        "number": "2",
+        "datetime_utc": "2044-05-06T09:00:00Z",
+        "text": "Position X-01 is changed to 12 pieces."
+      },
+      {
+        "number": "3",
+        "datetime_utc": "2044-05-07T09:00:00Z",
+        "text": "Position X-01 is changed to 99 pieces."
+      },
+      {
+        "number": "4",
+        "datetime_utc": "2044-05-08T09:00:00Z",
+        "text": "Answer 3 is withdrawn without replacement."
+      },
+      {
+        "number": "5",
+        "datetime_utc": "2044-05-09T09:00:00Z",
+        "text": "Position X-01 uses condition group CLAUSE-A; one-time setup cost EUR 24.00; packaging tariff PACK-A. Position X-02 uses condition group CLAUSE-B and packaging tariff PACK-B. No setup pool or project bonus applies."
+      },
+      {
+        "number": "6",
+        "datetime_utc": "2044-05-21T10:00:00Z",
+        "text": "Answer 2 is withdrawn without replacement."
+      }
+    ],
+    "materials": [
+      {
+        "material_number": "SYN-MAT-AX",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "120",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-BX",
+        "catalog_group": "CAT-B",
+        "bore_mm": "52",
+        "stroke_mm": "220",
+        "pressure_bar": "210",
+        "mounting": "Flange",
+        "certification": "none",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "4",
+        "surcharge_mass_g": "0",
+        "price_index_key": null,
+        "allocation_weight_g": "900",
+        "unrestricted_stock": "6",
+        "inspection_stock": "100",
+        "blocked_stock": "0",
+        "lead_time_stock_weeks": "3",
+        "lead_time_production_weeks": "11",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "USD",
+            "price_unit_qty": "10",
+            "number_format": "en-US",
+            "fx_key": "FX-USD",
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "1,200.00"
+              },
+              {
+                "from_qty": "5",
+                "price": "1,100.00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "material_number": "SYN-MAT-DECOY",
+        "catalog_group": "CAT-A",
+        "bore_mm": "38",
+        "stroke_mm": "121",
+        "pressure_bar": "175",
+        "mounting": "Trunnion",
+        "certification": "TEST-CERT-A",
+        "status_meaning": "active",
+        "status_code": "R",
+        "pieces_per_carton": "5",
+        "surcharge_mass_g": "400",
+        "price_index_key": "INDEX-A",
+        "allocation_weight_g": "700",
+        "unrestricted_stock": "10",
+        "inspection_stock": "80",
+        "blocked_stock": "20",
+        "lead_time_stock_weeks": "2",
+        "lead_time_production_weeks": "8",
+        "conditions": [
+          {
+            "record": "current",
+            "valid_from": "2044-01-01",
+            "valid_to": "2044-12-31",
+            "currency": "EUR",
+            "price_unit_qty": "1",
+            "number_format": "de-DE",
+            "fx_key": null,
+            "scales": [
+              {
+                "from_qty": "1",
+                "price": "110,50"
+              },
+              {
+                "from_qty": "10",
+                "price": "90,00"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "id": "approval",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4403",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-18T09:00:00Z",
+        "body": "For SYN-RFQ-4403 I approve an order discount of 8 percent. No minimum order value condition applies."
+      },
+      {
+        "id": "clause",
+        "folder": "inbox",
+        "subject": "Commercial clauses SYN-RFQ-4403",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T10:00:00Z",
+        "body": "For SYN-RFQ-4403, condition group CLAUSE-A discounts both the base price and the mass-dependent material surcharge. CLAUSE-B discounts the base price only. Setup and packaging costs are never discounted."
+      },
+      {
+        "id": "packing",
+        "folder": "archive",
+        "subject": "Packaging tariffs SYN-RFQ-4403",
+        "sender": "logistics@boreal.example",
+        "datetime_utc": "2044-05-17T09:00:00Z",
+        "body": "For SYN-RFQ-4403, PACK-A costs EUR 2.50 per started carton; PACK-B costs EUR 5.00 per started carton. Compute cartons separately per position."
+      },
+      {
+        "id": "fx",
+        "folder": "archive",
+        "subject": "FX fixing SYN-RFQ-4403",
+        "sender": "finance@boreal.example",
+        "datetime_utc": "2044-05-17T10:00:00Z",
+        "body": "For SYN-RFQ-4403, key FX-USD fixes USD at EUR 0.80 per 1 USD."
+      },
+      {
+        "id": "index",
+        "folder": "inbox",
+        "subject": "Metal indices SYN-RFQ-4403",
+        "sender": "pricing@boreal.example",
+        "datetime_utc": "2044-05-18T11:00:00Z",
+        "body": "For SYN-RFQ-4403, INDEX-A is EUR 19.00 per kg from 2044-01-01 through 2044-05-19 inclusive; EUR 4.50 per kg from 2044-05-20 through 2044-12-31 inclusive. Only the window containing the scenario date applies."
+      },
+      {
+        "id": "future",
+        "folder": "inbox",
+        "subject": "Discount approval SYN-RFQ-4403",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-21T09:00:00Z",
+        "body": "For SYN-RFQ-4403 I approve a discount of 80 percent."
+      },
+      {
+        "id": "other",
+        "folder": "archive",
+        "subject": "Discount approval SYN-RFQ-4403-OTHER",
+        "sender": "director@boreal.example",
+        "datetime_utc": "2044-05-19T09:00:00Z",
+        "body": "For SYN-RFQ-4403-OTHER I approve a discount of 60 percent."
+      }
+    ]
+  }
+}
