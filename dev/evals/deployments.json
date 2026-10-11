@@ -1,0 +1,175 @@
+{
+  "suite_version": 1,
+  "visibility": "private",
+  "deployments": [
+    {
+      "world": "dev-classic",
+      "slug": "inference-v1-dev-classic",
+      "eval_id": "ev_25cdea6d26f33fa1",
+      "version_id": "evv_72adfffdb6f920d4843c",
+      "package_sha256": "af3f9a8738cd9ef1c59fbe52b2e9fb408a0e7205c377a5407657d7ed051b89c9",
+      "data_sha256": "fa51a4c1fca838c1e7f07fc473401f19cdb71187769f9f627b8246354ddd34e1",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_72adfffdb6f920d4843c",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-dev-classic",
+      "status_verified_at": "2026-10-11T05:20:17.530063+00:00"
+    },
+    {
+      "world": "dev-locale",
+      "slug": "inference-v1-dev-locale",
+      "eval_id": "ev_8bcd56a46b0344d6",
+      "version_id": "evv_86a7bef67c0f113a759e",
+      "package_sha256": "6b4409993f1cc153ca106926d3c5205e87fa98e11a82690f676ae32a5f5c0919",
+      "data_sha256": "24399682f935bca199f1090282ef447a0a617babd6acd88ac49e684bb53554a7",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_86a7bef67c0f113a759e",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-dev-locale",
+      "status_verified_at": "2026-10-11T05:20:17.529672+00:00"
+    },
+    {
+      "world": "holdout-withdrawal",
+      "slug": "inference-v1-holdout-withdrawal",
+      "eval_id": "ev_d04162c0b8a08627",
+      "version_id": "evv_93267cc4a9770e1d9e33",
+      "package_sha256": "9669442c3edbd62768b82434a304c6ee70cf9aa5fe21355fc695ebf908b73d21",
+      "data_sha256": "b110494d19e789c97eb0ed569f3423825ed8a58e53a4664814a4d0a6d8bb947c",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_93267cc4a9770e1d9e33",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-withdrawal",
+      "status_verified_at": "2026-10-11T05:20:17.579671+00:00"
+    },
+    {
+      "world": "holdout-stock",
+      "slug": "inference-v1-holdout-stock",
+      "eval_id": "ev_494e5129ae65660a",
+      "version_id": "evv_51602ebb435a8fd40a9d",
+      "package_sha256": "103d4e982d43be04c619f7c38fa569b0316d0a48ad2ffa1e22901a6ce489a2e2",
+      "data_sha256": "ae6399669da89767cb008ca69753ee154631f7c5616dc5dc73046e9997f67e7b",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_51602ebb435a8fd40a9d",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-stock",
+      "status_verified_at": "2026-10-11T05:20:17.529556+00:00"
+    },
+    {
+      "world": "holdout-scanned",
+      "slug": "inference-v1-holdout-scanned",
+      "eval_id": "ev_5da9583171fd6a4e",
+      "version_id": "evv_2d468027003614394250",
+      "package_sha256": "d5aea590b44a588d58010db3f1f8c9742a188746168bc27dd55a19c7eaab002d",
+      "data_sha256": "afc7c19681a6ba7d8321a3c3a6e3c2f7a452b5c77197b70d95e63c364497e449",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_2d468027003614394250",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-scanned",
+      "status_verified_at": "2026-10-11T05:20:17.945013+00:00"
+    },
+    {
+      "world": "holdout-blocked",
+      "slug": "inference-v1-holdout-blocked",
+      "eval_id": "ev_18c8a226951ce742",
+      "version_id": "evv_9dc1c6ab9b4ac65aaca0",
+      "package_sha256": "dbd2f508e9a69d4fe3bc51684b5ff8692f953d01cefa475b580375796a9bb923",
+      "data_sha256": "4cae6cc1f0ccb7b9151486c19f9905d51cb70bed08a9cb6412c92b82d87fb187",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_9dc1c6ab9b4ac65aaca0",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-blocked",
+      "status_verified_at": "2026-10-11T05:20:17.894949+00:00"
+    },
+    {
+      "world": "holdout-documents",
+      "slug": "inference-v1-holdout-documents",
+      "eval_id": "ev_9cc5a36c02880074",
+      "version_id": "evv_f71c6d9bb360057074de",
+      "package_sha256": "c90bf3ba731166404d900f5337874bccca38ba69f27e9489529e539ac83f9c9e",
+      "data_sha256": "b7c5f1880a341c33e51b84e26d25ef27fba19e88548471ef7540f71c55f6edb4",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_f71c6d9bb360057074de",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-documents",
+      "status_verified_at": "2026-10-11T05:20:17.895216+00:00"
+    },
+    {
+      "world": "holdout-search",
+      "slug": "inference-v1-holdout-search",
+      "eval_id": "ev_b0f22985ac91a857",
+      "version_id": "evv_3f3acc49619085a7099b",
+      "package_sha256": "a980876ffbc7e81cead9f79064fbe343fb5b60e8f6f9611a5371579debbe5319",
+      "data_sha256": "08151322ffe6aa82d2608c3e3b41cb0db9e3047285b9d6df2b3b7736b1bdcd8e",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "build_status": "ready",
+      "public": false,
+      "visibility_verified": "private",
+      "current_version_verified": "evv_3f3acc49619085a7099b",
+      "site_names": [
+        "tender",
+        "specification",
+        "erp",
+        "mail"
+      ],
+      "url": "https://ehl-challenge.atira.ai/evals/inference-v1-holdout-search",
+      "status_verified_at": "2026-10-11T05:20:17.895129+00:00"
+    }
+  ],
+  "authenticated_hosting_smoke_tested": false
+}

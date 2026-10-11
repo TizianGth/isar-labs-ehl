@@ -12,12 +12,14 @@ import json
 import os
 import re
 import time
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlparse, urljoin
 
 from .. import llm
 from ..browser.site import Site
 from ..log import log
+from ..profile import span
 from ..rules import parse
+from ..rules.evidence import mail_problem, merge_materials
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
 from .fused import FusedExplorer
@@ -29,7 +31,7 @@ from .submit import submit_bid
 THINKING_EXTRACT = os.environ.get("RFQ_THINKING_EXTRACT") == "1"
 RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own cap in seconds (18 min)
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
-CHUNK_CHARS, MAX_CHUNKS = 12000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
+CHUNK_CHARS = 12000  # Every chunk is tracked; no silent document cutoff.
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -42,18 +44,18 @@ class Blackboard:
         self.changed = asyncio.Event()
         self._seen = set()
 
-    def add(self, kind: str, data: dict, url: str, via: str = "page") -> None:
+    def add(self, kind: str, data: dict, url: str, via: str = "page", provenance=None) -> None:
         key = digest([kind, url, data])
         if key not in self._seen:
             self._seen.add(key)
-            self.items.setdefault(kind, []).append({"data": data, "url": url, "via": via, "t": time.time()})
+            self.items.setdefault(kind, []).append({"data": data, "url": url, "via": via, "t": time.time(), "provenance": provenance or {"source_id": digest([url, data])}})
             self.changed.set()
 
     def get(self, kind: str) -> list[dict]:
         return self.items.get(kind, [])
 
     def dump(self) -> dict:
-        return {k: [{"url": i["url"], "via": i.get("via", "page"), "data": i["data"]} for i in v] for k, v in self.items.items()}
+        return {k: [{"url": i["url"], "via": i.get("via", "page"), "data": i["data"], "provenance": i.get("provenance", {})} for i in v] for k, v in self.items.items()}
 
     def load(self, dumped: dict) -> None:
         """Re-use the evidence of an earlier run (dev: iterate on rules/submission without re-exploring)."""
@@ -61,7 +63,7 @@ class Blackboard:
             for item in items:
                 item = dict(item)
                 url, via = item.pop("url", ""), item.pop("via", "page")
-                self.add(kind, item["data"] if set(item) == {"data"} else item, url, via)
+                self.add(kind, item.get("data", item), url, via, item.get("provenance"))
 
 
 class Orchestrator:
@@ -78,6 +80,7 @@ class Orchestrator:
         self.done = {name: asyncio.Event() for name in ("tender", "specification", "mail")}
         self.coverage: dict[str, Coverage] = {}
         self.erp_complete: set[str] = set()               # catalogue groups whose ERP mission completed its checklist
+        self.source_evidence: dict[str, dict] = {}
         self._cache: dict[str, str] = {}
         self._inflight: dict[str, asyncio.Future] = {}
         log("budget", seconds=round(self.end - started), evidence_seconds=round(self.evidence_end - started))
@@ -86,41 +89,53 @@ class Orchestrator:
     def _cache_key(self, kind: str, text: str, url: str, via: str) -> str:
         normalized = re.sub(r"\[(?:f\d+)?e\d+\]", "", text)
         session = next((getattr(site, "session_generation", 0) for site in self.sites.values()
-                        if urlparse(site.url).netloc == urlparse(url).netloc), 0)
+                        if urlparse(getattr(site, "url", "")).netloc == urlparse(url).netloc), 0)
         return kind + ":" + digest([self.run.get("run_id"), url, via, session, normalized,
                                   self.brief.get("tender_reference"), self.brief.get("scenario_datetime_utc"),
                                   KINDS[kind]["schema"]])
 
-    def _store(self, kind: str, data: dict, url: str, via: str) -> str:
+    def _store(self, kind: str, data: dict, url: str, via: str, provenance=None) -> str:
         if not valid_data(kind, data):
             return "extraction returned nothing: invalid fact shape"
-        self.bb.add(kind, data, url, via)
+        if kind == 'mail_list' and 'query' not in data:
+            query = dict(parse_qsl(urlparse(url).query))
+            data = {**data, 'query': next((query[key] for key in ('q', 'query', 'search') if key in query), None)}
+        self.bb.add(kind, data, url, via, provenance)
         log("extracted", kind=kind, url=url, via=via, data=data)
         return _summary(kind, data)
 
     def accept_decision(self, decision, snapshot, mission: str) -> list[str]:
         notes = []
+        self.source_evidence[snapshot.id] = {"url": snapshot.url, "text": snapshot.text, "via": "decision"}
         for fact in decision.facts:
             kind, data, quote = fact.get("kind"), fact.get("data"), fact.get("quote")
             if kind not in KINDS or not isinstance(quote, str) or not quote.strip() or quote not in snapshot.text:
                 notes.append("ERROR: fact needs a known kind and exact current-source quote")
                 continue
-            notes.append(self._store(kind, data, snapshot.url, "page"))
+            try:
+                source = snapshot.source_for_quote(quote)
+                notes.append(self._store(kind, data, source, "page", {"snapshot_id": snapshot.id, "quote": quote}))
+            except ValueError as error:
+                notes.append('ERROR: ' + str(error))
         for binding in decision.bindings:
             try:
                 kind = binding["kind"]
                 data = table_data(snapshot, binding)
-                notes.append(self._store(kind, data, snapshot.url, "table"))
+                notes.append(self._store(kind, data, snapshot.source_for_quote("| " + " | ".join(binding["headers"]) + " |"), "table", {"snapshot_id": snapshot.id, "table": binding["table"], "headers": binding["headers"]}))
             except (KeyError, ValueError, TypeError) as error:
                 notes.append("ERROR: table binding: " + str(error))
         for proof in decision.coverage:
             scope, sources = proof.get("scope"), proof.get("sources") or []
-            if scope not in ("mail_folders", "catalogue") or not sources:
+            if scope not in ("mail_folders", "catalogue", "clarifications", "requirements") or not sources:
                 continue
             if scope == "mail_folders":
-                read = {parse.clean(i["data"].get("folder")).lower() for i in self.bb.get("mail_list")}
-                if not set(str(x).lower() for x in sources).issubset(read):
+                read = {folder_name(i["data"].get("folder")) for i in self.bb.get("mail_list")}
+                if not set(folder_name(x) for x in sources).issubset(read):
                     notes.append("ERROR: coverage names folders not yet read")
+                    continue
+                key = scope
+            elif scope in ("clarifications", "requirements"):
+                if snapshot.url not in sources or not any(i["url"] == snapshot.url for i in self.bb.get(scope)):
                     continue
                 key = scope
             else:
@@ -140,6 +155,9 @@ class Orchestrator:
         if kind not in KINDS:
             return ["ERROR: unknown fact kind " + str(kind)] * len(items)
         keys = [self._cache_key(kind, text, url, via) for url, text in items]
+        for key, (url, text) in zip(keys, items):
+            self.source_evidence[key] = {'url': url, 'text': text, 'kind': kind, 'via': via}
+        waiting = {key: self._inflight[key] for key in keys if key in self._inflight}
         owned = {}
         for index, key in enumerate(keys):
             if key not in self._cache and key not in self._inflight:
@@ -191,7 +209,7 @@ class Orchestrator:
                 if key in self._cache:
                     results.append(("already extracted earlier: " if key not in owned else "") + self._cache[key])
                     continue
-                future = self._inflight.get(key)
+                future = waiting.get(key) or self._inflight.get(key)
                 if future is not None:
                     shared = await asyncio.shield(future)
                     if shared is not None:
@@ -284,7 +302,7 @@ class Orchestrator:
             self.status[mission.name] = "complete" if complete else explorer.status
             log("mission_status", mission=mission.name, attempt=attempt + 1, status=self.status[mission.name],
                 missing=explorer.missing)
-            if complete or explorer.status in ("deadline",):
+            if complete or explorer.status in ("deadline", "infrastructure_failure"):
                 break
             checklist = mission.progress()[0] if mission.progress else ""
             mission = Mission(**{**mission.__dict__, "max_steps": max(12, mission.max_steps // 2),
@@ -307,7 +325,7 @@ class Orchestrator:
         positions = self.positions()
         qa = self.bb.get("clarifications")
         entries = {parse.qa_number(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}
-        collected = any(i.get("via") == "collection" for i in qa)
+        collected = any(i.get("via") == "collection" for i in qa) or bool(self.coverage.get("clarifications") and self.coverage["clarifications"].complete)
         unread, total = self.qa_pages_unread()
         lines = [
             f"[{'x' if positions else ' '}] positions: " + (", ".join(f"{p['position']} {p.get('quantity')} {p.get('unit')} "
@@ -329,12 +347,11 @@ class Orchestrator:
         return sorted(set(range(1, total + 1)) - read), total
 
     def current_revision(self) -> str | None:
-        current = None
-        for item in self.bb.get("spec_revisions"):
-            for r in item["data"].get("revisions") or []:
-                if parse.revision_is_current(r):
-                    current = parse.norm_id(r.get("revision"))
-        return current
+        current = {parse.norm_id(r.get('revision')) for item in self.bb.get('spec_revisions')
+                   for r in item['data'].get('revisions') or [] if parse.revision_is_current(r)}
+        current.discard(None)
+        current.discard('')
+        return next(iter(current)) if len(current) == 1 else None
 
     def requirements(self) -> dict[str, dict]:
         current, found = self.current_revision(), {}
@@ -361,25 +378,14 @@ class Orchestrator:
         if needed:
             lines.append(f"[{'x' if not missing else ' '}] requirements referenced by the tender positions: "
                          f"{sorted(needed)}" + (f" — missing {missing}" if missing else ""))
-        collected = any(i.get("via") == "collection" for i in self.bb.get("requirements"))
-        complete = bool(current and reqs and (not missing if needed else collected))
+        collected = any(i.get("via") == "collection" for i in self.bb.get("requirements")) or bool(self.coverage.get("requirements") and self.coverage["requirements"].complete)
+        complete = bool(current and reqs and collected and (not missing if needed else True))
         return "\n".join(lines), complete
 
     def materials(self) -> dict[str, dict]:
-        merged: dict[str, dict] = {}
-        for item in self.bb.get("materials"):
-            for m in item["data"].get("materials") or []:
-                num = parse.norm_id(m.get("material_number"))
-                if not num:
-                    continue
-                target = merged.setdefault(num, {"material_number": m["material_number"], "conditions": [], "records": None})
-                for k, v in m.items():
-                    if k == "conditions":
-                        target["conditions"] += [c for c in v or [] if c.get("scales")]
-                    elif k == "condition_records_total" and v:
-                        target["records"] = parse.integer(v)
-                    elif v not in (None, "", []):
-                        target[k] = v
+        merged = merge_materials(self.bb.get("materials"))
+        for material in merged.values():
+            material['records'] = parse.integer(material.get('condition_records_total'))
         return merged
 
     def erp_progress(self, group: str, reqs: list[dict] | None = None) -> tuple[str, bool]:
@@ -393,6 +399,8 @@ class Orchestrator:
                 lines.append(f"[x] {m['material_number']}: does not fit the requirement ({mismatch}); no more data needed")
                 continue
             missing = [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
+            if m.get("_status_conflict"):
+                missing.append("master status conflict: " + str(m["_status_conflict"]))
             if m.get("status_meaning") != "blocked":
                 records = len({json.dumps(c.get("valid_from")) + json.dumps(c.get("currency")) for c in m["conditions"]})
                 if not records:
@@ -404,33 +412,32 @@ class Orchestrator:
             complete &= not missing
             lines.append(f"[{'x' if not missing else ' '}] {m['material_number']} ({m.get('status_meaning') or 'status ?'})"
                          + (f": missing {', '.join(missing)}" if missing else ": complete"))
-        if bool(reqs) and all(
-            any(
-                m.get("status_meaning") == "active"
-                and not _mismatch(m, [r])
-                and not [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
-                and any(c.get("scales") for c in m.get("conditions") or [])
-                for m in mats
-            )
-            for r in reqs
-        ):
-            complete = True
-        return "\n".join(lines), complete
+        proof = self.coverage.get("catalogue:" + parse.norm_id(group))
+        covered = bool(proof and proof.complete and not proof.gaps)
+        if not covered:
+            lines.append("[ ] complete candidate/search-page coverage not yet established")
+        return "\n".join(lines), bool(complete and covered)
 
     def mail_progress(self) -> tuple[str, bool]:
         ref = parse.norm_id(self.brief.get("tender_reference"))
         pages: dict[str, set[int]] = {}
         totals: dict[str, int] = {}
-        listed = {}
+        listed, discovered, folder_queries = {}, set(), {}
         for item in self.bb.get("mail_list"):
-            folder = parse.clean(item["data"].get("folder")).lower() or "?"
+            raw_folder = folder_name(item["data"].get("folder")) or "?"
+            discovered.update(folder_name(f) for f in item["data"].get("folders") or [])
+            discovered.add(raw_folder)
+            query = item["data"].get("query")
+            query = parse.clean(query) if query is not None else None
+            folder_queries.setdefault(raw_folder, set()).add(query)
+            folder = raw_folder + (" | search=" + query if query else " | unknown query" if query is None else "")
             pages.setdefault(folder, set()).add(parse.integer(item["data"].get("page")) or 1)
             if parse.integer(item["data"].get("pages_total")):
                 totals[folder] = parse.integer(item["data"].get("pages_total"))
             for m in item["data"].get("messages") or []:
                 subject = parse.norm_id(m.get("subject"))
                 if ref and ref in subject and "TAN" not in subject and m.get("url"):
-                    listed[_url_key(m["url"])] = parse.clean(m.get("subject"))
+                    listed[_url_key(urljoin(item["url"], m["url"]))] = parse.clean(m.get("subject"))
         done = {_url_key(i["url"]) for i in self.bb.get("mail_message")}
         found, unusable = set(), {}
         for i in self.bb.get("mail_message"):
@@ -450,41 +457,39 @@ class Orchestrator:
         if absent:
             lines.append("topics NOT found yet (search '<reference> <subject keyword>' in every folder; if a topic "
                          "really does not exist, finish and list it as missing): "
-                         + ", ".join(f"{t} ('{k}')" for t, k in absent.items()))
+                         + ", ".join(f"search keyword '{k}'" for k in absent.values()))
         decoys = {t: problems for t, problems in unusable.items() if t in absent}
         if decoys:
             lines.append("found but NOT usable, the rules ignore these (look for a valid one): "
                          + "; ".join(f"{t}: {', '.join(sorted(p))}" for t, p in decoys.items()))
         if unread_pages:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
-        if missing and absent:
+        if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        folders_checked = {"inbox", "archive"}.issubset({f.lower() for f in pages})
-        complete = (not absent and not unread_pages) or (folders_checked and not unread_pages and not missing)
+        proof = self.coverage.get("mail_folders")
+        proven_folders = {folder_name(f) for f in proof.sources} if proof else set()
+        topics = list(wanted.values())
+        def query_covers(folder):
+            queries = folder_queries.get(folder, set()) - {None}
+            if '' in queries or any(parse.norm_id(q) == ref for q in queries):
+                return True
+            return all(any(ref in parse.norm_id(q) and parse.clean(keyword).split('/')[0].strip().casefold() in q.casefold()
+                           for q in queries) for keyword in topics if keyword)
+        covered = bool(proof and proof.complete and not proof.gaps and discovered <= proven_folders
+                       and all(query_covers(folder) for folder in discovered))
+        if not covered:
+            lines.append("[ ] all discovered folders must be covered, including newer records; provide mail_folders coverage after complete search")
+        complete = bool(covered and not unread_pages and not missing)
+        if complete and absent:
+            lines.append("absent topics do not exist in this mailbox after complete coverage: " + ", ".join(absent.values()))
         return "\n".join(lines), complete
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
-        """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
-        if parse.norm_id(m.get("reference")) != ref:
-            return "other reference"
-        if m.get("is_draft_or_preview"):
-            return "draft/preview"
-        at, scenario = parse.when(m.get("datetime_utc")), parse.when(self.brief.get("scenario_datetime_utc"))
-        if scenario is not None and (at is None or at > scenario):
-            return "after the scenario date" if at else "no readable date"
-        topic = m.get("topic")
-        authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
-                      if r.get("topic") and r.get("sender_localpart")}
-        local = str((self.brief.get("director_localpart") if topic == "discount" else authorized.get(topic)) or "")
-        domain = None
-        for item in self.bb.get("mail_list"):
-            address = parse.clean(item["data"].get("mailbox_address"))
-            if "@" in address:
-                domain = address.split("@", 1)[1].lower()
-        sender = parse.mail_address(m.get("sender"))
-        if (local and not sender.startswith(local.lower() + "@")) or (domain and not sender.endswith("@" + domain)):
-            return "not from the authorized sender"
-        return None
+        authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []}
+        local = (self.brief.get("director_localpart") if m.get("topic") == "discount" else authorized.get(m.get("topic"))) or ""
+        domain = next((parse.clean(i['data'].get('mailbox_address')).split('@', 1)[1].lower()
+                       for i in self.bb.get('mail_list') if '@' in parse.clean(i['data'].get('mailbox_address'))), None)
+        return mail_problem(m, ref, parse.when(self.brief.get("scenario_datetime_utc")), local, domain)
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
@@ -536,22 +541,70 @@ search says there are too many results, add the subject keyword.""",
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
 
+    async def route_missing_records(self):
+        if all(self.status.get(name) == 'infrastructure_failure' for name in ('tender', 'specification', 'mail')):
+            return
+        wanted = {"discount": "Rabatt / discount approval"} | {
+            r.get("topic"): r.get("subject_keyword") for r in self.brief.get("authorized_records") or [] if r.get("topic")}
+        for _ in range(2):
+            found = {i['data'].get('topic') for i in self.bb.get('mail_message')
+                     if self._mail_problem(i['data'], self.brief.get('tender_reference')) is None}
+            missing = {topic: keyword for topic, keyword in wanted.items() if topic not in found}
+            if not missing or time.time() > self.evidence_end - 20:
+                return
+            observations = {}
+            for role in ('tender', 'specification', 'erp', 'mail'):
+                site = self.site_for(role)
+                try:
+                    text = await site.observe(limit=5000)
+                    observations[role] = text
+                except Exception:
+                    observations[role] = 'unavailable'
+            prompt = ('Unresolved commercial evidence may live on any website, or truly be absent. '
+                      'Choose at most two observed site roles to investigate using their observed navigation, or [] if exhausted. '
+                      'Return {"routes":[{"role":"tender|specification|erp|mail","goal":"specific evidence gap and source direction"}]}. '
+                      + json.dumps({'reference': self.brief.get('tender_reference'), 'missing': missing,
+                                    'observations': observations}, ensure_ascii=False))
+            routes = await llm.ask_json('Route unresolved evidence from runtime observations. Never invent URLs or use site-specific scripts.',
+                                       prompt, tag='route', deadline=self.evidence_end, max_tokens=600)
+            selected = []
+            for route in routes.get('routes') or []:
+                role = route.get('role')
+                if role not in observations or role in selected:
+                    continue
+                selected.append(role)
+                mission = self.mission('commercial_recovery', str(route.get('goal', '')) +
+                                       '\nCollect dated exact-reference records with authorized sender, using mail_message facts even when a record is not in mail. '
+                                       'Read all applicable records before the cutoff, including withdrawals. Finish when the selected register is exhausted.',
+                                       ['mail_message'], 12)
+                mission.context = json.dumps({'authorized_records': self.brief.get('authorized_records'),
+                                              'director_localpart': self.brief.get('director_localpart'), 'missing': missing}, ensure_ascii=False)
+                await self.run_mission(self.site_for(role), mission, attempts=1)
+                if len(selected) == 2:
+                    break
+            if not selected:
+                return
+
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
         corrected stroke) is enough to cause it. Before accepting it, one short mission reads every Q&A page again,
         fresh (no cached pages or extractions), and the rules run once more."""
+        if self.tender_progress()[1] and all(self.erp_progress(group, reqs)[1] for group, reqs in self.erp_groups().items()):
+            log('no_bid_evidence_complete', groups=len(self.erp_groups()))
+            return result
         reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line]
         log("no_bid_recheck", reasons=reasons[:12])
         site = self.site_for("tender")
         site.fresh_start()
         site.collections.clear()
         self._cache = {k: v for k, v in self._cache.items() if not k.startswith("clarifications")}
+        before_sources = set(self.source_evidence)
         before = len(self.bb.get("clarifications"))
 
         def progress() -> tuple[str, bool]:
             new = self.bb.get("clarifications")[before:]
             unread, total = self.qa_pages_unread()
-            done = any(i.get("via") == "collection" for i in new) and not unread
+            done = (any(i.get("via") == "collection" for i in new) or any(k not in before_sources and v.get("kind") == "clarifications" and v.get("via") == "collection" for k, v in self.source_evidence.items())) and not unread
             return (f"Q&A pages read again: {len(new)}" + (f" (pages NOT read yet: {unread} of {total})" if unread else "")
                     + "\nRead them with read_all_pages(next_ref=<the Q&A list's next-page link>, kind='clarifications')."), done
 
@@ -593,7 +646,7 @@ bid submission.""", ["clarifications"], 14, progress=progress)
         """One ERP mission per needed catalogue group, in parallel tabs of the ERP browser (shared session).
         Groups start as soon as they are known; nothing waits for a specification mission that has ended.
         Missions never share a tab at the same time, and all of them end with this phase."""
-        base, started = self.site_for("erp"), {}
+        base, started, fingerprints = self.site_for("erp"), {}, {}
         base_chain: asyncio.Task | None = None       # missions that have to run on the base tab, one after another
         try:
             while time.time() < self.evidence_end - 90:
@@ -601,8 +654,10 @@ bid submission.""", ["clarifications"], 14, progress=progress)
                 known_positions = bool(self.positions()) or tender_ended
                 if known_positions:
                     for group, reqs in self.erp_groups().items():
-                        if group in started:
+                        fingerprint = digest(reqs)
+                        if group in started and (fingerprints[group] == fingerprint or not started[group].done()):
                             continue
+                        fingerprints[group] = fingerprint
                         mission = self.erp_mission(group, reqs)
                         site = base if base_chain is None else await self._tab(base)
                         if site is base:
@@ -666,7 +721,7 @@ with sources=[the catalogue group] only after all search pages are read.
    storage-location level (freely usable stock), and ALL price condition records with their quantity scales (scales
    may be on a separate tab/view; several records may be paged). Prefer extract_urls with several detail URLs.
 The progress checklist tells you what is still missing per material.""", ["materials"], 35,
-                            progress=lambda g=group, rs=reqs: self.erp_progress(g, rs))
+                            progress=lambda g=group: self.erp_progress(g, self.erp_groups().get(g, reqs)))
 
     # ---------------------------------------------------------------- rules + submission
     def resolve(self) -> Result:
@@ -693,11 +748,14 @@ The progress checklist tells you what is still missing per material.""", ["mater
                 log("replay", kinds={k: len(v) for k, v in self.bb.items.items()})
             else:
                 await self.read_brief()
-                await asyncio.wait_for(self.gather_evidence(), timeout=max(30, self.evidence_end - time.time()))
+                with span("evidence", agent="orchestrator", category="phase"):
+                    await asyncio.wait_for(self.gather_evidence(), timeout=max(30, self.evidence_end - time.time()))
+                    await self.route_missing_records()
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
         try:
-            result = self.resolve()
+            with span("resolve", agent="orchestrator", category="compute"):
+                result = self.resolve()
             if not replay and result.answer.get("decision") == "no_bid" and time.time() < self.evidence_end - 30:
                 result = await self.recheck_no_bid(result)
         except Exception as error:
@@ -707,7 +765,8 @@ The progress checklist tells you what is still missing per material.""", ["mater
                              "currency": "EUR", "discount_percent": 0, "positions": [], "total_net": 0}, [], [], {})
         self.result = result
         try:
-            await asyncio.wait_for(submit_bid(self, result), timeout=max(30, self.end - time.time()))
+            with span("submission", agent="submit", category="phase"):
+                await asyncio.wait_for(submit_bid(self, result), timeout=max(30, self.end - time.time()))
         except (Exception, asyncio.TimeoutError) as error:
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
@@ -718,6 +777,10 @@ def _page_pattern(url) -> str:
     """Keep runtime-discovered page types while hiding record values."""
     query = "&".join(f"{k}={v if v.isalpha() and len(v) <= 16 else '*'}" for k, v in parse_qsl(url.query, keep_blank_values=True))
     return url.path + (f"?{query}" if query else "")
+
+
+def folder_name(value):
+    return re.sub(r'\s*(?:\(\d+\)|\[\d+\])\s*$', '', parse.clean(value)).casefold()
 
 
 def valid_data(kind: str, data) -> bool:
@@ -789,7 +852,7 @@ def _url_key(url: str) -> str:
     import html
     from urllib.parse import urlparse
     parsed = urlparse(html.unescape(str(url)).split("#")[0])
-    return (parsed.path + "?" + parsed.query).rstrip("?")
+    return ((parsed.scheme + "://" + parsed.netloc if parsed.netloc else "") + parsed.path + "?" + parsed.query).rstrip("?")
 
 
 MAIN_FIELD = {"positions": "positions", "clarifications": "entries", "spec_revisions": "revisions",

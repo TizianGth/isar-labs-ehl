@@ -145,11 +145,11 @@ def test_decoy_mails_do_not_satisfy_a_topic():
         o.bb.add("mail_message", decoy, f"u{i}")
     o.bb.add("mail_message", mail(datetime_utc=None), "u-undated")
     text, _ = o.mail_progress()
-    assert "packaging ('Pack')" in text                     # still missing: only decoys so far
+    assert "search keyword 'Pack'" in text                     # still missing: only decoys so far
     assert "packaging: after the scenario date, draft/preview, no readable date, not from the authorized sender" in text
     o.bb.add("mail_message", mail(sender="Lo Gistik <LOG@bidder.example>"), "u-valid")   # display name form
     text, _ = o.mail_progress()
-    assert "packaging ('Pack')" not in text and "NOT usable" not in text
+    assert "search keyword 'Pack'" not in text and "NOT usable" not in text
 
 
 def test_concurrent_identical_extractions_share_one_call(monkeypatch):
@@ -166,7 +166,7 @@ def test_concurrent_identical_extractions_share_one_call(monkeypatch):
     async def scenario():
         o = _orchestrator()
         page = "URL: x\nPos 1: 2 Stk"
-        return await asyncio.gather(o.extract("positions", page, "u1"), o.extract("positions", page, "u2")), o
+        return await asyncio.gather(o.extract("positions", page, "u1"), o.extract("positions", page, "u1")), o
     (first, second), o = asyncio.run(scenario())
     assert len(calls) == 1 and "already extracted" in second and len(o.bb.get("positions")) == 1
 
@@ -221,7 +221,7 @@ def test_a_cancelled_extraction_does_not_cancel_the_one_waiting_for_it(monkeypat
         page = "URL: x\nPos 1"
         first = asyncio.create_task(o.extract("positions", page, "u1"))
         await asyncio.sleep(0.05)
-        second = asyncio.create_task(o.extract("positions", page, "u2"))
+        second = asyncio.create_task(o.extract("positions", page, "u1"))
         await asyncio.sleep(0.05)
         first.cancel()                                  # e.g. its mission ended
         return await second

@@ -12,6 +12,8 @@ from math import ceil
 
 from .parse import cert, clean, day, integer, mail_address, norm_id, number, qa_number, revision_is_current, same_text, when
 
+from .evidence import mail_problem, merge_materials
+
 CENT = D("0.01")
 
 
@@ -141,15 +143,12 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     mails = []
     for item in bb.get("mail_message", []):
         m = item["data"]
-        at = when(m.get("datetime_utc"))
-        if m.get("is_draft_or_preview"):
+        local = (ctx.director_localpart if m.get("topic") == "discount" else ctx.authorized.get(m.get("topic"))) or ""
+        problem = mail_problem(m, ref_id, T, local, domain)
+        if problem:
+            note(f"mail '{clean(m.get('subject'))}' ignored: {problem}")
             continue
-        if norm_id(m.get("reference")) != ref_id:
-            continue
-        if at is None or at > T:
-            note(f"mail '{clean(m.get('subject'))}' dated {at} is after the scenario date or undated; ignored")
-            continue
-        mails.append((at, m))
+        mails.append((when(m.get("datetime_utc")), m))
     mails.sort(key=lambda x: x[0])
 
     def authorized(topic: str, sender: str) -> bool:
@@ -184,20 +183,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
          f"indices={list(indices)} domain={domain}")
 
     # ---------------------------------------------------------------- materials
-    materials: dict[str, dict] = {}
-    for item in bb.get("materials", []):
-        for m in item["data"].get("materials") or []:
-            num = norm_id(m.get("material_number"))
-            if not num:
-                continue
-            target = materials.setdefault(num, {"material_number": clean(m["material_number"]), "conditions": []})
-            for k, v in m.items():
-                if k == "conditions":
-                    for c in v or []:
-                        if c.get("scales") and c not in target["conditions"]:
-                            target["conditions"].append(c)
-                elif v not in (None, "", []):
-                    target[k] = v
+    materials = merge_materials(bb.get("materials", []))
+    for num, material in materials.items():
+        if material.get('_status_conflict'):
+            note(f"UNCERTAIN material status conflict for {num}: {material['_status_conflict']}")
 
     def matches(mat: dict, req: dict, stroke: D | None) -> bool:
         """Exact match. stroke=None means 'nominal stroke unknown' (e.g. end reserve not found): stroke is then not
@@ -270,8 +259,8 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         note(f"{pid}: group {group} candidates={[m['material_number'] for m in candidates]} "
              f"fitting={[m['material_number'] for m in fitting]} active={[m['material_number'] for m in active]}")
         if not active:
-            if fitting and all(m.get("status_meaning") is None for m in fitting):
-                active = fitting
+            if any(m.get("status_meaning") is None for m in fitting):
+                active = [m for m in fitting if m.get("status_meaning") is None]
                 note(f"{pid}: UNCERTAIN status unknown for {[m['material_number'] for m in fitting]}; best guess, not proof")
             elif candidates and not uncertain and group and group in ctx.searched_groups:
                 no_material.append(pid)      # proven: the complete search found no active matching material

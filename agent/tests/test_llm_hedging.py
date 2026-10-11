@@ -18,6 +18,7 @@ def _response(text="{}"):
 
 @pytest.fixture
 def fast_hedge(monkeypatch):
+    monkeypatch.setattr(llm, "MAX_HEDGES", 2)
     monkeypatch.setattr(llm, "HEDGE_AFTER", {True: 0.1, False: 0.1})
     monkeypatch.setattr(llm, "_recent", {True: [], False: []})
     monkeypatch.setattr(llm, "_hedging", 0)

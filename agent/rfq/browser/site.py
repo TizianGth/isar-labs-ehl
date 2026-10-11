@@ -14,15 +14,16 @@ from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import BrowserContext, Error as PlaywrightError, Frame, Page
 
-from ..log import log
+from ..log import log, register_secret
 
 OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
 MAX_OBSERVATION = 9000
 EVAL_TIMEOUT = 12
-NAVIGATION_TIMEOUT_MS = 20000
-LOADED_TIMEOUT_MS = 12000
-RESPONSIVE_TIMEOUT = 4
+NAVIGATION_TIMEOUT_MS = 4000
+LOADED_TIMEOUT_MS = 2000
+NAVIGATION_BUDGET = 12.0
+RESPONSIVE_TIMEOUT = 1.0
 
 
 async def _eval(target, script: str, arg, timeout: float | None = None):
@@ -34,9 +35,15 @@ async def _eval(target, script: str, arg, timeout: float | None = None):
         raise PlaywrightError(f"evaluate timed out after {timeout}s")
 
 
+class NotDispatched(ValueError):
+    """The requested target did not exist before any browser write."""
+
+
 class Site:
     def __init__(self, site_id: str, url: str, credentials: dict, context: BrowserContext):
         self.site_id, self.url, self.credentials, self.context = site_id, url.rstrip("/"), credentials, context
+        for secret in credentials.values():
+            register_secret(secret)
         self.page: Page | None = None
         self.origin = urlparse(self.url).netloc
         self.logins = 0
@@ -48,11 +55,40 @@ class Site:
         self.hung: dict[str, int] = {}          # address -> navigations that never arrived (do not insist)
         self.health = {"fails": 0, "resets": 0, "at": 0.0}   # navigation failures in a row, session resets (shared)
         self._recoveries = 0
+        self.write_outcome_unknown = False
+        self.last_readbacks: list[dict] = []
+        self._start_task: asyncio.Task | None = None
         self.lock = asyncio.Lock()   # one action at a time per site page
 
+    @property
+    def session_generation(self) -> int:
+        return self.health.get("generation", 0)
+
     # ---------------------------------------------------------------- lifecycle
+    def start_task(self) -> asyncio.Task:
+        """Attach this site independently while other sites and the brief are prepared."""
+        if self._start_task is not None and self._start_task.done():
+            if self._start_task.cancelled() or self._start_task.exception() is not None:
+                self._start_task = None
+        if self._start_task is None:
+            self._start_task = asyncio.create_task(self._start(), name=f"site-start:{self.site_id}")
+            self._start_task.add_done_callback(self._startup_finished)
+        return self._start_task
+
+    def _startup_finished(self, task: asyncio.Task) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            log("site_start_error", site=self.site_id, error=str(error)[:200])
+
+    async def wait_started(self) -> str:
+        if self._start_task is None and self.page is not None:
+            return await self.observe()
+        return await asyncio.shield(self.start_task())
+
     async def start(self) -> str:
-        self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+        return await self.wait_started()
+
+    async def _start(self) -> str:
+        self.page = self.page or (self.context.pages[0] if self.context.pages else await self.context.new_page())
         self._wire(self.page)
         await self.goto(self.url)
         return await self.observe()
@@ -116,7 +152,7 @@ class Site:
         self.collections.clear()
 
     async def recover_tab(self, reason: str) -> None:
-        """The tab stopped responding: continue in a fresh tab at the last good address (the session is shared)."""
+        """Read-only recovery in a new tab sharing the session; never replay a write."""
         if self._recoveries >= 8:
             log("tab_recovery_limit", site=self.site_id, reason=reason)
             return
@@ -124,52 +160,69 @@ class Site:
         url = self.last_good_url or self.url
         log("tab_recovered", site=self.site_id, reason=reason, url=_short(url))
         await self._fresh_page()
+        if await self._navigate(self.page, url):
+            await self.settle(recover=False)
+
+    async def _navigate(self, target, url: str) -> bool:
+        """Four seconds to commit and two seconds for functional current-document readiness."""
+        before = target.url
         try:
-            await self.page.goto(url, wait_until="domcontentloaded")
+            response = await target.goto(url, wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+            if response is not None and response.status >= 500:
+                log("http_error", site=self.site_id, status=response.status, url=_short(url))
+                return False
         except PlaywrightError as error:
             log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
-        await self.settle(recover=False)
+            # A timeout may follow a committed redirect. An unchanged old document is not success.
+            if target.url == before:
+                return False
+        return await self._readable(target)
+
+    async def _goto_fast(self, url: str, frame: Frame | None) -> bool:
+        target = frame or self.page
+        for attempt in range(2):
+            if attempt and frame is None:
+                await self._fresh_page()
+                target = self.page
+            if await self._navigate(target, url):
+                return True
+        return False
 
     async def goto(self, url: str, frame: Frame | None = None) -> bool:
-        """Navigate the tab (or a frame); True if a readable page arrived. Sites have pages that never finish
-        loading: such an address gets two chances per run, afterwards the caller is told at once (try another route)."""
+        """A bounded read-only attempt with one recovery; quality session repair is logged separately."""
+        started = time.monotonic()
         key = url.split("#")[0]
         if self.hung.get(key, 0) >= 2:
             log("goto_skipped_hung", site=self.site_id, url=_short(url))
             return False
-        target, arrived, hard_failure, hangs = frame or self.page, False, False, 0
-        for attempt in range(3):
-            if hangs >= 2:            # a page that hung twice in a row will not come in a third try
-                break
-            # After a hang, never insist on the same tab: a hung renderer does not come back.
-            if hard_failure and frame is None and (attempt == 1 or not await self.responsive()):
-                await self._fresh_page()
-                target = self.page
-            hard_failure = False
-            try:
-                response = await target.goto(url, wait_until="commit")
-                if response is not None and response.status >= 500:
-                    log("http_error", site=self.site_id, status=response.status, url=_short(url))
-                    await asyncio.sleep(0.7 * (attempt + 1))
-                    continue
-                if await self._readable(target):
-                    arrived = True
-                    break
-                hard_failure, hangs = True, hangs + 1
-            except PlaywrightError as error:
-                log("goto_error", site=self.site_id, url=_short(url), error=str(error)[:200])
-                hard_failure, hangs = True, hangs + 1
-                await asyncio.sleep(0.5)
-        if not arrived:      # no guards on a page that never arrived: they would only wait for timeouts
+        arrived = False
+        try:
+            arrived = await asyncio.wait_for(self._goto_fast(url, frame), timeout=NAVIGATION_BUDGET)
+        except asyncio.TimeoutError:
+            log("navigation_budget_exhausted", site=self.site_id, url=_short(url))
+        if arrived:
+            self.health["fails"] = 0
+            # Guard work uses the same whole-attempt budget. Login repair can continue for quality.
+            remaining = NAVIGATION_BUDGET - (time.monotonic() - started)
+            if remaining > 0:
+                try:
+                    await asyncio.wait_for(self.settle(recover=False), remaining)
+                except asyncio.TimeoutError:
+                    log("navigation_speed_miss", site=self.site_id, reason="guard recovery", url=_short(url))
+                    await self.settle(recover=False)
+            else:
+                log("navigation_speed_miss", site=self.site_id, reason="functional recovery", url=_short(url))
+                await self.settle(recover=False)
+        else:
             self.hung[key] = self.hung.get(key, 0) + 1
-            log("goto_failed", site=self.site_id, url=_short(url), times=self.hung[key])
             self.health["fails"] += 1
+            log("goto_failed", site=self.site_id, url=_short(url), times=self.hung[key])
             if frame is None and await self._new_session(url):
-                return await self.goto(url)
-            return False
-        self.health["fails"] = 0
-        await self.settle()
-        return True
+                log("navigation_speed_miss", site=self.site_id, reason="session recovery", url=_short(url))
+                arrived = await self.goto(url)
+        log("navigation_span", site=self.site_id, url=_short(url), seconds=round(time.monotonic() - started, 3),
+            arrived=arrived, speed_miss=time.monotonic() - started > NAVIGATION_BUDGET)
+        return arrived
 
     async def _new_session(self, url: str) -> bool:
         """Pages of a website that keep hanging for our session load again in a new one: often one request that
@@ -182,56 +235,55 @@ class Site:
         state.update(resets=state["resets"] + 1, fails=0, at=time.time())
         log("session_reset", site=self.site_id, after=_short(url), reset=state["resets"])
         self.hung.clear()
+        self.health["generation"] = self.session_generation + 1
+        self.collections.clear()
         try:
             await asyncio.wait_for(self.context.clear_cookies(), timeout=10)
         except Exception as error:
             log("session_reset_failed", site=self.site_id, error=str(error)[:200])
             return False
         await self._fresh_page()             # the old tab and its pending requests go away
-        try:
-            await self.page.goto(self.url, wait_until="commit")
-        except PlaywrightError as error:
-            log("goto_error", site=self.site_id, url=_short(self.url), error=str(error)[:200])
+        await self._navigate(self.page, self.url)
         await self.settle(recover=False)     # the login guard signs in
         return True
 
     async def _readable(self, target) -> bool:
-        """The document arrived; wait for it to be parsed. If it never finishes (stuck sub-resource or stream) but
-        already shows content, use it anyway."""
-        try:
-            await target.wait_for_load_state("domcontentloaded", timeout=LOADED_TIMEOUT_MS)
-            return True
-        except PlaywrightError:
-            pass
-        try:
-            size = await _eval(target, "() => document.body ? document.body.innerText.length : 0", None, timeout=4)
-        except PlaywrightError:
-            size = 0
-        log("partial_load", site=self.site_id, url=_short(target.url), chars=size)
-        return bool(size and size > 40)
+        """Use functional DOM readiness, including readable documents with stuck subresources."""
+        limit = time.monotonic() + LOADED_TIMEOUT_MS / 1000
+        while time.monotonic() < limit:
+            try:
+                state = await _eval(target, _FUNCTIONAL_STATE, None,
+                                    timeout=max(0.01, limit - time.monotonic()))
+                if state and state.get("ready"):
+                    return True
+            except PlaywrightError:
+                return False
+            await asyncio.sleep(min(0.1, max(0, limit - time.monotonic())))
+        log("functional_readiness_timeout", site=self.site_id, url=_short(target.url))
+        return False
 
-    async def settle(self, rounds: int = 6, recover: bool = True) -> None:
+    async def settle(self, rounds: int = 6, recover: bool = True, retry_errors: bool = True) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
         if not await self.responsive():
             if recover:
                 await self.recover_tab("tab unresponsive while settling")
             return
         try:
-            await asyncio.wait_for(self._settle(rounds), timeout=45)
+            await asyncio.wait_for(self._settle(rounds, retry_errors=retry_errors), timeout=12)
         except asyncio.TimeoutError:
             log("settle_timeout", site=self.site_id, url=_short(self.page.url if self.page else ""))
             if recover and not await self.responsive():
                 await self.recover_tab("settle timed out")
 
-    async def _settle(self, rounds: int) -> None:
+    async def _settle(self, rounds: int, retry_errors: bool = True) -> None:
         page = await self._ensure_page()
         for _ in range(rounds):
-            try:
-                await page.wait_for_load_state("domcontentloaded", timeout=10000)
-            except PlaywrightError:
-                pass
             state = await self._guard_state()
             if state.get("error_page"):
+                if not retry_errors:
+                    self.write_outcome_unknown = True
+                    log("guard_write_outcome_unknown", site=self.site_id, url=_short(page.url))
+                    return
                 log("guard_error_page", site=self.site_id, url=_short(page.url))
                 await asyncio.sleep(0.8)
                 retry = state.get("retry_href")
@@ -254,9 +306,9 @@ class Site:
 
     async def _safe_goto(self, url: str) -> None:
         try:
-            await self.page.goto(url, wait_until="domcontentloaded")
-        except PlaywrightError:
-            pass
+            await asyncio.wait_for(self._goto_fast(url, None), NAVIGATION_BUDGET)
+        except asyncio.TimeoutError:
+            log("navigation_budget_exhausted", site=self.site_id, url=_short(url), via="guard")
 
     async def _guard_state(self) -> dict:
         try:
@@ -299,8 +351,7 @@ class Site:
                 await submit.click()
             else:
                 await password.press("Enter")
-            await page.wait_for_load_state("domcontentloaded")
-            await asyncio.sleep(0.4)
+            await self._readable(page)
             return True
         except PlaywrightError as error:
             log("login_error", site=self.site_id, error=str(error)[:200])
@@ -374,6 +425,7 @@ class Site:
     # ---------------------------------------------------------------- actions (never raise)
     async def act(self, name: str, args: dict) -> str:
         async with self.lock:
+            self.write_outcome_unknown = False
             try:
                 await self._ensure_page()
                 if not await self.responsive():
@@ -383,21 +435,25 @@ class Site:
                 method = getattr(self, f"_do_{name}")
                 accepted = inspect.signature(method).parameters
                 message = await asyncio.wait_for(
-                    method(**{k: v for k, v in args.items() if k in accepted and v not in (None, "")}), timeout=100)
+                    method(**{k: v for k, v in args.items() if k in accepted and v is not None}), timeout=100)
+            except NotDispatched as error:
+                message = "NOT_DISPATCHED: " + str(error)
             except asyncio.TimeoutError:
                 message = f"ERROR: {name} did not finish within 100 s"
                 if not await self.responsive():
                     await self.recover_tab(f"{name} hung")
             except (PlaywrightError, KeyError, TypeError, ValueError, IndexError) as error:
                 message = f"ERROR: {name} failed: {str(error).splitlines()[0][:300]}"
-            await self.settle()
+            await self.settle(retry_errors=name in {"open_url", "back", "hover", "scroll", "wait_for"})
+            if self.write_outcome_unknown:
+                message += "; OUTCOME UNKNOWN: error page after a write; observe and verify before repeating"
             return message
 
     async def _element(self, ref: str):
         ref = re.sub(r"[^\w]", "", str(ref))          # models sometimes send '"e9"' or '[e9]'
         frame, locator = self._locate(ref)
         if not await locator.count():
-            raise ValueError(f"ref {ref} is not on the current page (refs change after every action)")
+            raise NotDispatched(f"ref {ref} is not on the current page (refs change after every action)")
         return frame, locator.first
 
     async def _do_click(self, ref: str) -> str:
@@ -411,14 +467,8 @@ class Site:
                     f"button, another link to the same content, or continue with other work and come back later.")
         popups = self._watch_popups()
         try:
-            try:
-                await el.click(timeout=5000)
-            except PlaywrightError:
-                await self._run_guards_everywhere("close_overlays")
-                try:
-                    await el.click(timeout=4000)
-                except PlaywrightError:
-                    await el.dispatch_event("click")
+            # A failed click may have submitted a write. Observe its outcome; do not dispatch or replay it.
+            await el.click(timeout=4000, no_wait_after=True)
             await asyncio.sleep(0.3)
         finally:
             self._unwatch_popups(popups)
@@ -433,15 +483,20 @@ class Site:
         popups.stop()
 
     async def _fold_popups(self, popups: list) -> str:
-        """A new window (window.open, target=_blank) is loaded in our tab instead, so the model keeps one view."""
+        """Adopt this action's window as the current view without replaying its navigation."""
         for popup in list(popups):
             try:
-                await popup.wait_for_load_state("domcontentloaded", timeout=8000)
+                readable = await self._readable(popup)
                 url = popup.url
-                await popup.close()
                 if url and url != "about:blank":
-                    await self.goto(url)
-                    return f"a popup window opened {url} and was loaded here instead"
+                    old = self.page
+                    self.page = popup
+                    self._wire(popup)
+                    self._frames.clear()
+                    if old is not popup:
+                        asyncio.ensure_future(_close_quietly(old))
+                    return (f"a popup window opened {url} and was loaded here instead" +
+                            ("; document is still loading, observe before continuing" if not readable else ""))
             except PlaywrightError:
                 pass
         return ""
@@ -467,6 +522,8 @@ class Site:
             return problem
         await el.fill(str(text), timeout=4000)
         value = await el.input_value()
+        if value != str(text):
+            return "ERROR: field readback differs from requested value"
         if submit:
             await el.press("Enter")
             await asyncio.sleep(0.3)
@@ -511,7 +568,9 @@ class Site:
         kind = await el.evaluate("e => e.type")
         if kind not in ("checkbox", "radio"):
             return f"ERROR: element is not a checkbox/radio (it is {kind}); click it instead"
-        await el.set_checked(bool(checked), force=True, timeout=4000)
+        await el.set_checked(bool(checked), timeout=4000)
+        if await el.is_checked() != bool(checked):
+            return "ERROR: checkbox/radio readback differs from requested value"
         return f"{'checked' if checked else 'unchecked'}"
 
     async def _then_click(self, ref: str | None) -> str:
@@ -519,28 +578,52 @@ class Site:
             return ""
         return "; then " + await self._do_click(str(ref))
 
+    async def field_identity(self, ref: str) -> dict:
+        """A binding identifies the frame, field meaning and current DOM instance."""
+        frame, el = await self._element(ref)
+        state = await el.evaluate(_FIELD_STATE)
+        return {"url": self.page.url, "frame": frame.url, **state}
+
+    async def _field_readback(self, ref: str) -> dict:
+        _, el = await self._element(ref)
+        value = await el.evaluate("e => ['checkbox','radio'].includes(e.type) ? e.checked : e.value")
+        return {"ref": ref, "value": value, "identity": await self.field_identity(ref)}
+
     async def _do_fill_fields(self, fields: list, then_click: str | None = None) -> str:
-        """Several form fields in one step: text inputs, selects and checkboxes, each verified. A field with "apply"
-        is followed by a click on that button (dependent selects: a choice must be applied before the next field
-        opens); then the form is observed again and every remaining field must still be the same field (name, id,
-        label). On an error or a changed form the step stops and says how far it got."""
+        """Apply observed fields, verify every readback, and stop on unexpected rerender or navigation."""
         fields = [f for f in fields or [] if isinstance(f, dict)]
+        self.last_readbacks = []
         identity = {}
         for field in fields:
+            ref = str(field.get("ref"))
             try:
-                _, el = await self._element(str(field.get("ref")))
-                identity[str(field.get("ref"))] = await el.evaluate(_FIELD_ID)
+                if field.get("apply"):
+                    apply_ref = str(field["apply"])
+                    identity[apply_ref] = await self.field_identity(apply_ref)
+                actual = await self.field_identity(ref)
+                expected = field.get("identity")
+                if expected is not None and expected != actual:
+                    return f"STOPPED: binding for {ref} no longer identifies the observed field; observe again"
+                identity[ref] = actual
+            except (PlaywrightError, ValueError) as error:
+                return f"STOPPED: {ref} is unavailable; observe again ({str(error).splitlines()[0][:100]})"
+        if then_click:
+            try:
+                identity[str(then_click)] = await self.field_identity(str(then_click))
             except (PlaywrightError, ValueError):
-                pass
-        results, stopped = [], False
+                return "STOPPED: final batch control is unavailable; observe again"
+        results, stopped, allow_rerender = [], False, False
         for index, field in enumerate(fields):
             ref, value, apply = str(field.get("ref")), field.get("value"), field.get("apply")
             try:
-                _, el = await self._element(ref)
-                if ref in identity and await el.evaluate(_FIELD_ID) != identity[ref]:
+                actual = await self.field_identity(ref)
+                wanted = identity[ref]
+                semantic = ("url", "frame", "identity")
+                if any(actual[k] != wanted[k] for k in semantic) or (not allow_rerender and actual["node"] != wanted["node"]):
                     results.append(f"{ref}: STOPPED, the form changed and {ref} is another field now")
                     stopped = True
                     break
+                _, el = await self._element(ref)
                 tag, kind = await el.evaluate("e => [e.tagName, e.type]")
                 if tag == "SELECT":
                     result = await self._select_el(el, str(value))
@@ -548,20 +631,55 @@ class Site:
                     result = await self._check_el(el, str(value).lower() not in ("false", "0", "no", "nein", ""))
                 else:
                     result = await self._type_el(el, str(value))
+                if not result.startswith("ERROR"):
+                    self.last_readbacks.append(await self._field_readback(ref))
             except (PlaywrightError, ValueError) as error:
                 result = f"ERROR {str(error).splitlines()[0][:150]}"
             results.append(f"{ref}: {result}")
+            if result.startswith("ERROR"):
+                stopped = True
+                break
             if apply:
-                if result.startswith("ERROR"):
+                try:
+                    # Capture this explicit dependency control before executing it once.
+                    before_apply = await self.field_identity(str(apply))
+                    wanted_apply = identity[str(apply)]
+                    if any(before_apply[k] != wanted_apply[k] for k in ("url", "frame", "identity")) or (
+                            not allow_rerender and before_apply["node"] != wanted_apply["node"]):
+                        raise ValueError("apply control changed identity")
+                    applied = await self._do_click(str(apply))
+                    results.append(f"applied ({apply}): " + applied)
+                    if applied.startswith("ERROR") or self.page.url != wanted["url"]:
+                        stopped = True
+                        break
+                    await self.settle(rounds=3, retry_errors=False)
+                    await self.observe()
+                    allow_rerender = True
+                except (PlaywrightError, ValueError) as error:
+                    results.append(f"STOPPED: apply outcome requires a new observation ({str(error)[:100]})")
                     stopped = True
                     break
-                results.append(f"applied ({apply}): " + await self._do_click(str(apply)))
-                await self.settle(rounds=3)
-                await self.observe()
         if stopped:
-            done = [str(f.get("ref")) for f in fields[:index]]
-            return ("; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "
+            done = [r["ref"] for r in self.last_readbacks]
+            return ("STOPPED: " + "; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "
                     "with the remaining fields.")
+        # Later dependencies can reset earlier values. Verify all applied fields before any final click.
+        checked = []
+        for saved in self.last_readbacks:
+            try:
+                current = await self._field_readback(saved["ref"])
+                if current["value"] != saved["value"] or any(
+                        current["identity"][k] != saved["identity"][k] for k in ("url", "frame", "identity")):
+                    return "; ".join(results) + "; STOPPED: a previously applied field changed; observe again"
+                checked.append(current)
+            except (PlaywrightError, ValueError):
+                return "; ".join(results) + "; STOPPED: a previously applied field disappeared; observe again"
+        self.last_readbacks = checked
+        if then_click:
+            actual = await self.field_identity(str(then_click))
+            wanted = identity[str(then_click)]
+            if any(actual[k] != wanted[k] for k in ("url", "frame", "identity")) or (not allow_rerender and actual["node"] != wanted["node"]):
+                return "; ".join(results) + "; STOPPED: final batch control changed; observe again"
         return "; ".join(results) + await self._then_click(then_click)
 
     async def _do_set_slider(self, ref: str, value: str = "max") -> str:
@@ -572,8 +690,25 @@ class Site:
         return f"slider set to {value}"
 
     async def _do_back(self) -> str:
-        await self.page.go_back(wait_until="domcontentloaded")
-        return "went back"
+        started = time.monotonic()
+        before = self.page.url
+        try:
+            await self.page.go_back(wait_until="commit", timeout=NAVIGATION_TIMEOUT_MS)
+        except PlaywrightError as error:
+            log("back_error", site=self.site_id, error=str(error)[:200])
+            if self.page.url == before:
+                return "ERROR: back navigation did not commit; current document may still be the previous page"
+        if await self._readable(self.page):
+            return "went back"
+        # Back can leave a partially committed document. One read-only reload of that URL is safe.
+        remaining = NAVIGATION_BUDGET - (time.monotonic() - started)
+        if remaining > 0:
+            try:
+                if await asyncio.wait_for(self._navigate(self.page, self.page.url), remaining):
+                    return "went back; recovered current document"
+            except asyncio.TimeoutError:
+                pass
+        return "ERROR: back navigation did not reach a functional document; observe before continuing"
 
     async def _do_open_url(self, url: str) -> str:
         url = self.absolute(url)
@@ -648,6 +783,7 @@ class Site:
     # ---------------------------------------------------------------- helpers for model-selected content
     async def spawn(self) -> "Site":
         """Another tab of this website in the same browser context (shares the login session)."""
+        await self.wait_started()
         twin = Site(self.site_id, self.url, self.credentials, self.context)
         twin.seen_urls, twin.collections, twin.visual_notes, twin.hung, twin.health = (
             self.seen_urls, self.collections, self.visual_notes, self.hung, self.health)
@@ -667,9 +803,11 @@ class Site:
 
     async def read_url(self, url: str, follow_iframes: bool = True) -> str:
         """Open a model-selected URL of this site in a helper tab and return its full serialized text."""
+        await self.wait_started()
         url = self.absolute(url)
         if urlparse(url).netloc != self.origin:
             return "ERROR: only URLs of this website can be read"
+        started = time.monotonic()
         helper = Site(self.site_id, self.url, self.credentials, self.context)
         helper.logins, helper.seen_urls, helper.hung, helper.health = self.logins, self.seen_urls, self.hung, self.health
         helper.page = await self.context.new_page()
@@ -683,6 +821,9 @@ class Site:
             return await helper.full_text(follow_iframes)
         finally:
             await _close_quietly(helper.page)       # closing a hung tab can hang too: bounded
+            seconds = time.monotonic() - started
+            log("helper_read_span", site=self.site_id, url=_short(url), seconds=round(seconds, 3),
+                speed_miss=seconds > NAVIGATION_BUDGET)
 
     async def screenshot(self, ref: str | None = None) -> tuple[bytes, str]:
         """JPEG of an element (if it has a size) or of the viewport, and a note on what it shows. A small control
@@ -729,9 +870,31 @@ class Site:
         return element
 
 
-_FIELD_ID = """e => { const l = e.labels && e.labels[0];       // the label's own words, not the options inside it
-    const own = l ? [...l.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' ').trim() : '';
-    return [e.tagName, e.name || '', e.id || '', own || e.getAttribute('aria-label') || e.getAttribute('placeholder') || ''].join('|'); }"""
+_FUNCTIONAL_STATE = """() => {
+    const b = document.body;
+    if (!b) return {ready: false};
+    const visible = e => { const r=e.getBoundingClientRect(), s=getComputedStyle(e);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+    const controls = [...b.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea')]
+        .some(e => visible(e) && !e.disabled);
+    const content = [...b.querySelectorAll('main, article, p, td, li, h1, h2, pre, canvas, img')]
+        .some(e => visible(e) && (e.textContent.trim() || ['CANVAS','IMG'].includes(e.tagName)));
+    return {ready: controls || content || (document.readyState !== 'loading' && !!b.innerText.trim())};
+}"""
+
+_FIELD_STATE = """e => {
+    const w = e.ownerDocument.defaultView;
+    if (!w.__agentFieldNodes) { w.__agentFieldNodes = new WeakMap();
+        w.__agentFieldSerial = 0; w.__agentFieldDocument = Math.random().toString(36).slice(2); }
+    if (!w.__agentFieldNodes.has(e)) w.__agentFieldNodes.set(e, ++w.__agentFieldSerial);
+    const l = e.labels && e.labels[0];
+    const own = l ? [...l.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').trim() : '';
+    return {identity: [e.tagName, e.type || '', e.name || '', e.id || '',
+        own || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.textContent.trim(),
+        e.form ? e.form.action : ''].join('|'),
+        node: w.__agentFieldDocument + ':' + w.__agentFieldNodes.get(e)};
+}"""
+
 
 
 class _Popups(list):
@@ -755,7 +918,7 @@ class _Popups(list):
 
 async def _close_quietly(page: Page) -> None:
     try:
-        await asyncio.wait_for(page.close(), timeout=10)
+        await asyncio.wait_for(page.close(), timeout=2)
     except Exception:
         pass
 

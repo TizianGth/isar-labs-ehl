@@ -13,7 +13,8 @@ import time
 
 from openai import AsyncOpenAI
 
-from .log import log
+from .log import log, register_secret
+from .profile import span, model_usage, prompt_metrics
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
@@ -74,6 +75,8 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             log("llm_deadline", tag=tag, attempt=attempt)
             raise DeadlineExceeded(tag)
         started = time.monotonic()
+        queue_profile = span("llm_queue", agent=tag.split(":")[0].split("@")[0], category="queue", attempt=attempt)
+        queue_profile.__enter__()
         slots = _slots
         lane = _background if tag.startswith(("extract", "brief", "vision", "submit:")) else _interactive
         try:
@@ -86,6 +89,8 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         except asyncio.TimeoutError:
             log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
             raise DeadlineExceeded(tag)
+        finally:
+            queue_profile.__exit__(None, None, None)
         try:
             try:
                 requested = time.monotonic()
@@ -118,7 +123,22 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
             calls = _calls_from_text(message.content or "")
         log("llm", tag=tag, s=round(seconds, 2),
             tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
-        return {"content": message.content or "", "tool_calls": calls}
+        finish = getattr(response.choices[0], 'finish_reason', None)
+        parsed = _loads(message.content)
+        def register_private(obj):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if key.lower() in ('tan', 'password', 'token'):
+                        register_secret(value)
+                    else:
+                        register_private(value)
+            elif isinstance(obj, list):
+                for value in obj:
+                    register_private(value)
+        register_private(parsed)
+        log('llm_reply', tag=tag, finish_reason=finish, data=parsed if isinstance(parsed, dict) else None,
+            tool_calls=calls, characters=len(message.content or ''))
+        return {"content": message.content or "", "tool_calls": calls, "finish_reason": finish}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
 
 
@@ -128,16 +148,29 @@ def _hedge_after(tools: bool) -> float:
     return max(HEDGE_AFTER[tools], 3 * typical)
 
 
-async def _request(kwargs: dict, timeout: float):
+async def _request(kwargs: dict, timeout: float, speculative=False):
     usage["attempts"] = usage.get("attempts", 0) + 1
-    response = await client().chat.completions.create(**kwargs, timeout=timeout)
-    tokens = response.usage
-    if tokens:
-        usage["input"] += tokens.prompt_tokens or 0
-        usage["output"] += tokens.completion_tokens or 0
-        usage["cached"] += getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0
-    usage["calls"] += 1
-    return response
+    with span('llm_request', agent='qwen', category='model', speculative=speculative,
+              **prompt_metrics(kwargs.get('messages', []))) as request:
+        try:
+            response = await client().chat.completions.create(**kwargs, timeout=timeout)
+        except BaseException:
+            model_usage(attempt_id=request.id, model=MODEL, speculative=speculative, known=False)
+            raise
+        tokens = response.usage
+        if tokens:
+            usage["input"] += tokens.prompt_tokens or 0
+            usage["output"] += tokens.completion_tokens or 0
+            cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+            reasoning = getattr(getattr(tokens, 'completion_tokens_details', None), 'reasoning_tokens', 0) or 0
+            usage["cached"] += cached
+            model_usage(attempt_id=request.id, model=MODEL, input_tokens=tokens.prompt_tokens or 0,
+                        output_tokens=tokens.completion_tokens or 0, cached_tokens=cached,
+                        reasoning_tokens=reasoning, speculative=speculative)
+        else:
+            model_usage(attempt_id=request.id, model=MODEL, speculative=speculative, known=False)
+        usage["calls"] += 1
+        return response
 
 
 async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: float | None, tag: str):
@@ -155,7 +188,7 @@ async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: 
             twin = True
             usage["hedges"] += 1
             log("llm_hedge", tag=tag, after=round(hedge_after, 1))
-            tasks.append(asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time())))))
+            tasks.append(asyncio.ensure_future(_request(kwargs, max(2.0, min(per_call, end - time.time())), speculative=True)))
         pending, error = set(tasks), None
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -185,10 +218,12 @@ async def ask_json(system: str, user: str | list, *, thinking: bool = False, tag
         reply = await chat(messages, thinking=thinking, json_mode=True, temperature=0, tag=tag, deadline=deadline,
                            max_tokens=max_tokens * (attempt + 1) if max_tokens else None)
         data = _loads(reply["content"])
-        if isinstance(data, dict):
+        if reply.get("finish_reason") == "length":
+            log("llm_truncated", tag=tag, output_limit=max_tokens, attempt=attempt)
+        if isinstance(data, dict) and reply.get("finish_reason") != "length":
             return data
         messages += [{"role": "assistant", "content": reply["content"][:2000]},
-                     {"role": "user", "content": "That was not one valid JSON object. Reply with the JSON object only."}]
+                     {"role": "user", "content": "The reply was invalid or truncated. Return one complete JSON object; use fewer actions and URLs, sparse facts, no explanations."}]
     log("llm_json_failed", tag=tag)
     return {}
 

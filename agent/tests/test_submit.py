@@ -16,9 +16,9 @@ def test_tan_of_another_tender_never_signs_our_bid():
     assert pick_tan([_tan("REQ-9", "999999", "XT-2")], "XT-1") == (None, "foreign")
     assert pick_tan([], "XT-1") == (None, "none")
     best, _ = pick_tan([_tan("REQ-2", "222222"), _tan("REQ-3", "333333")], "XT-1")   # no reference named: ours
-    assert best["data"]["tan"] == "333333"
+    assert best is None  # Missing tender correlation cannot authorize signing
     best, _ = pick_tan([_tan("REQ-4", "444444", "Ausschreibung XT-1"), _tan("REQ-5", "555555", "XT-11")], "XT-1")
-    assert best["data"]["tan"] == "444444"
+    assert best is None  # Reference must be extracted exactly, not guessed from a containing string
 
 
 def _explorer(observed: dict, seconds_left: float):

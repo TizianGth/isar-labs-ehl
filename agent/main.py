@@ -18,6 +18,7 @@ from rfq import contract
 from rfq.agent.orchestrator import Orchestrator
 from rfq.browser.site import Site
 from rfq.log import log
+from rfq.profile import span
 
 
 def cdp_urls() -> list[str]:
@@ -31,9 +32,7 @@ def cdp_urls() -> list[str]:
 async def open_sites(playwright, access: list[dict]) -> tuple[dict[str, Site], list]:
     urls, browsers, contexts = cdp_urls(), [], []
     if urls:
-        for url in urls:
-            browser = await playwright.chromium.connect_over_cdp(url)
-            browsers.append(browser)
+        browsers = list(await asyncio.gather(*(playwright.chromium.connect_over_cdp(url) for url in urls)))
         for index in range(len(access)):
             browser = browsers[index % len(browsers)]
             if index < len(browsers) and browser.contexts:
@@ -64,13 +63,10 @@ async def main() -> int:
     log("run", run_id=run.get("run_id"), local=token is None, seconds_left=round(contract.seconds_left(run)),
         sites=[a["siteId"] for a in run["access"]], submission=run.get("submission", {}).get("kind"))
     async with async_playwright() as playwright:
-        sites, browsers = await open_sites(playwright, run["access"])
-        # A site that cannot be reached at once must not block the others: missions retry it later.
-        started = await asyncio.gather(*(asyncio.wait_for(site.start(), timeout=100) for site in sites.values()),
-                                       return_exceptions=True)
-        for site, outcome in zip(sites.values(), started):
-            log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
-                error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
+        with span("browser_attach", agent="orchestrator", category="startup"):
+            sites, browsers = await open_sites(playwright, run["access"])
+        for site in sites.values():
+            site.start_task()
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs
@@ -83,7 +79,13 @@ async def main() -> int:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
                            "trace": result.trace if result else None, "brief": orchestrator.brief,
                            "status": orchestrator.status, "erp_complete": sorted(orchestrator.erp_complete),
-                           "evidence": orchestrator.bb.dump()}, handle, ensure_ascii=False, indent=2, default=str)
+                           "evidence": orchestrator.bb.dump(), "source_evidence": orchestrator.source_evidence,
+                           "coverage": {key: vars(value) for key, value in orchestrator.coverage.items()}}, handle, ensure_ascii=False, indent=2, default=str)
+        pending = [site._start_task for site in sites.values() if site._start_task and not site._start_task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         if not cdp_urls():
             for browser in browsers:
                 await browser.close()

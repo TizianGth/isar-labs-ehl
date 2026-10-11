@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "freeze_policy": "Never change an inspected holdout version and call it unseen.",
   "worlds": [
     {
       "slug": "dev-classic",
@@ -8,7 +9,9 @@
       "case": "baseline",
       "topology": null,
       "split": "development",
-      "data_sha256": "578a4e2980c79f0cbb1c4968618cbae4b116ff3c147e7cad1f206724a6125447"
+      "data_sha256": "fa51a4c1fca838c1e7f07fc473401f19cdb71187769f9f627b8246354ddd34e1",
+      "runtime_sha256": "e76e1cb1455d23ad034a356df85c78bba7d163268102e47eb00ca5ebea676198",
+      "faults": []
     },
     {
       "slug": "dev-locale",
@@ -17,7 +20,9 @@
       "case": "locale-boundary",
       "topology": null,
       "split": "development",
-      "data_sha256": "5a94685130d8460804b2ccae3352bdd4c0624b61276367c88140295fffbf85fb"
+      "data_sha256": "24399682f935bca199f1090282ef447a0a617babd6acd88ac49e684bb53554a7",
+      "runtime_sha256": "e76e1cb1455d23ad034a356df85c78bba7d163268102e47eb00ca5ebea676198",
+      "faults": []
     },
     {
       "slug": "holdout-withdrawal",
@@ -26,7 +31,9 @@
       "case": "future-withdrawal",
       "topology": null,
       "split": "holdout",
-      "data_sha256": "88577f73a472f4efc80f4790ffee1050299530f03e358e3ceb13203c120d2023"
+      "data_sha256": "b110494d19e789c97eb0ed569f3423825ed8a58e53a4664814a4d0a6d8bb947c",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": []
     },
     {
       "slug": "holdout-stock",
@@ -35,7 +42,11 @@
       "case": "shared-stock",
       "topology": null,
       "split": "holdout",
-      "data_sha256": "c3380551d8482fe616da5ccbf5712b4fe6f1b68190611d9794cee02618d97ffc"
+      "data_sha256": "ae6399669da89767cb008ca69753ee154631f7c5616dc5dc73046e9997f67e7b",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": [
+        "expired-session"
+      ]
     },
     {
       "slug": "holdout-scanned",
@@ -44,7 +55,11 @@
       "case": "baseline",
       "topology": null,
       "split": "holdout",
-      "data_sha256": "7f15cc103ed3eb810c11672c713b0174a209829a1596e756197254c67bd29a42"
+      "data_sha256": "afc7c19681a6ba7d8321a3c3a6e3c2f7a452b5c77197b70d95e63c364497e449",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": [
+        "changing-controls"
+      ]
     },
     {
       "slug": "holdout-blocked",
@@ -53,7 +68,9 @@
       "case": "blocked",
       "topology": null,
       "split": "holdout",
-      "data_sha256": "ae5a36c8211db5e3a5d217d705a10e909007b3fa8ba04c81ec29a4d35d4df326"
+      "data_sha256": "4cae6cc1f0ccb7b9151486c19f9905d51cb70bed08a9cb6412c92b82d87fb187",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": []
     },
     {
       "slug": "holdout-documents",
@@ -62,7 +79,12 @@
       "case": "locale-boundary",
       "topology": "documents",
       "split": "holdout",
-      "data_sha256": "203279fb8238e0d55cc8dce3225f958e99fa24589f48e44e71595dd89dead1a9"
+      "data_sha256": "b7c5f1880a341c33e51b84e26d25ef27fba19e88548471ef7540f71c55f6edb4",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": [
+        "delayed-commit",
+        "stuck-subresource"
+      ]
     },
     {
       "slug": "holdout-search",
@@ -71,7 +93,11 @@
       "case": "shared-stock",
       "topology": "search",
       "split": "holdout",
-      "data_sha256": "78a1390565182adbd97f935304c9faec537f0def4b0682e9464a9489b47c1c74"
+      "data_sha256": "08151322ffe6aa82d2608c3e3b41cb0db9e3047285b9d6df2b3b7736b1bdcd8e",
+      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "faults": [
+        "foreign-tan"
+      ]
     }
   ]
 }

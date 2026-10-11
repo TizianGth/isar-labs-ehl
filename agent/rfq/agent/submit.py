@@ -11,9 +11,11 @@ import time
 from decimal import Decimal
 
 from .. import llm
-from ..log import log
+from ..log import log, register_secret
+from ..profile import span
 from ..rules import parse
 from .explorer import TOOLS, Explorer, Mission, _tool
+from .fused import FusedExplorer
 from .prompts import EXTRACT_SYSTEM, KINDS
 from .review import validate_review
 
@@ -55,7 +57,7 @@ def _plain(value) -> str:
     return text.rstrip("0").rstrip(".").replace(".", ",") if "." in text else text
 
 
-class SubmitExplorer(Explorer):
+class SubmitExplorer(FusedExplorer):
     orchestrator = None
     tan: str | None = None
     state = "not_started"           # prepared | attempted | confirmed | failed | unknown
@@ -65,6 +67,76 @@ class SubmitExplorer(Explorer):
     @property
     def submitted(self) -> bool:
         return self.state in ("confirmed", "prepared")
+
+    def values(self):
+        orch = self.orchestrator
+        identity = next((i['data'].get('mailbox_address') for i in orch.bb.get('mail_list')
+                         if i['data'].get('mailbox_address')), '')
+        return {'answer': orch.result.answer,
+                'positions': {p['position']: p for p in orch.result.answer['positions']},
+                'filters': {pid: values.get('filters', {}) for pid, values in orch.result.breakdown.items()},
+                'bidder': {'company': orch.brief.get('bidder_company'), 'vat_id': orch.brief.get('bidder_vat_id'), 'email': identity},
+                'signing': {'tan': self.tan}}
+
+    def decision_context(self):
+        values = self.values()
+        visible = self.snapshot.text if self.snapshot else ''
+        selected = {pid: row for pid, row in values['positions'].items() if _mentions(visible, pid)}
+        if not selected:
+            selected = values['positions']
+        summary = {k: v for k, v in values['answer'].items() if k != 'positions'}
+        # Value handles replace repeated model copying; the model still chooses
+        # the field meaning and the position, including filters and declarations.
+        return ('BINDABLE DATA (JSON pointer paths; bind_fields does value copying and readback):\n' +
+                __import__('json').dumps({'answer': summary, 'positions': selected,
+                                        'filters': {pid: values['filters'].get(pid, {}) for pid in selected},
+                                        'bidder': values['bidder'], 'signing': {'tan': 'available' if self.tan else 'request then get_tan'}},
+                                       ensure_ascii=False, default=str) +
+                '\nFormats de=decimal comma, en=decimal dot, integer=whole number, text=exact string. '
+                'Use /positions/<exact position>/unit_price, /filters/<position>/<filter>, /answer/total_net, '
+                '/bidder/company, /signing/tan. Bind one observed control per field. Use apply only for a dependent filter.')
+
+    async def bind_fields(self, args):
+        fields = []
+        for binding in args.get('fields') or []:
+            path = binding.get('path', '')
+            if not isinstance(path, str) or not path.startswith('/'):
+                return 'ERROR: binding path must be an absolute JSON pointer'
+            value = self.values()
+            try:
+                for component in path[1:].split('/'):
+                    component = component.replace('~1', '/').replace('~0', '~')
+                    value = value[int(component)] if isinstance(value, list) else value[component]
+            except (KeyError, IndexError, ValueError, TypeError):
+                return 'ERROR: unknown bid data path ' + path
+            if value is None or isinstance(value, (dict, list)):
+                return 'ERROR: selected value is unavailable or not scalar'
+            fmt = binding.get('format', 'text')
+            if fmt not in ('text', 'de', 'en', 'integer'):
+                return 'ERROR: unsupported field format'
+            try:
+                if fmt == 'de':
+                    value = de(value)
+                elif fmt == 'en':
+                    value = f'{Decimal(str(value)):f}'
+                elif fmt == 'integer':
+                    number = Decimal(str(value))
+                    if number != number.to_integral_value():
+                        return 'ERROR: integer binding would discard fractional data'
+                    value = str(int(number))
+            except Exception:
+                return 'ERROR: value is not numeric in the chosen format'
+            if path == '/signing/tan':
+                register_secret(value)
+            field = {'ref': binding.get('ref'), 'value': str(value)}
+            if binding.get('apply'):
+                field['apply'] = binding['apply']
+            if hasattr(self.site, 'field_identity'):
+                field['identity'] = await self.site.field_identity(field['ref'])
+            fields.append(field)
+        with span('submission_bindings', agent='submit', category='browser', count=len(fields)):
+            result = await self.site.act('fill_fields', {'fields': fields, 'then_click': args.get('then_click')})
+        return result
 
     async def _call(self, name: str, args: dict) -> str:
         if name == "get_tan":
@@ -78,7 +150,7 @@ class SubmitExplorer(Explorer):
         before = len(orch.bb.items.get("mail_message", []))
 
         def ours(m: dict) -> bool:                    # a TAN for another tender must never sign this bid
-            return not m.get("reference") or _mentions(m.get("reference"), orch.brief.get("tender_reference"))
+            return parse.norm_id(m.get('reference')) == parse.norm_id(orch.brief.get('tender_reference'))
 
         def tan_progress() -> tuple[str, bool]:
             found = [i["data"] for i in orch.bb.items.get("mail_message", [])[before:]
@@ -86,14 +158,18 @@ class SubmitExplorer(Explorer):
             return (f"TAN messages for {orch.brief.get('tender_reference')} extracted since the request: {len(found)}", bool(found))
 
         mission = Mission("tan", f"""A signing TAN for tender {orch.brief.get('tender_reference')} was just requested and
-arrives as a new message in the inbox (no search needed, maybe reload the inbox). Find the NEWEST TAN message
-(highest request number / most recent) and extract it with extract_urls kind 'mail_message'.""",
+arrives as a new message. Read the relevant signing-message list completely, including all pages; do not finish
+on the first TAN newly extracted into memory. Extract ALL exact-reference TAN candidates with extract_urls kind mail_message.
+Compare dated messages and request numbers to identify the newest actual signing request. Finish only after that coverage.""",
                           {"mail_message": "one opened e-mail message"}, max_steps=10,
-                          deadline=min(orch.end - 20, time.time() + 120), progress=tan_progress)
+                          deadline=min(orch.end - 20, time.time() + 120))
         site = orch.site_for("mail")
+        await site.wait_started()
         site.fresh_start()
         await site.goto(site.url)
-        await Explorer(site, mission, orch.extract).run()
+        tan_explorer = await FusedExplorer(site, mission, orch.extract).run()
+        if tan_explorer.status not in ("finished", "complete"):
+            return "ERROR: signing-message coverage is incomplete; inspect current messages before using a TAN"
         best, problem = pick_tan([i["data"] for i in orch.bb.items.get("mail_message", [])[before:]],
                                  orch.brief.get("tender_reference"))
         if problem == "foreign":
@@ -103,13 +179,14 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         if best is None:
             return "ERROR: no TAN message found yet; wait a moment and call get_tan again"
         self.tan = str(best["data"]["tan"]).strip()
+        register_secret(self.tan)
         log("tan", tan_found=True)
-        return f"TAN: {self.tan} (valid for a few minutes; type it into the TAN field now, then submit_bid)"
+        return "TAN available through /signing/tan; bind it to the observed TAN field, then submit_bid."
 
     async def _read(self, kind: str, text: str) -> dict:
         spec = KINDS[kind]
         return await llm.ask_json(EXTRACT_SYSTEM, f"KIND: {kind} ({spec['describe']})\nReturn JSON with this shape:\n"
-                                  f"{spec['schema']}\n<<<PAGE TEXT>>>\n{text[:40000]}\n<<<END>>>", tag=f"submit:{kind}")
+                                  f"{spec['schema']}\n<<<PAGE TEXT>>>\n{text}\n<<<END>>>", tag=f"submit:{kind}", deadline=self.orchestrator.end - 5, max_tokens=4096)
 
     async def _submit(self, ref: str) -> str:
         if self.state in ("confirmed", "prepared", "unknown"):
@@ -117,7 +194,8 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         orch = self.orchestrator
         answer, skipped = orch.result.answer, orch.result.skipped
         page_text = await self.site.full_text()
-        review = validate_review(answer, await self._read("bid_review", page_text), skipped)
+        with span('submission_review', agent='submit', category='model'):
+            review = validate_review(answer, await self._read("bid_review", page_text), skipped)
         log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
             verified=len(review["verified"]))
         left = orch.end - time.time()
@@ -138,12 +216,13 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         finally:
             await asyncio.sleep(0.5)
             self.site.accept_next_dialog = False     # never leave the next dialog pre-approved
-        if result.startswith("ERROR"):
-            self.state = "failed"
-            log("submit_click_failed", result=result)
-            return f"{result}. Nothing was submitted; fix it and call submit_bid again."
+        if result.startswith("NOT_DISPATCHED:"):
+            return "ERROR: " + result + "; observe and choose the current submit control"
         self.state = "attempted"
-        outcome = await self._outcome()
+        # Even a click timeout may have applied a write. Inspect its outcome
+        # before any retry; a missing receipt is never proof of non-submission.
+        with span('submission_receipt', agent='submit', category='signing'):
+            outcome = await self._outcome()
         if outcome.get("confirmed"):
             self.state, self.receipt, self.stop = "confirmed", outcome.get("receipt"), True
             log("submitted", state=self.state, receipt=self.receipt)
@@ -161,8 +240,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
         """Read the page after the final click (twice if the first look is inconclusive)."""
         for attempt in range(2):
             try:
-                await self.site.act("wait_for", {"condition": "change", "timeout_s": 4})
-                text = await self.site.observe(limit=6000)
+                text = await self.site.full_text()
             except Exception as error:     # the run may end right after acceptance (logins stop working)
                 log("submit_observe_failed", error=str(error)[:200])
                 return {}
@@ -170,6 +248,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             log("submit_outcome", attempt=attempt + 1, outcome=outcome, page=text[:1500])
             if outcome.get("confirmed") or outcome.get("errors"):
                 return outcome
+            await asyncio.sleep(.4)
         return outcome
 
 
@@ -180,12 +259,11 @@ def _mentions(text, reference) -> bool:
 
 
 def pick_tan(messages: list[dict], reference) -> tuple[dict | None, str]:
-    """The newest TAN message (highest request number) for our tender. A TAN of another tender never signs this
-    bid; a TAN message that names no tender counts as ours. Returns (message, "") or (None, "none" | "foreign")."""
+    """The newest TAN message (highest request number) for our exact tender. A message without a correlated
+    tender reference does not authorize signing. Returns (message, "") or (None, "none" | "foreign")."""
     tans = [m for m in messages if (m.get("data") or {}).get("tan")]
     mine = ([m for m in tans if parse.norm_id(m.get("reference")) == parse.norm_id(reference)]
-            or [m for m in tans if _mentions(m.get("reference"), reference)]
-            or [m for m in tans if not m.get("reference")])
+            )
     if not mine:
         return None, "foreign" if tans else "none"
     return max(mine, key=lambda m: int(re.sub(r"\D", "", str((m.get("data") or {}).get("request_number") or 0)) or 0)), ""
@@ -203,8 +281,8 @@ async def submit_bid(orch, result) -> None:
 Submission instructions from the brief: {brief.get('submission_steps')}
 Bidder: company "{brief.get('bidder_company')}", VAT id "{brief.get('bidder_vat_id')}"{f', contact e-mail "{mail_identity}"' if mail_identity else ''}.
 
-THE BID (enter exactly these values; German number format as shown):
-{answer_table(answer, result.skipped, result.breakdown)}
+Use bind_fields to copy the computed data into model-selected fields. Skipped positions: {result.skipped}.
+The per-page bindable data contains exact values and filters; do not recalculate prices.
 
 Procedure and traps:
 - If participation/interest must be registered first, do it. Each form step is saved only with "Weiter"/next;
@@ -212,7 +290,7 @@ Procedure and traps:
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be
   preselected!). Decision 'no_bid' = declaration of non-participation (Verzichtserklärung): it carries NO positions;
   if the form still lists position rows (maybe with prefilled quantities), mark every one as omitted / remove it.
-- Positions may come in any order: read the position number on the page and use THAT position's line of the table.
+- Positions may come in any order: read the position number on the page and use THAT position's data path.
   The product filters of a position depend on each other (the next one stays disabled until the choice is applied):
   set ALL of them in ONE fill_fields step, one field per filter in page order, each with "apply": <ref of the form's
   apply button, e.g. "Auswahl übernehmen">. If that step stops, continue from where it stopped. When our catalogue
@@ -222,12 +300,13 @@ Procedure and traps:
 - Never use "add position" (extra positions cost points). Use "omit position" only for positions marked SKIP.
 - Discount and NET total: type our values; ignore any displayed gross amount incl. VAT or other suggested totals.
 - Declarations: acknowledge the tender documents; do NOT accept/declare your own terms and conditions (AGB).
-- On the final review page compare everything with the table above. Then click the button that requests the TAN,
-  call get_tan, type the TAN, and call submit_bid with the ref of the final binding submit button. submit_bid checks
+- On the final review page compare everything with the computed answer. Then click the button that requests the TAN,
+  call get_tan, bind /signing/tan, and call submit_bid with the ref of the final binding submit button. submit_bid checks
   the review page against our bid and only reports success when the website confirms the receipt.
 - If the page reports validation errors, fix them and continue."""
     mission = Mission("submit", goal, {}, max_steps=170, deadline=orch.end - 5, max_blocked=10_000, max_visual=2)
     site = orch.site_for("tender")
+    await site.wait_started()
     site.fresh_start()
     if not await site.responsive():          # never start the decisive phase on a hung tab
         await site.recover_tab("before the submission")

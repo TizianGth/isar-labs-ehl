@@ -29,12 +29,13 @@ class Observation:
     tables: dict[str, list[list[str]]] = field(default_factory=dict)
     controls: dict[str, str] = field(default_factory=dict)
     changed: bool = True
+    errors: list[str] = field(default_factory=list)
 
     @classmethod
     def capture(cls, text: str, url: str, previous=None):
         snapshot = cls(digest([url, text]), url, text)
         snapshot.changed = previous is None or snapshot.id != previous.id
-        region, table, current = [], [], []
+        region, table = [], []
         def flush_region():
             if region:
                 snapshot.regions['r' + str(len(snapshot.regions) + 1)] = '\n'.join(region)
@@ -58,16 +59,40 @@ class Observation:
         flush_region()
         return snapshot
 
+    def source_for_quote(self, quote):
+        sources = set()
+        for match in re.finditer(re.escape(quote), self.text):
+            headers = list(re.finditer(r'^=== frame \d+: (.+?) ===$', self.text[:match.start()], re.M))
+            sources.add(headers[-1][1] if headers else self.url)
+        if len(sources) != 1:
+            raise ValueError('quote is absent or ambiguous across source frames')
+        return next(iter(sources))
+
     def view(self, limit=6500):
         """Include controls and exact content regions; omitted regions stay addressable."""
         lines = [f'snapshot={self.id}; changed={self.changed}; URL={self.url}']
-        lines.extend(dict.fromkeys(self.controls.values()))
+        table_lines = {'| ' + ' | '.join(row) + ' |' for rows in self.tables.values() for row in rows[1:]}
+        lines.extend(dict.fromkeys(line for line in self.controls.values() if line not in table_lines))
+        for key, rows in self.tables.items():
+            for row in rows[1:4]:
+                lines.append(f'{key} sample: ' + ' | '.join(row))
+            for row in rows[4:]:
+                # Row controls remain observable, without repeatedly copying all
+                # business values. The full row remains in its evidence region.
+                for cell in row:
+                    if REF.search(cell):
+                        lines.append(f'{key} row control: {cell}')
         lines.extend(f'table {key}: header={rows[0]!r}; rows={len(rows)-1}' for key, rows in self.tables.items())
+        for key, rows in self.tables.items():
+            if len(rows) > 4:
+                handles = [region for region, text in self.regions.items()
+                           if any('| ' + ' | '.join(row) + ' |' in text for row in rows[4:])]
+                lines.append(f'{key}: rows 4–{len(rows)-1} values omitted; read_region ' + ', '.join(handles))
         used = sum(len(x) for x in lines)
         for key, text in self.regions.items():
             # Interactive lines were already listed; removing duplicate copies
             # does not change identifiers, numerical punctuation or source text.
-            content = '\n'.join(line for line in text.splitlines() if not REF.search(line))
+            content = '\n'.join(line for line in text.splitlines() if not REF.search(line) and line not in table_lines)
             if used + len(content) <= limit:
                 lines.append(f'[{key}]\n{content}')
                 used += len(content)
@@ -84,22 +109,25 @@ class Decision:
     bindings: list[dict] = field(default_factory=list)
     coverage: list[dict] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @classmethod
     def parse(cls, data, snapshot_id, allowed):
         if not isinstance(data, dict) or data.get('snapshot_id', snapshot_id) != snapshot_id:
             raise ValueError('decision belongs to another observation')
-        actions = []
+        actions, errors = [], []
         for action in (data.get('actions') or data.get('do') or [])[:8]:
             if not isinstance(action, dict):
-                raise ValueError('action must be an object')
+                errors.append('action must be an object')
+                continue
             action = dict(action)
             name = action.pop('a', action.pop('name', ''))
             if name not in allowed:
-                raise ValueError('unknown action ' + str(name))
+                errors.append('unknown action ' + str(name))
+                continue
             actions.append((name, action))
         return cls(snapshot_id, data.get('facts') or [], actions, data.get('bindings') or [],
-                   data.get('coverage') or [], data.get('gaps') or [])
+                   data.get('coverage') or [], data.get('gaps') or [], errors)
 
 
 @dataclass

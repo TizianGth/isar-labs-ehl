@@ -64,7 +64,21 @@ def oracle(case):
                 tariff = re.search(r'packaging tariff ([\w-]+)', sentence)
                 setups[m[1]] = Decimal(setup[1]) if setup else Decimal(0)
                 tariffs[m[1]] = tariff[1].rstrip('.') if tariff else None
-    messages = {m['id']: m for m in case['messages'] if m['datetime_utc'] <= at}
+    topics = {'approval': case['director'], 'clause': case['authorized']['clause_rules'],
+              'packing': case['authorized']['packaging'], 'fx': case['authorized']['fx'],
+              'index': case['authorized']['metal_index']}
+    message_patterns = {'approval': r'discount of', 'clause': r'condition group',
+                        'packing': r'per started carton', 'fx': r'fixes [A-Z]+ at',
+                        'index': r'per kg from'}
+    reference = re.compile(r'(?<![\w-])' + re.escape(case['reference']) + r'(?![\w-])')
+    messages = {}
+    for topic, sender in topics.items():
+        candidates = [m for m in case['messages'] if m['datetime_utc'] <= at and
+                      m['sender'].split('@')[0].casefold() == sender.casefold() and
+                      reference.search(m['body']) and re.search(message_patterns[topic], m['body'])]
+        if not candidates:
+            raise ValueError('Missing authorized current commercial evidence: ' + topic)
+        messages[topic] = max(candidates, key=lambda m: m['datetime_utc'])
     discount = Decimal(re.search(r'discount of ([\d.]+)', messages['approval']['body'])[1])
     packing = {m[1]: Decimal(m[2]) for m in re.finditer(
         r'([\w-]+) costs EUR ([\d.]+) per started carton', messages['packing']['body'])}
@@ -117,6 +131,9 @@ def counterfactual(case, seed, extra_position=False):
     case, rng = copy.deepcopy(case), random.Random(seed)
     ids = {case['reference']: f'SYN-RFQ-{seed}', case['company']: f'Synthetic Engineering {seed}',
            case['vat_id']: f'TEST-VAT-{seed}', 'boreal.example': f'world{seed}.example'}
+    ids[case['director']] = f'manager{seed}'
+    for index, sender in enumerate(dict.fromkeys(case['authorized'].values())):
+        ids[sender] = f'authorized{seed}_{index}'
     for m in case['materials']:
         ids[m['material_number']] = f'ITEM-{seed}-{len(ids)}'
         ids.setdefault(m['catalog_group'], f'GROUP-{seed}-{len(ids)}')
@@ -149,13 +166,26 @@ def counterfactual(case, seed, extra_position=False):
         case['positions'].append(p)
         q = next(q for q in case['qa'] if q['number'] == '5')
         q['text'] += f" Position {p['position']} uses condition group {ids['CLAUSE-A']} and packaging tariff {ids['PACK-A']}."
+    # Alter approval and effective quantities independently of cost and layout.
+    approved = Decimal(rng.choice(['4.25', '7.5', '11.75', '13']))
+    for message in case['messages']:
+        if message['id'] == 'approval':
+            message['body'] = re.sub(r'discount of [\d.]+', 'discount of ' + str(approved), message['body'])
+    for row in case['qa']:
+        if 'changed to' in row['text']:
+            row['text'] = re.sub(r'changed to (\d+) pieces', lambda m:
+                'changed to ' + str(int(m[1]) + seed % 4) + ' pieces', row['text'])
+    case['messages'].append({'id': 'unauthorized-approval', 'folder': 'archive',
+        'subject': 'Discount approval ' + case['reference'], 'sender': 'assistant@world' + str(seed) + '.example',
+        'datetime_utc': case['scenario_datetime_utc'],
+        'body': 'For ' + case['reference'] + ' I approve an order discount of 55 percent.'})
     rng.shuffle(case['positions'])
     rng.shuffle(case['materials'])
     rng.shuffle(case['messages'])
     return case
 
 
-def build(destination=None):
+def build(destination=None, selected=None):
     destination = Path(destination or ROOT / 'bundles')
     cases, manifest = load_cases(), []
     # Verify independent calculations against the previously hand-derived data
@@ -164,12 +194,20 @@ def build(destination=None):
     for name, case in cases.items():
         assert oracle(case) == expected_answer(name), (name, oracle(case), expected_answer(name))
     for slug, profile, name, seed, topology in WORLDS:
+        if selected is not None and slug not in selected:
+            continue
         folder = destination / slug
         folder.mkdir(parents=True, exist_ok=True)
         data = counterfactual(cases[name], seed, extra_position=topology is not None)
         config = {'profile': profile, 'case': name, 'seed': seed, 'topology': topology, 'data': data}
-        if topology == 'documents':
-            config['fault'] = 'delayed-commit'
+        if slug in {'holdout-documents', 'holdout-withdrawal'}:
+            config['commercial_site'] = 'tender' if topology == 'documents' else 'erp'
+            config['relocated_topics'] = ['clause', 'packing', 'fx', 'index']
+        faults = {'holdout-documents': ['delayed-commit', 'stuck-subresource'],
+                  'holdout-scanned': ['changing-controls'],
+                  'holdout-stock': ['expired-session'],
+                  'holdout-search': ['foreign-tan']}
+        config['faults'] = faults.get(slug, [])
         for source in (ROOT / 'kernel').glob('*.py'):
             shutil.copy2(source, folder / source.name)
         shutil.copy2(ROOT / 'kernel' / 'cases.json', folder / 'cases.json')
@@ -189,11 +227,25 @@ def build(destination=None):
         (folder / 'BRIEF.md').write_text(brief)
         (folder / '.gitignore').write_text('.atira/\n__pycache__/\n')
         digest = hashlib.sha256((folder / 'world.json').read_bytes() + (folder / 'expected.json').read_bytes()).hexdigest()
+        runtime = hashlib.sha256()
+        for path in sorted(folder.glob('*.py')):
+            runtime.update(path.name.encode() + b'\0' + path.read_bytes())
+        runtime_digest = runtime.hexdigest()
         manifest.append({'slug': slug, 'seed': seed, 'profile': profile, 'case': name, 'topology': topology,
-                         'split': 'development' if slug.startswith('dev-') else 'holdout', 'data_sha256': digest})
-    (ROOT / 'suite.json').write_text(json.dumps({'version': 1, 'worlds': manifest}, indent=2))
+                         'split': 'development' if slug.startswith('dev-') else 'holdout',
+                         'data_sha256': digest, 'runtime_sha256': runtime_digest, 'faults': config['faults']})
+    suite_path = ROOT / 'suite.json' if destination == ROOT / 'bundles' else destination / 'suite.json'
+    if selected is not None and suite_path.exists():
+        previous = json.loads(suite_path.read_text())['worlds']
+        updated = {item['slug']: item for item in previous + manifest}
+        manifest = [updated[slug] for slug, *_ in WORLDS if slug in updated]
+    suite_path.write_text(json.dumps({'version': 1, 'freeze_policy': 'Never change an inspected holdout version and call it unseen.', 'worlds': manifest}, indent=2))
     return manifest
 
 
 if __name__ == '__main__':
-    print(json.dumps(build(), indent=2))
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--world', action='append', choices=[world[0] for world in WORLDS])
+    options = parser.parse_args()
+    print(json.dumps(build(selected=options.world), indent=2))

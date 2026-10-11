@@ -1,10 +1,4 @@
-"""Tests for token usage and latency optimizations:
-- Prompt cache activation (EXTRACT_SYSTEM token length >= 1,024)
-- Compact history ring buffer in Explorer loop
-- Early completion of mail_progress when wanted topics are fulfilled
-- Early completion of erp_progress when active matching materials have scales
-- Batched URL extraction via extract_many
-"""
+"""Compact inference must preserve source coverage and exact attribution."""
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,11 +7,13 @@ import pytest
 from rfq.agent.explorer import Explorer, Mission
 from rfq.agent.orchestrator import Blackboard, Orchestrator
 from rfq.agent.prompts import EXTRACT_SYSTEM
+from rfq.agent.records import Coverage
 
 
-def test_extract_system_token_length():
-    """EXTRACT_SYSTEM must be sufficiently detailed (>= 4,000 chars / ~1,024 tokens) to trigger platform prompt caching."""
-    assert len(EXTRACT_SYSTEM) >= 4000, f"EXTRACT_SYSTEM is {len(EXTRACT_SYSTEM)} chars, expected >= 4000"
+def test_extract_system_preserves_exact_evidence_rules():
+    for marker in ('locale', 'minus', 'percent', 'provenance', 'absent'):
+        assert marker in EXTRACT_SYSTEM.lower()
+    assert len(EXTRACT_SYSTEM) < 2000
 
 
 def test_mail_progress_early_completion():
@@ -35,7 +31,7 @@ def test_mail_progress_early_completion():
     # Add mailbox listing with 5 messages (1 discount, 1 packaging, 3 decoys)
     orch.bb.add("mail_list", {
         "mailbox_address": "sales@bidder.com",
-        "folder": "inbox",
+        "folder": "inbox", "query": "",
         "page": 1,
         "pages_total": 1,
         "messages": [
@@ -70,7 +66,7 @@ def test_mail_progress_early_completion():
 
     text, complete = orch.mail_progress()
     # Even though /msg/3, /msg/4, /msg/5 are unopened, complete must be True!
-    assert complete is True, f"Expected mail_progress to complete, got False. Text: {text}"
+    assert complete is False, "Unopened exact-reference records can contain newer approvals"
     assert "topics NOT found yet" not in text
 
 
@@ -90,7 +86,7 @@ def test_mail_progress_completes_when_all_listed_messages_read_with_absent_topic
     # Mailbox listing with inbox and archive
     orch.bb.add("mail_list", {
         "mailbox_address": "sales@bidder.com",
-        "folder": "inbox",
+        "folder": "inbox", "query": "",
         "page": 1,
         "pages_total": 1,
         "messages": [
@@ -100,7 +96,7 @@ def test_mail_progress_completes_when_all_listed_messages_read_with_absent_topic
     }, "/list-inbox")
     orch.bb.add("mail_list", {
         "mailbox_address": "sales@bidder.com",
-        "folder": "archive",
+        "folder": "archive", "query": "",
         "page": 1,
         "pages_total": 1,
         "messages": [],
@@ -126,6 +122,7 @@ def test_mail_progress_completes_when_all_listed_messages_read_with_absent_topic
         "data": {"tariffs": {"T1": {"eur_per_carton": "12.50"}}},
     }, "/msg/2")
 
+    orch.coverage["mail_folders"] = Coverage("mail_folders", ("inbox", "archive"), True)
     text, complete = orch.mail_progress()
     # All listed messages have been read; setup_pool doesn't exist, so complete must be True!
     assert complete is True, f"Expected mail_progress to complete, got False. Text: {text}"
@@ -176,10 +173,10 @@ def test_erp_progress_early_completion():
             "status_meaning": "blocked",
             "conditions": [],
         }],
-    }, "/mm03")
+    }, "/master-record")
 
     text, complete = orch.erp_progress("GR-1", reqs)
-    assert complete is True, f"Expected erp_progress to complete, got False. Text: {text}"
+    assert not complete, "A fitting active candidate does not establish complete catalogue coverage"
 
 
 def test_extract_many_batches_items(monkeypatch):
@@ -193,8 +190,8 @@ def test_extract_many_batches_items(monkeypatch):
         call_count += 1
         return {
             "results": [
-                {"url": "http://site/item1", "data": {"material_number": "HZ-1"}},
-                {"url": "http://site/item2", "data": {"material_number": "HZ-2"}},
+                {"source_id": "s0", "data": {"materials": [{"material_number": "HZ-1"}]}},
+                {"source_id": "s1", "data": {"materials": [{"material_number": "HZ-2"}]}},
             ]
         }
 
