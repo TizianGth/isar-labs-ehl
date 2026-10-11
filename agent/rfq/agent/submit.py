@@ -32,8 +32,9 @@ SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
               "fields": {"type": "array", "description": "fill_fields: [{ref, value}]", "items": {"type": "object",
                          "properties": {"ref": {"type": "string"}, "value": {"type": "string"}}}}},
               "required": ["action"]}}}, ["steps"]),
-    _tool("submit_bid", "Final binding submission: clicks the given button and confirms the browser dialog. Only on "
-          "the final review/sign page with the TAN entered.", {"ref": {"type": "string"}}, ["ref"]),
+    _tool("submit_bid", "Final binding submission: clicks the given button and confirms the browser dialog; a "
+          "confirmation the page itself asks for is confirmed too. Only on the final review/sign page with the TAN "
+          "entered.", {"ref": {"type": "string"}}, ["ref"]),
 ]
 
 
@@ -149,33 +150,40 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
     async def _submit(self, ref: str) -> str:
         if self.state in ("confirmed", "prepared", "unknown"):
             return f"ERROR: submission already {self.state}; call finish"
-        orch = self.orchestrator
-        answer, skipped = orch.result.answer, orch.result.skipped
-        page_text = await self.site.full_text()
-        review = validate_review(answer, await self._review_reading(page_text), skipped)
-        log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
-            verified=len(review["verified"]))
-        if review["blocking"] and self.review_blocks < 2 and orch.end - time.time() > 150:
-            self.review_blocks += 1
-            return ("ERROR: the review page does not match our bid; fix before signing (use the form's back/edit "
-                    "functions, keep the TAN step for last):\n- " + "\n- ".join(review["mismatches"] + review["missing"]))
-        if os.environ.get("RFQ_DRY_RUN") == "1":
-            self.state, self.stop = "prepared", True
-            log("dry_run_stop", review=review, page=page_text[:2000])
-            return "DRY RUN: everything is ready; not submitted. Call finish."
-        self.site.accept_next_dialog = True
-        metrics.mark("submit_click")
-        try:
-            result = await self.site.act("click", {"ref": ref})
-        finally:
-            await asyncio.sleep(0.5)
-            self.site.accept_next_dialog = False     # never leave the next dialog pre-approved
+        confirming = self.state == "awaiting_confirmation"     # the bid was sent; the page asked to confirm it
+        if not confirming:
+            orch = self.orchestrator
+            answer, skipped = orch.result.answer, orch.result.skipped
+            page_text = await self.site.full_text()
+            review = validate_review(answer, await self._review_reading(page_text), skipped)
+            log("review_check", blocking=review["blocking"], mismatches=review["mismatches"], missing=review["missing"],
+                verified=len(review["verified"]))
+            if review["blocking"] and self.review_blocks < 2 and orch.end - time.time() > 150:
+                self.review_blocks += 1
+                return ("ERROR: the review page does not match our bid; fix before signing (use the form's back/edit "
+                        "functions, keep the TAN step for last):\n- " + "\n- ".join(review["mismatches"] + review["missing"]))
+            if os.environ.get("RFQ_DRY_RUN") == "1":
+                self.state, self.stop = "prepared", True
+                log("dry_run_stop", review=review, page=page_text[:2000])
+                return "DRY RUN: everything is ready; not submitted. Call finish."
+            metrics.mark("submit_click")
+        result = await self._click_final(ref)
         if result.startswith("ERROR"):
+            if confirming:
+                return f"{result}. Call submit_bid again with the ref of the page's confirm button."
             self.state = "failed"
             log("submit_click_failed", result=result)
             return f"{result}. Nothing was submitted; fix it and call submit_bid again."
         self.state = "attempted"
         outcome = await self._outcome()
+        for _ in range(2):      # the site asks on the page instead of a browser dialog: confirm exactly that
+            confirm = re.sub(r"[^\w]", "", str(outcome.get("confirm_ref") or ""))
+            if outcome.get("confirmed") or outcome.get("errors") or not outcome.get("needs_confirmation") or not confirm:
+                break
+            log("submit_confirmation", ref=confirm)
+            if (await self._click_final(confirm)).startswith("ERROR"):
+                break
+            outcome = await self._outcome()
         if outcome.get("confirmed"):
             self.state, self.receipt, self.stop = "confirmed", outcome.get("receipt"), True
             metrics.mark("submit_confirmed")
@@ -186,9 +194,23 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
             log("submit_rejected", errors=outcome.get("errors"))
             return "ERROR: the website did not accept the bid: " + "; ".join(map(str, outcome["errors"])) + \
                    ". Fix it and call submit_bid again."
+        if outcome.get("needs_confirmation"):
+            self.state = "awaiting_confirmation"
+            log("submit_awaiting_confirmation", outcome=outcome)
+            return ("The website asks to confirm the submission on the page. Call submit_bid with the ref of its "
+                    "confirm button (only that button).")
         self.state, self.stop = "unknown", True
         log("submit_unknown", outcome=outcome)
         return "The outcome is unclear; not retrying to avoid a double submission. Call finish."
+
+    async def _click_final(self, ref: str) -> str:
+        """Click a button of the binding submission; a browser confirm() dialog it opens is accepted."""
+        self.site.accept_next_dialog = True
+        try:
+            return await self.site.act("click", {"ref": ref})
+        finally:
+            await asyncio.sleep(0.5)
+            self.site.accept_next_dialog = False     # never leave the next dialog pre-approved
 
     async def _review_reading(self, page_text: str) -> dict:
         """The model's reading of the review page: the one made while the TAN arrived if the page has not changed
@@ -220,7 +242,7 @@ arrives as a new message in the inbox (no search needed, maybe reload the inbox)
                 return {}
             outcome = await self._read("submission_result", text)
             log("submit_outcome", attempt=attempt + 1, outcome=outcome, page=text[:1500])
-            if outcome.get("confirmed") or outcome.get("errors"):
+            if outcome.get("confirmed") or outcome.get("errors") or outcome.get("needs_confirmation"):
                 return outcome
         return outcome
 

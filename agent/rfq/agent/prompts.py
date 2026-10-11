@@ -104,7 +104,11 @@ Raw values exactly as displayed (keep the page's number format).""",
     "submission_result": {
         "describe": "the page shown after the final binding submission",
         "schema": """{"confirmed": true if the page confirms that the bid was received/submitted, false if it shows an
- error or the form again, "receipt": "receipt/confirmation number or null", "errors": ["visible error messages"]}""",
+ error, the form again or still asks for a confirmation, "receipt": "receipt/confirmation number or null",
+ "errors": ["visible error messages"],
+ "needs_confirmation": true if the page now asks to confirm the binding submission (a confirmation box or question
+ with a confirm button) and the bid is not confirmed yet, else false,
+ "confirm_ref": "ref of the button that confirms the submission (e.g. e12), or null"}""",
     },
     "tender_overview": {
         "describe": "tender detail/overview page: reference, buyer, deadline, participation status",
