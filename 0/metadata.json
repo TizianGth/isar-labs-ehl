@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M4CM43TM8FBXXWH86C7T2W",
+  "session_id": "01a12776-a91f-7ff0-b250-d68ad877798b",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:04:19.95585Z",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/tests/test_deadlines.py",
+    "docs/13-optimization-roadmap.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "9b7988158349",
+  "checkpoint_transcript_start": 105,
+  "transcript_lines_at_start": 105,
+  "compact_transcript_start": 14,
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:04:19.948468Z",
+    "agent_lines": 86,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 86,
+    "total_lines_changed": 93,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
