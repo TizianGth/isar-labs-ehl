@@ -113,6 +113,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     current_rev = norm_id(current[-1]["revision"]) if current else None
     if len({norm_id(r.get("revision")) for r in current}) > 1:
         note(f"WARNING several revisions look current: {[r.get('revision') for r in current]}; using {current_rev}")
+    if current_rev is None:      # no revision list: a requirement sheet may state its own status ("gültig")
+        stated = [norm_id(item["data"].get("revision")) for item in bb.get("requirements", [])
+                  if item["data"].get("revision") and revision_is_current({"status_text": item["data"].get("revision_status")})]
+        current_rev = stated[-1] if stated else None
     note(f"current specification revision: {current_rev}")
     requirements: dict[str, dict] = {}
     for item in bb.get("requirements", []):

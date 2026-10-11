@@ -283,8 +283,11 @@ class Orchestrator:
         positions = self.positions()
         qa = self.bb.get("clarifications")
         entries = {parse.norm_id(e.get("number")) for i in qa for e in i["data"].get("entries") or [] if e.get("number")}
-        collected = any(i.get("via") == "collection" for i in qa)
         unread, total = self.qa_pages_unread()
+        # read as a whole: a paged list read completely, a document, a single page, or Q&A that live on another website
+        home = urlparse(str(getattr(self.role_site("tender"), "url", "") or "")).netloc if self.sites else ""
+        collected = (any(i.get("via") in ("collection", "document") for i in qa) or total == 1
+                     or bool(home) and any(urlparse(str(i.get("url"))).netloc not in ("", home) for i in qa))
         lines = [
             f"[{'x' if positions else ' '}] positions: " + (", ".join(f"{p['position']} {p.get('quantity')} {p.get('unit')} "
                                                                        f"-> {p.get('requirement_ref')}" for p in positions) or "not found yet"),
@@ -310,6 +313,10 @@ class Orchestrator:
             for r in item["data"].get("revisions") or []:
                 if parse.revision_is_current(r):
                     current = parse.norm_id(r.get("revision"))
+        if current is None:      # no revision list: a requirement sheet may state its own status (same rule as resolve)
+            for item in self.bb.get("requirements"):
+                if item["data"].get("revision") and parse.revision_is_current({"status_text": item["data"].get("revision_status")}):
+                    current = parse.norm_id(item["data"]["revision"])
         return current
 
     def requirements(self) -> dict[str, dict]:

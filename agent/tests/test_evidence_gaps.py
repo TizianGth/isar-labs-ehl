@@ -155,3 +155,32 @@ def test_positions_without_requirement_ids_are_matched_by_the_model(monkeypatch)
     asked.clear()
     asyncio.run(o2.map_positions())
     assert asked == []                                                 # nothing to match: no model call
+
+
+def test_checklists_do_not_require_the_public_page_structure():
+    """#7: Q&A read from a document or a single page, or found on another website, complete the tender checklist;
+    without a revision list, a requirement sheet's own status 'gültig' marks the current revision (rules agree)."""
+    import time
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from rfq.agent.orchestrator import Orchestrator
+    from rfq.rules.resolve import Context, build
+    run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+    sites = {"portal": SimpleNamespace(site_id="portal", url="http://portal.test")}
+    for via, url, page in (("document", "http://portal.test/qa.pdf", None), ("page", "http://portal.test/qa", "1"),
+                           ("page", "http://mail.test/msg/7", None)):
+        o = Orchestrator(run, sites, started=time.time())
+        o.brief = {"sites": {"tender": "portal"}}
+        o.bb.add("positions", {"positions": [{"position": "1", "quantity": "2"}]}, "u")
+        o.bb.add("clarifications", {"page": page, "pages_total": page, "entries": [{"number": "3", "facts": []}]}, url, via)
+        assert o.tender_progress()[1], (via, url)
+    o = Orchestrator(run, sites, started=time.time())
+    o.bb.add("clarifications", {"entries": [{"number": "3", "facts": []}]}, "http://portal.test/qa?page=1", "page")
+    o.bb.add("positions", {"positions": [{"position": "1", "quantity": "2"}]}, "u")
+    assert not o.tender_progress()[1]                                  # one page of an unknown list: keep reading
+    o.bb.add("requirements", {"revision": "B", "revision_status": "gültig", "requirements": [{"ref": "R-1"}]}, "u2")
+    o.bb.add("requirements", {"revision": "A", "revision_status": "ersetzt", "requirements": [{"ref": "R-1", "bore_mm": "9"}]}, "u3")
+    assert o.current_revision() == "B" and o.requirements()["R-1"]["revision"] == "B"
+    ctx = Context(tender_reference="XT-1", scenario=datetime(2030, 1, 1, tzinfo=timezone.utc))
+    trace = build(ctx, {"requirements": [i for i in o.bb.get("requirements")]}).trace
+    assert any("current specification revision: B" in line for line in trace)
