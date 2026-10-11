@@ -146,3 +146,29 @@ def test_mail_address_forms():
     assert mail_address("Anna Berg <A.Berg@Firma.example>") == "a.berg@firma.example"
     assert mail_address(" a.berg@firma.example ") == "a.berg@firma.example"
     assert mail_address(None) == ""
+
+
+def test_whole_quantities_with_thousands_separators_and_no_locale_tag():
+    """German pages show '1.250 Stück' without locale tags: a separator before groups of three digits is a
+    thousands separator for whole quantities, never three decimals (prices keep their own locale handling)."""
+    from rfq.rules.parse import count, integer
+    for raw, expected in (("1.250", 1250), ("1.250 Stück", 1250), ("12.500", 12500), ("1,250", 1250),
+                          ("1.875 g", 1875), ("12 500", 12500), ("1.250.000", 1250000), ("875", 875),
+                          ("0.250", D("0.250")), ("2.5", D("2.5")), ("1.250,5", D("1250.5")), ("1,25", D("1.25"))):
+        assert count(raw) == D(str(expected)), raw
+    assert integer("2.000 Stk") == 2000 and integer("Seite 2 von 6") == 2
+
+
+def test_rules_read_german_grouped_quantities_stock_and_masses():
+    bb = _evidence(clarifications=[])
+    bb["positions"] = [{"data": {"positions": [{"position": "1.1", "quantity": "1.250", "unit": "Stk",
+                                                "requirement_ref": "R-A"}]}}]
+    m1 = bb["materials"][0]["data"]["materials"][0]
+    m1.update({"unrestricted_stock": "2.000", "surcharge_mass_g": "1.500", "pieces_per_carton": "1.000"})
+    m1["conditions"] = [{"valid_from": "2030-01-01", "valid_to": "2030-12-31", "currency": "EUR", "price_unit_qty": "1",
+                         "number_format": None, "scales": [{"from_qty": "1", "price": "120,00"},
+                                                           {"from_qty": "1.000", "price": "95,00"}]}]
+    p = build(CTX, bb).answer["positions"][0]
+    assert p["quantity"] == 1250 and p["base_unit_price"] == 95.0      # scale from 1,000 pieces, not from 1
+    assert p["lead_time_weeks"] == 2                                     # stock 2,000 covers 1,250 pieces
+    assert p["surcharge_per_unit"] == 3.0                                # 1.5 kg x index 2.00, no setup cost

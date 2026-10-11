@@ -56,8 +56,26 @@ def number(raw, locale: str | None = None) -> Decimal | None:
         return None
 
 
+_GROUPED = re.compile(r"-?[1-9]\d{0,2}(?:([.,'’ ])\d{3})(?:\1\d{3})*")
+
+
+def count(raw, locale: str | None = None) -> Decimal | None:
+    """A whole quantity (pieces, stock, cartons, grams, scale quantities). A separator followed by groups of three
+    digits is a thousands separator in either convention ('1.250' and '1,250' are 1250), never three decimals; German
+    pages often show '1.250 Stück' without any locale tag. Everything else is read like number()."""
+    if raw is None or isinstance(raw, (int, float, Decimal)):
+        return number(raw, locale)
+    text = re.sub(r"\(.*?\)", "", clean(raw))
+    match = re.search(r"-?\d[\d.,'’ ]*", text)
+    if match:
+        token = match.group(0).rstrip(".,'’ ")
+        if _GROUPED.fullmatch(token):
+            return Decimal(re.sub(r"[.,'’ ]", "", token))
+    return number(raw, locale)
+
+
 def integer(raw) -> int | None:
-    value = number(raw)
+    value = count(raw)
     return int(value) if value is not None else None
 
 

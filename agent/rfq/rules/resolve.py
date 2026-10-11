@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, mail_address, norm_id, number, revision_is_current, same_text, when
+from .parse import cert, clean, count, day, integer, mail_address, norm_id, number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -209,10 +209,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     skipped: list[str] = []
     no_material: list[str] = []
     for pid, p in positions.items():
-        qty, unit = number(p.get("quantity")), clean(p.get("unit"))
+        qty, unit = count(p.get("quantity")), clean(p.get("unit"))
         change = latest("quantity_change", pid)
         if change:
-            qty, unit = number(change.get("quantity")), clean(change.get("unit")) or unit
+            qty, unit = count(change.get("quantity")), clean(change.get("unit")) or unit
             note(f"{pid}: quantity from Q&A -> {qty} {unit}")
         req = requirements.get(norm_id(p.get("requirement_ref")))
         if req is None:
@@ -301,7 +301,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             return None
         c = valid[-1]
         fmt = c.get("number_format")
-        scales = sorted(((number(s.get("from_qty"), fmt), number(s.get("price"), fmt)) for s in c.get("scales") or []),
+        scales = sorted(((count(s.get("from_qty"), fmt), number(s.get("price"), fmt)) for s in c.get("scales") or []),
                         key=lambda s: s[0] or 0)
         usable = [s for s in scales if s[0] is not None and s[1] is not None and s[0] <= q] or scales[:1]
         if not usable:
@@ -361,7 +361,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         if amount is None:
             note(f"setup pool {key}: amount not found")
             continue
-        weights = {p: D(resolved[p]["q"]) * (number(resolved[p]["material"].get("allocation_weight_g")) or D(0)) for p in members}
+        weights = {p: D(resolved[p]["q"]) * (count(resolved[p]["material"].get("allocation_weight_g")) or D(0)) for p in members}
         for p, share in largest_remainder(amount, weights).items():
             pool_share[p] += share
         note(f"setup pool {key} {amount} -> {dict(pool_share)}")
@@ -387,7 +387,7 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         if base is None or q <= 0:
             skipped.append(pid)
             continue
-        mass = (number(m.get("surcharge_mass_g")) or D(0)) / 1000
+        mass = (count(m.get("surcharge_mass_g")) or D(0)) / 1000
         index = _index_rate(indices.get(norm_id(m.get("price_index_key"))), T) if m.get("price_index_key") else None
         if m.get("price_index_key") and index is None:
             note(f"{pid}: metal index {m.get('price_index_key')} not found")
@@ -438,10 +438,10 @@ def _index_rate(entries, T: datetime) -> D | None:
 
 def _lead_time(m: dict, pooled_qty: int, commitment: dict | None) -> int:
     if commitment and norm_id(commitment.get("material")) == norm_id(m["material_number"]):
-        limit = number(commitment.get("max_total_qty"))
+        limit = count(commitment.get("max_total_qty"))
         if limit is not None and pooled_qty <= limit:
             return integer(commitment.get("weeks")) or 0
-    stock = number(m.get("unrestricted_stock"))
+    stock = count(m.get("unrestricted_stock"))
     if stock is not None and pooled_qty <= stock:
         return integer(m.get("lead_time_stock_weeks")) or 0
     return integer(m.get("lead_time_production_weeks")) or integer(m.get("lead_time_stock_weeks")) or 0
