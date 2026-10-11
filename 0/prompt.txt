@@ -1,0 +1,5 @@
+look at atira and see which one is best generalized and should be used for the private dataset and analyze it. be fast
+
+---
+
+put sub_9629c193b43fe5fa on main on github. it will be released now
