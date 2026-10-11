@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M5F84Q0Q7ZBR76K8SNH14T",
+  "session_id": "76abc8de-2e9b-4d72-99dc-d8c889cd0eb9",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:23:18.168192226Z",
+  "branch": "fix/spec-values",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "a750c737310d",
+  "checkpoint_transcript_start": 93,
+  "transcript_lines_at_start": 93,
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 1497,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "dev/runs/sandbox/run_09624.jsonl": 348,
+        "dev/runs/sandbox/run_becee.jsonl": 301,
+        "dev/runs/sandbox/run_c8fe.jsonl": 332,
+        "dev/runs/sandbox/run_c8fe_status.json": 246,
+        "dev/runs/sandbox/run_f33ba.jsonl": 270
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1500,
+      "agent_lines_removed": 0
+    }
+  ]
+}
