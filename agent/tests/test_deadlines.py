@@ -152,7 +152,7 @@ def test_decoy_mails_do_not_satisfy_a_topic():
     assert "packaging ('Pack')" not in text and "NOT usable" not in text
 
 
-def test_concurrent_identical_extractions_share_one_call(monkeypatch):
+def test_concurrent_identical_extractions_of_same_source_share_one_call(monkeypatch):
     from rfq import llm as llm_module
     calls = []
 
@@ -166,7 +166,7 @@ def test_concurrent_identical_extractions_share_one_call(monkeypatch):
     async def scenario():
         o = _orchestrator()
         page = "URL: x\nPos 1: 2 Stk"
-        return await asyncio.gather(o.extract("positions", page, "u1"), o.extract("positions", page, "u2")), o
+        return await asyncio.gather(o.extract("positions", page, "u1"), o.extract("positions", page, "u1")), o
     (first, second), o = asyncio.run(scenario())
     assert len(calls) == 1 and "already extracted" in second and len(o.bb.get("positions")) == 1
 

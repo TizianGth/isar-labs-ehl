@@ -20,8 +20,8 @@ def test_extract_system_token_length():
     assert len(EXTRACT_SYSTEM) >= 4000, f"EXTRACT_SYSTEM is {len(EXTRACT_SYSTEM)} chars, expected >= 4000"
 
 
-def test_mail_progress_early_completion():
-    """mail_progress must complete immediately once all required topics are present, ignoring decoys."""
+def test_mail_progress_keeps_unread_reference_messages_incomplete():
+    """Unopened matching-reference messages may contain later approvals; topics alone cannot classify decoys."""
     orch = Orchestrator({"brief": "Tender VG-1", "expires_at": 10**12}, {})
     orch.brief = {
         "tender_reference": "VG-1",
@@ -69,8 +69,9 @@ def test_mail_progress_early_completion():
     }, "/msg/2")
 
     text, complete = orch.mail_progress()
-    # Even though /msg/3, /msg/4, /msg/5 are unopened, complete must be True!
-    assert complete is True, f"Expected mail_progress to complete, got False. Text: {text}"
+    # Until read, these are candidates, not proven decoys.
+    assert complete is False, text
+    assert "listed but not opened" in text
     assert "topics NOT found yet" not in text
 
 

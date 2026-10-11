@@ -18,6 +18,7 @@ from .. import llm
 from ..browser.site import Site
 from ..log import log
 from ..rules import parse
+from ..rules.mail_evidence import eligible_mails, keyed_records, mailbox_domain, mail_problem, newer_payload_unknown, nonnegative, valid_bonus_plan
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
 from .prompts import BRIEF_SYSTEM, EXTRACT_SYSTEM, KINDS
@@ -78,7 +79,7 @@ class Orchestrator:
         spec = KINDS.get(kind)
         if spec is None:
             return f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"
-        key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
+        key = _extraction_key(kind, text, url, via)
         if key in self._cache:
             return "already extracted earlier: " + self._cache[key]
         if key in self._inflight:                    # the same page is being extracted right now: share its result
@@ -109,7 +110,7 @@ class Orchestrator:
         results = [None] * len(items)
         pending_indices = []
         for idx, (url, text) in enumerate(items):
-            key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
+            key = _extraction_key(kind, text, url, via)
             if key in self._cache:
                 results[idx] = "already extracted earlier: " + self._cache[key]
             else:
@@ -119,16 +120,16 @@ class Orchestrator:
             return results
 
         async def process_chunk(chunk_idxs):
-            if len(chunk_idxs) == 1:
-                idx = chunk_idxs[0]
-                u, t = items[idx]
-                results[idx] = await self.extract(kind, t, u, via=via)
+            if len(chunk_idxs) == 1 or any(len(items[idx][1]) > 25000 for idx in chunk_idxs):
+                for idx in chunk_idxs:
+                    u, t = items[idx]
+                    results[idx] = await self.extract(kind, t, u, via=via)
                 return
 
             chunk_items = [(idx, items[idx][0], items[idx][1]) for idx in chunk_idxs]
             body_parts = []
             for i, (idx, u, t) in enumerate(chunk_items):
-                body_parts.append(f"<<<SOURCE {i + 1} URL: {u}>>>\n{t[:25000]}\n<<<END SOURCE {i + 1}>>>")
+                body_parts.append(f"<<<SOURCE {i + 1} URL: {u}>>>\n{t}\n<<<END SOURCE {i + 1}>>>")
 
             prompt = (
                 f"KIND: {kind} ({spec['describe']})\n"
@@ -151,9 +152,9 @@ class Orchestrator:
                             data = item_data.get("data")
                             if src_url and isinstance(data, dict):
                                 for idx, u, t in chunk_items:
-                                    if u == src_url or src_url in u or u in src_url:
+                                    if u == src_url and idx not in matched:
                                         self.bb.add(kind, data, u, via)
-                                        k = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", t.split("\n", 1)[-1]).encode()).hexdigest()
+                                        k = _extraction_key(kind, t, u, via)
                                         summary = _summary(kind, data)
                                         self._cache[k] = summary
                                         results[idx] = summary
@@ -394,6 +395,57 @@ class Orchestrator:
             complete = True
         return "\n".join(lines), complete
 
+    def _qa_facts(self) -> list[dict]:
+        """Same date/withdrawal ordering as the resolver; only facts already selected and extracted."""
+        scenario = parse.when(self.brief.get("scenario_datetime_utc"))
+        entries = {parse.qa_number(e.get("number")): e for i in self.bb.get("clarifications")
+                   for e in i["data"].get("entries") or [] if e.get("number")}
+        valid = {k: e for k, e in entries.items()
+                 if not scenario or not parse.when(e.get("datetime_utc")) or parse.when(e.get("datetime_utc")) <= scenario}
+        withdrawn = {parse.qa_number(f.get("withdrawn_number")) for e in valid.values() for f in e.get("facts") or []
+                     if f.get("type") == "withdrawal" and f.get("withdrawn_number")}
+        ordered = sorted(((k, e) for k, e in valid.items() if k not in withdrawn),
+                         key=lambda x: ((parse.when(x[1].get("datetime_utc")).timestamp()
+                                         if parse.when(x[1].get("datetime_utc")) else float("-inf")),
+                                        parse.integer(x[0]) or 0))
+        return [f for _, e in ordered for f in e.get("facts") or []]
+
+    def usable_mails(self) -> list[dict]:
+        authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
+                      if r.get("topic") and r.get("sender_localpart")}
+        return eligible_mails(self.bb.items, self.brief.get("tender_reference"),
+                              parse.when(self.brief.get("scenario_datetime_utc")),
+                              self.brief.get("director_localpart"), authorized)
+
+    def pricing_mail_gaps(self) -> list[str]:
+        """Validate actual live assignments, not just the presence of a mail topic."""
+        assignments = {}
+        positions = {parse.norm_id(p.get("position")) for p in self.positions()}
+        for fact in self._qa_facts():
+            position = parse.norm_id(fact.get("position"))
+            if fact.get("type") == "assignment" and (not positions or position in positions):
+                assignments.setdefault(position, {}).update({k: v for k, v in fact.items() if v not in (None, "")})
+        mails, gaps = self.usable_mails(), []
+        dependencies = (("bonus_plan_key", "project_bonus", "plans", None),
+                        ("setup_pool_key", "setup_pool", "pools", "amount_eur"),
+                        ("packaging_key", "packaging", "tariffs", "eur_per_carton"))
+        for assignment, topic, field, amount in dependencies:
+            records = keyed_records(mails, topic, field)
+            keys = sorted({parse.norm_id(a.get(assignment)) for a in assignments.values() if a.get(assignment)})
+            for key in keys:
+                record = records.get(key)
+                valid = (valid_bonus_plan(record) if amount is None else
+                         isinstance(record, dict) and nonnegative(record.get(amount)))
+                if newer_payload_unknown(mails, topic, field, key):
+                    gaps.append(f"{topic}: a newer eligible message has an empty/unreadable {field} payload; "
+                                f"re-read it before treating older key {key} as final")
+                    continue
+                if not valid:
+                    gaps.append(f"{topic}: required key {key} needs " +
+                                ("readable, non-overlapping marginal bands (including an explicit upper bound or null)"
+                                 if amount is None else f"a readable nonnegative {amount}; missing is not zero"))
+        return gaps
+
     def mail_progress(self) -> tuple[str, bool]:
         ref = parse.norm_id(self.brief.get("tender_reference"))
         pages: dict[str, set[int]] = {}
@@ -434,33 +486,20 @@ class Orchestrator:
                          + "; ".join(f"{t}: {', '.join(sorted(p))}" for t, p in decoys.items()))
         if unread_pages:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
-        if missing and absent:
+        if missing:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        complete = (not absent and not unread_pages) or (not absent and not missing and not unread_pages)
+        gaps = self.pricing_mail_gaps()
+        if gaps:
+            lines.append("needed pricing records still missing; re-read the relevant message/attachment:\n" + "\n".join(gaps))
+        complete = not absent and not missing and not unread_pages and not gaps
         return "\n".join(lines), complete
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
         """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
-        if parse.norm_id(m.get("reference")) != ref:
-            return "other reference"
-        if m.get("is_draft_or_preview"):
-            return "draft/preview"
-        at, scenario = parse.when(m.get("datetime_utc")), parse.when(self.brief.get("scenario_datetime_utc"))
-        if scenario is not None and (at is None or at > scenario):
-            return "after the scenario date" if at else "no readable date"
-        topic = m.get("topic")
         authorized = {r.get("topic"): r.get("sender_localpart") for r in self.brief.get("authorized_records") or []
                       if r.get("topic") and r.get("sender_localpart")}
-        local = str((self.brief.get("director_localpart") if topic == "discount" else authorized.get(topic)) or "")
-        domain = None
-        for item in self.bb.get("mail_list"):
-            address = parse.clean(item["data"].get("mailbox_address"))
-            if "@" in address:
-                domain = address.split("@", 1)[1].lower()
-        sender = parse.mail_address(m.get("sender"))
-        if (local and not sender.startswith(local.lower() + "@")) or (domain and not sender.endswith("@" + domain)):
-            return "not from the authorized sender"
-        return None
+        return mail_problem(m, ref, parse.when(self.brief.get("scenario_datetime_utc")),
+                            self.brief.get("director_localpart"), authorized, mailbox_domain(self.bb.items))
 
     # ---------------------------------------------------------------- evidence phase
     async def gather_evidence(self) -> None:
@@ -509,9 +548,21 @@ search says there are too many results, add the subject keyword.""",
         results = await asyncio.gather(tracked("tender", self.site_for("tender"), tender),
                                        tracked("specification", self.site_for("specification"), spec, attempts=3),
                                        tracked("mail", self.site_for("mail"), mail), self.erp_phase())
+        await self.repair_pricing_mail(mail)
         flat = [r for r in results if not isinstance(r, list)] + [x for r in results if isinstance(r, list) for x in r]
         log("evidence_done", missions=[(r.mission.name, r.status, r.missing) if r else None for r in flat],
             status=self.status, kinds={k: len(v) for k, v in self.bb.items.items()}, digest=self.evidence_digest())
+
+    async def repair_pricing_mail(self, mission):
+        gaps = self.pricing_mail_gaps()
+        if gaps and self.evidence_end - time.time() >= 60:
+            log("dependency_repair", mission="mail", gaps=gaps)
+            self._cache = {k: v for k, v in self._cache.items() if not k.startswith("mail_message")}
+            self.site_for("mail").fresh_start()
+            await self.run_mission(self.site_for("mail"), mission, attempts=1)
+        remaining = self.pricing_mail_gaps()
+        if remaining:
+            log("dependency_incomplete", mission="mail", gaps=remaining, required_mail_records_complete=False)
 
     async def recheck_no_bid(self, result: Result) -> Result:
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
@@ -650,9 +701,13 @@ The progress checklist tells you what is still missing per material.""", ["mater
                       director_localpart=brief.get("director_localpart"), authorized=authorized,
                       searched_groups=set(self.erp_complete))
         result = build(ctx, self.bb.items)
+        result.evidence_gaps = self.pricing_mail_gaps()
+        if result.evidence_gaps:
+            result.trace.append("UNVERIFIED best-effort pricing: " + "; ".join(result.evidence_gaps))
         for line in result.trace:
             log("trace", line=line)
-        log("answer", answer=result.answer, skipped=result.skipped)
+        log("answer", answer=result.answer, skipped=result.skipped,
+            required_mail_records_complete=not result.evidence_gaps, evidence_gaps=result.evidence_gaps)
         return result
 
     async def run_all(self, replay: dict | None = None) -> Result | None:
@@ -684,6 +739,11 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
         return result
+
+
+def _extraction_key(kind, text, source, via):
+    body = re.sub(r"\[(?:f\d+)?e\d+\]", "", text)
+    return kind + hashlib.sha1(json.dumps([source, via, body], ensure_ascii=False).encode()).hexdigest()
 
 
 def _page_pattern(url) -> str:
