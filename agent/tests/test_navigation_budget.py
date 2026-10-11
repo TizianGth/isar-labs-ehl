@@ -219,3 +219,29 @@ def test_error_page_after_write_reports_unknown_without_replaying():
             assert requests.count('GET') == 1
             await browser.close()
     asyncio.run(scenario())
+
+
+def test_explicit_apply_does_not_allow_later_unannounced_replacements():
+    async def scenario():
+        async with async_playwright() as playwright:
+            browser, site = await _apply_site(playwright, [])
+            await site.page.evaluate("""() => {
+                const previous = window.render;
+                window.render = (...args) => {
+                    previous(...args);
+                    document.querySelector('[name=quantity]').oninput = () => {
+                        const price = document.querySelector('[name=price]');
+                        price.replaceWith(price.cloneNode(true));
+                    };
+                };
+            }""")
+            view = await site.observe()
+            result = await site.act('fill_fields', {'fields': [
+                {'ref': _label_ref(view, 'Variant'), 'value': 'omega', 'apply': _label_ref(view, 'Apply variant')},
+                {'ref': _label_ref(view, 'Quantity'), 'value': '7'},
+                {'ref': _label_ref(view, 'Price'), 'value': '13.20'}]})
+            assert 'STOPPED' in result
+            assert await site.page.locator('[name=price]').input_value() == ''
+            assert len(site.last_readbacks) == 2
+            await browser.close()
+    asyncio.run(scenario())

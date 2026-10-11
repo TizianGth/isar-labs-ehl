@@ -660,7 +660,19 @@ class Site:
                         break
                     await self.settle(rounds=3, retry_errors=False)
                     await self.observe()
-                    allow_rerender = True
+                    # Only this explicit apply permits new DOM instances. Rebind
+                    # every remaining target now; later unannounced replacements
+                    # must still stop the batch even if labels remain identical.
+                    remaining = {str(item['ref']) for item in fields[index + 1:]}
+                    remaining.update(str(item['apply']) for item in fields[index + 1:] if item.get('apply'))
+                    if then_click:
+                        remaining.add(str(then_click))
+                    for pending_ref in remaining:
+                        refreshed = await self.field_identity(pending_ref)
+                        if any(refreshed[key] != identity[pending_ref][key] for key in semantic):
+                            raise ValueError("remaining control changed meaning after apply")
+                        identity[pending_ref] = refreshed
+                    allow_rerender = False
                 except (PlaywrightError, ValueError) as error:
                     results.append(f"STOPPED: apply outcome requires a new observation ({str(error)[:100]})")
                     stopped = True
