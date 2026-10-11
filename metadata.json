@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4METV4YPAZPZ0CGYHB029DC",
   "strategy": "manual-commit",
   "branch": "perf/fast",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "agent/rfq/agent/explorer.py",
     "agent/rfq/browser/site.py"
@@ -14,6 +14,12 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "content_hash": "/1/content_hash.txt",
       "prompt": ""
     }
   ],
