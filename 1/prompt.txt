@@ -1,0 +1,2 @@
+[token_usage_minimization_plan.md]
+L4: Currently only 4 minutes now. But we are still not better than the best ones. Still way to go
