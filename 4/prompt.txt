@@ -1,0 +1,5 @@
+Read dev/evals/README.md and audit deployment packaging: manifest/schema validity, required runtime files, port/origin configuration, and whether expected answers or evaluator credentials are reachable through HTTP. Work in a separate directory. Report findings only; do not deploy or inspect holdout expected answers.
+
+---
+
+Result?
