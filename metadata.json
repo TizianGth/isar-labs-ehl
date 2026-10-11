@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MXH90YHVMG5MV4JWPRNB95",
   "strategy": "manual-commit",
   "branch": "codex/inference-fusion",
-  "checkpoints_count": 3,
+  "checkpoints_count": 5,
   "files_touched": [
     "agent/main.py",
     "agent/rfq/agent/fused.py",
@@ -49,13 +49,20 @@
       "transcript": "/2/full.jsonl",
       "content_hash": "/2/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "compact_transcript": "/3/transcript.jsonl",
+      "content_hash": "/3/content_hash.txt",
+      "prompt": "/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 0,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 0,
-    "output_tokens": 0,
-    "api_call_count": 0
+    "input_tokens": 18,
+    "cache_creation_tokens": 8304,
+    "cache_read_tokens": 5379757,
+    "output_tokens": 3646,
+    "api_call_count": 9
   }
 }
