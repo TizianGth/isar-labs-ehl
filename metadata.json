@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MQF59BRHD19RA5EF4AK2EV",
+  "strategy": "manual-commit",
+  "branch": "claude/prompt-budget",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/main.py",
+    "agent/rfq/agent/fused.py",
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/rfq/agent/records.py",
+    "agent/rfq/agent/submit.py",
+    "agent/rfq/browser/site.py",
+    "agent/rfq/llm.py",
+    "agent/rfq/log.py",
+    "agent/rfq/profile.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_deadlines.py",
+    "agent/tests/test_llm_hedging.py",
+    "agent/tests/test_profile.py",
+    "agent/tests/test_submit.py",
+    "agent/tests/test_token_optimizations.py",
+    "dev/check_no_leaks.py",
+    "dev/evals/build.py",
+    "dev/evals/suite.json",
+    "dev/evals/world.py",
+    "dev/profile_ledger.py",
+    "dev/tests/test_no_leaks.py",
+    "docs/14-inference-budget.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 173205,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10022656,
+    "output_tokens": 40679,
+    "api_call_count": 95,
+    "subagent_tokens": {
+      "input_tokens": 380193,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 14066176,
+      "output_tokens": 88901,
+      "api_call_count": 148
+    },
+    "subagent_tokens_complete": true
+  }
+}
