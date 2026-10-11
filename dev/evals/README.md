@@ -72,7 +72,10 @@ each bundle's ignored `.atira/` folder. Deployment and backend execution are
 performed by the root task according to its shared 12-run budget. The offline tests do not confirm hosting. `deployments.json` records the eight
 private eval IDs, package/version hashes and platform status checks: every intended
 current version is ready and private. An authenticated hosted-site smoke test and
-agent runs remain separate validation steps.
+agent runs remain separate validation steps. Hosted authentication failed on all
+four development sites with platform verification HTTP 401; see
+`diagnostics/HOSTED-AUTH-FAILURE.md`. No private agent result is valid until that
+infrastructure failure is resolved.
 
 The manifest starts `python3 world.py`, listens on the four supplied `PORT_*`
 values at `0.0.0.0`, and uses `ATIRA_SITE_URL_*` for cross-site links. The world

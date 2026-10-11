@@ -8,7 +8,6 @@ import hmac
 import json
 import os
 import secrets
-import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -57,27 +56,6 @@ class Platform:
         self.local.status = status
         self.local.category = None
         self.local.error_terms = []
-        self.local.reference_status = None
-        if status == 401 and endpoint == 'verify':
-            # Read-only diagnostic against the official Node-fetch transport.
-            # Never replay the answer endpoint after an ambiguous response.
-            reference = r'''const input = JSON.parse(await new Promise(resolve => {
-                let text=''; process.stdin.on('data', data => text+=data);
-                process.stdin.on('end', () => resolve(text)); }));
-                const response = await fetch(process.env.ATIRA_API_URL.replace(/\/+$/, '') + '/v1/eval-worlds/verify', {
-                    method:'POST', headers:{authorization:'Bearer ' + process.env.ATIRA_EVAL_TOKEN,
-                    'content-type':'application/json'}, body:JSON.stringify(input), signal:AbortSignal.timeout(8000)});
-                process.stdout.write(JSON.stringify({status:response.status, body:await response.json().catch(()=>({}))}));'''
-            try:
-                completed = subprocess.run(['node', '--input-type=module', '-e', reference],
-                    input=json.dumps(payload), capture_output=True, text=True, timeout=10, check=True)
-                result = json.loads(completed.stdout)
-                self.local.reference_status = result['status']
-                if result['status'] == 200:
-                    status, raw = 200, json.dumps(result['body']).encode()
-                    self.local.status = 200
-            except Exception:
-                self.local.reference_status = 'transport-failure'
         try:
             body = json.loads(raw or b'{}')
             valid_json = isinstance(body, dict)
@@ -98,8 +76,7 @@ class Platform:
             # Never log request payloads, response bodies, credentials or bearer.
             print(json.dumps({'event': 'eval_platform_failure', 'endpoint': endpoint,
                               'status': status, 'valid_json_object': valid_json,
-                              'category': self.local.category, 'error_terms': self.local.error_terms,
-                              'node_reference_status': self.local.reference_status}), flush=True)
+                              'category': self.local.category, 'error_terms': self.local.error_terms}), flush=True)
         return status, body
 
 
@@ -348,9 +325,6 @@ def make_handler(world, role):
                         platform_local = getattr(world.platform, 'local', None)
                         terms = getattr(platform_local, 'error_terms', [])
                         diagnostic += ' [terms:' + ','.join(terms) + ']'
-                        reference = getattr(platform_local, 'reference_status', None)
-                        if reference is not None:
-                            diagnostic += ' [node-status:' + str(reference) + ']'
                     return self._send_html(200, self._render_login('Invalid or expired credentials' + diagnostic))
                 world.select(role, 'rfq_session_' + role + '=' + token)
                 secure = '; Secure' if world.origins.get(role, '').startswith('https:') else ''

@@ -1,0 +1,67 @@
+{
+  "preview_id": "pv_af1f788ed294d0f8",
+  "version_id": "evv_d920a5c072b9084d80fe",
+  "credentials_transformed": false,
+  "results": [
+    {
+      "site": "tender",
+      "get_status": 200,
+      "post_status": 200,
+      "authenticated_redirect": false,
+      "upstream_status": [
+        "401"
+      ],
+      "node_reference_status": [
+        "401"
+      ],
+      "error_terms": [
+        "login,site"
+      ]
+    },
+    {
+      "site": "specification",
+      "get_status": 200,
+      "post_status": 200,
+      "authenticated_redirect": false,
+      "upstream_status": [
+        "401"
+      ],
+      "node_reference_status": [
+        "401"
+      ],
+      "error_terms": [
+        "login,site"
+      ]
+    },
+    {
+      "site": "erp",
+      "get_status": 200,
+      "post_status": 200,
+      "authenticated_redirect": false,
+      "upstream_status": [
+        "401"
+      ],
+      "node_reference_status": [
+        "401"
+      ],
+      "error_terms": [
+        "login,site"
+      ]
+    },
+    {
+      "site": "mail",
+      "get_status": 200,
+      "post_status": 200,
+      "authenticated_redirect": false,
+      "upstream_status": [
+        "401"
+      ],
+      "node_reference_status": [
+        "transport-failure"
+      ],
+      "error_terms": [
+        "login,site"
+      ]
+    }
+  ]
+}

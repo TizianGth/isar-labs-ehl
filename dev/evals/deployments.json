@@ -6,14 +6,14 @@
       "world": "dev-classic",
       "slug": "inference-v1-dev-classic",
       "eval_id": "ev_25cdea6d26f33fa1",
-      "version_id": "evv_72adfffdb6f920d4843c",
-      "package_sha256": "af3f9a8738cd9ef1c59fbe52b2e9fb408a0e7205c377a5407657d7ed051b89c9",
+      "version_id": "evv_d920a5c072b9084d80fe",
+      "package_sha256": "337492113b55132e93fe23b78608f5b3e23989156e7682db0c2d41d85242cd5a",
       "data_sha256": "fa51a4c1fca838c1e7f07fc473401f19cdb71187769f9f627b8246354ddd34e1",
-      "runtime_sha256": "c1a23b0741bba034a6330ab50735d837d78b401946173407e1f643808b002872",
+      "runtime_sha256": "e76e1cb1455d23ad034a356df85c78bba7d163268102e47eb00ca5ebea676198",
       "build_status": "ready",
       "public": false,
       "visibility_verified": "private",
-      "current_version_verified": "evv_72adfffdb6f920d4843c",
+      "current_version_verified": "evv_d920a5c072b9084d80fe",
       "site_names": [
         "tender",
         "specification",
@@ -21,7 +21,9 @@
         "mail"
       ],
       "url": "https://ehl-challenge.atira.ai/evals/inference-v1-dev-classic",
-      "status_verified_at": "2026-10-11T05:20:17.530063+00:00"
+      "status_verified_at": "2026-10-11T05:20:17.530063+00:00",
+      "hosted_authentication": "failed: verify 401 on all four sites; Python and Node equivalent",
+      "diagnostic_only_version": true
     },
     {
       "world": "dev-locale",
@@ -171,5 +173,6 @@
       "status_verified_at": "2026-10-11T05:20:17.895129+00:00"
     }
   ],
-  "authenticated_hosting_smoke_tested": false
+  "authenticated_hosting_smoke_tested": true,
+  "authenticated_hosting_smoke_passed": false
 }
