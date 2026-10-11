@@ -7,7 +7,6 @@ model-selected pages and files into structured facts, `inspect_visual` shows the
 text is not enough.
 """
 import asyncio
-import hashlib
 import json
 import re
 import time
@@ -15,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 from urllib.parse import urljoin
 
-from .. import llm
+from .. import flags, llm, metrics
 from ..browser import documents
 from ..browser.site import Site
 from ..log import log
@@ -41,13 +40,10 @@ TOOLS = [
           "button to press right after (e.g. the form's apply/update button).",
           {"ref": _REF, "option": {"type": "string"}, "then_click": _REF}, ["ref", "option"]),
     _tool("check", "Tick or untick a checkbox/radio.", {"ref": _REF, "checked": {"type": "boolean"}}, ["ref"]),
-    _tool("fill_fields", "Fill several form fields at once, in order (text inputs, selects by option text, "
-          "checkboxes with true/false), optionally pressing a button afterwards. Dependent selects (a choice must be "
-          "applied before the next field opens): give each such field \"apply\": <ref of the apply/übernehmen "
-          "button>; it is pressed right after that field, so a whole chain of choices takes one step.",
+    _tool("fill_fields", "Fill several form fields at once (text inputs, selects by option text, checkboxes with "
+          "true/false), optionally pressing a button afterwards.",
           {"fields": {"type": "array", "items": {"type": "object", "properties": {"ref": {"type": "string"},
-           "value": {"type": "string"}, "apply": {"type": "string"}}, "required": ["ref", "value"]}},
-           "then_click": _REF}, ["fields"]),
+           "value": {"type": "string"}}, "required": ["ref", "value"]}}, "then_click": _REF}, ["fields"]),
     _tool("set_slider", "Move a range slider (value 'max' for fully right).",
           {"ref": _REF, "value": {"type": "string"}}, ["ref"]),
     _tool("hover", "Move the mouse over an element (menus or tooltips that open on hover).", {"ref": _REF}, ["ref"]),
@@ -82,8 +78,30 @@ TOOLS = [
           "missing": {"type": "array", "items": {"type": "string"}, "description": "what you could not find"}},
           ["summary"]),
 ]
+THEN = {"extract": ("then_click", {"type": "string", "description": "optional: ref of the next page's link/button "
+                                    "to click right after starting the extraction (saves a step)"}),
+        "extract_urls": ("then_open", {"type": "string", "description": "optional: address (seen on a page) to open "
+                                       "right after starting the extractions (saves a step)"})}
+
+
+def explorer_tools() -> list[dict]:
+    """The explorer's tools; with RFQ_EXTRACT_THEN, extract/extract_urls can also go on to the next page."""
+    if not flags.EXTRACT_THEN:
+        return TOOLS
+    tools = []
+    for tool in TOOLS:
+        name = tool["function"]["name"]
+        if name in THEN:
+            key, schema = THEN[name]
+            parameters = tool["function"]["parameters"]
+            tool = {"type": "function", "function": {**tool["function"], "parameters": {
+                **parameters, "properties": {**parameters["properties"], key: schema}}}}
+        tools.append(tool)
+    return tools
+
+
 ACTIONS = ("click", "type", "select", "check", "set_slider", "open_url", "back", "fill_fields", "hover", "press_key",
-           "scroll", "wait_for")
+           "scroll", "wait_for", "steps")
 
 
 @dataclass
@@ -98,6 +116,8 @@ class Mission:
     progress: Callable[[], tuple[str, bool]] | None = None
     max_blocked: int = 4           # loop protection: abort after this many blocked repeats
     max_visual: int = 3            # screenshots the model may ask for in this mission
+    # extract/extract_urls run in the background while the model keeps navigating (their results arrive later)
+    background_extraction: bool = False
 
 
 @dataclass
@@ -119,12 +139,18 @@ class Explorer:
     status: str = "running"        # running | complete | finished | incomplete | deadline | failed
     stop: bool = False             # set by tools that end the mission (e.g. the binding submission)
     visual_used: int = 0
-    pictures_seen: set = field(default_factory=set)   # screenshots already looked at (sha1)
     last_result: str = ""
+    pending: dict[str, asyncio.Task] = field(default_factory=dict)   # background extractions: label -> task
+    offered_links: set[str] = field(default_factory=set)             # links already listed in extraction results
+
+    @property
+    def tag(self) -> str:
+        return f"{self.mission.name}@{self.site.site_id}"
 
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
-        tools = tools or TOOLS
-        tag = f"{self.mission.name}@{self.site.site_id}"
+        tools = tools or explorer_tools()
+        tag = self.tag
+        metrics.mission(tag)
         try:
             return await self._loop(tools, tag)
         except llm.DeadlineExceeded:
@@ -135,8 +161,26 @@ class Explorer:
             log("mission_crashed", mission=tag, error=f"{type(error).__name__}: {error}"[:500])
             self.status = "failed"
             return self
+        except asyncio.CancelledError:       # the phase ended: stop at once, without waiting for extractions
+            self._stop_background(tag)
+            raise
+        finally:   # background extractions still running: a short wait (their facts count), then they are stopped
+            if self.pending:
+                await self._drain(min(10.0, self.mission.deadline - time.time()))
+                self._stop_background(tag)
+            metrics.ended(tag, self.status)
+
+    def _stop_background(self, tag: str) -> None:
+        self._collect()
+        if self.pending:
+            log("background_cancelled", mission=tag, pending=list(self.pending))
+        for task in self.pending.values():
+            task.cancel()
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())
+        self.pending.clear()
 
     async def _loop(self, tools: list[dict], tag: str) -> "Explorer":
+        await self.site.wait_started()
         observation = await self.site.observe()
         kinds = "\n".join(f"- {k}: {v}" for k, v in self.mission.kinds.items()) or "- (none)"
         intro = (f"MISSION ({self.mission.name}) on website '{self.site.site_id}' ({self.site.url}):\n"
@@ -151,15 +195,25 @@ class Explorer:
                 self.status, self.missing = "deadline", self.missing + ["deadline reached"]
                 return self
             checklist, complete = self.mission.progress() if self.mission.progress else ("", False)
+            if complete and self.pending:      # results still on their way may add work (e.g. another material)
+                await self._drain(min(30.0, remaining - 10))
+                checklist, complete = self.mission.progress()
+            arrived = self._collect()
             if complete:
                 self.summary, self.status = "complete: " + checklist, "complete"
                 log("mission_complete", mission=tag, step=step, checklist=checklist[:800])
                 return self
             hints = _hints(observation, self.visual_used < self.mission.max_visual)
-            last = (f"\n\nRESULT OF THE LAST STEP:\n{self.last_result[:800]}" if self.last_result else "")
-            messages = [{"role": "system", "content": EXPLORER_SYSTEM},
+            last = (f"\n\nRESULT OF THE LAST STEP:\n{self.last_result[:3000]}" if self.last_result else "")
+            if arrived:
+                last += "\n\nRESULTS OF BACKGROUND EXTRACTIONS (finished since):\n" + "\n".join(arrived)[:3000]
+            if self.pending:
+                last += "\n\nSTILL EXTRACTING IN THE BACKGROUND (do not request again):\n" + "\n".join(self.pending)
+            history = "\n".join(self.history[-20:]) or "-"
+            metrics.prompt(tag, intro=intro, history=history, last=last, checklist=checklist, observation=observation)
+            messages = [{"role": "system", "content": self._system()},
                         {"role": "user", "content": intro},
-                        {"role": "user", "content": "STEPS SO FAR:\n" + ("\n".join(self.history[-5:]) or "-") + last
+                        {"role": "user", "content": "STEPS SO FAR:\n" + history + last
                          + (f"\n\nPROGRESS CHECKLIST (computed from what was extracted so far):\n{checklist}" if checklist else "")
                          + (f"\n\nHINTS:\n{hints}" if hints else "")
                          + f"\n\nStep {step + 1}/{self.mission.max_steps}, ~{int(remaining)} s left."
@@ -170,17 +224,27 @@ class Explorer:
                 self.history.append(f"{step + 1}. (no tool call) -> please call a tool")
                 continue
             name, args = reply["tool_calls"][0]
-            # The same action on the same page state is a loop; the same ref on a new page is not.
+            # The same action on the same page state is a loop; the same ref on a new page is not. Waiting again for
+            # background extractions is not a loop: each wait returns with a new result.
             signature = name + json.dumps(args, sort_keys=True, ensure_ascii=False) + str(hash(observation))
-            repeats[signature] = repeats.get(signature, 0) + 1
+            if not self._waits_on_background(name):
+                repeats[signature] = repeats.get(signature, 0) + 1
+            if name == "finish" and self.pending and self.mission.progress:
+                await self._drain(min(30.0, self.mission.deadline - time.time() - 10))
+                if not self.mission.progress()[1]:
+                    self.last_result = ("finish postponed: background extractions have just finished and the "
+                                        "progress checklist is still incomplete; look at it and continue.")
+                    self.history.append(f"{step + 1}. finish -> postponed (background results arrived, checklist incomplete)")
+                    continue
             if name == "finish":
                 self.summary = str(args.get("summary", ""))
                 self.missing += [str(m) for m in args.get("missing") or []]
                 self.status = "finished" if not self.missing else "incomplete"
                 log("mission_finish", mission=tag, step=step + 1, summary=self.summary[:500], missing=self.missing)
                 return self
-            if repeats[signature] > 2 and name not in OUTSIDE_STATE:
+            if repeats.get(signature, 0) > 2:
                 blocked += 1
+                metrics.add("blocked_repeats")
                 if blocked >= self.mission.max_blocked:
                     log("mission_loop_abort", mission=tag, step=step + 1)
                     self.status, self.missing = "incomplete", self.missing + ["aborted: repeated the same action"]
@@ -190,8 +254,9 @@ class Explorer:
             else:
                 result = await self._call(name, args)
             log("action", mission=tag, step=step + 1, tool=name, args=args, result=result[:300])
+            metrics.step(tag, name)
             # older steps stay short in the prompt (tokens); the latest result is shown in full once
-            self.history.append(f"{step + 1}. {name} {json.dumps(args, ensure_ascii=False)[:100]} -> {result[:120]}")
+            self.history.append(f"{step + 1}. {name} {json.dumps(args, ensure_ascii=False)[:160]} -> {result[:260]}")
             self.last_result = result
             if self.stop:
                 return self
@@ -200,8 +265,24 @@ class Explorer:
         self.status, self.missing = "incomplete", self.missing + ["step budget exhausted"]
         return self
 
+    def _system(self) -> str:
+        text = EXPLORER_SYSTEM
+        if flags.EXTRACT_THEN and self.mission.kinds:          # only missions that extract
+            text += THEN_HINT
+        if flags.WAIT_ON_BACKGROUND and self.mission.background_extraction:
+            text += WAIT_HINT
+        return text
+
+    def _waits_on_background(self, name: str) -> bool:
+        return name == "wait_for" and bool(self.pending) and flags.WAIT_ON_BACKGROUND
+
     async def _call(self, name: str, args: dict) -> str:
         try:
+            if self._waits_on_background(name):
+                finished = await self._wait_first(20.0)
+                return ("waited for the background extractions: "
+                        + (", ".join(finished) + " finished" if finished else "none finished within 20 s")
+                        + ". Their results are shown now; the page condition was not checked.")
             if name in ACTIONS:
                 return await self.site.act(name, args)
             if name == "read_all_pages":
@@ -215,10 +296,18 @@ class Explorer:
                     collection = self._collection(args.get("collection_id"))
                     if collection is None:
                         return "ERROR: no collection yet; use read_all_pages first"
-                    return await self._extract_collection(collection, kind)
-                return await self.extractor(kind, await self.site.full_text(), self.site.page.url, via="page")
+                    return await self._then(args, await self._extraction(
+                        f"extract {collection.id} ({kind})", self._extract_collection(collection, kind)))
+                url = self.site.page.url
+                text = await self.site.full_text()          # read before any then_click leaves the page
+                return await self._then(args, await self._extraction(
+                    f"extract {url} ({kind})", self.extractor(kind, text, url, via="page")))
             if name == "extract_urls":
-                return await self._extract_urls(args)
+                kind = str(args.get("kind"))
+                urls = [self.site.absolute(str(u)) for u in (args.get("urls") or [])][:12]
+                return await self._then(args, await self._extraction(
+                    f"extract_urls {len(urls)} page(s) ({kind}): {', '.join(urls)[:300]}",
+                    _joined(*(self._extract_url(u, kind) for u in urls))))
             if name == "read_document":
                 return await self._read_document(args)
             if name == "inspect_visual":
@@ -230,35 +319,60 @@ class Explorer:
             log("tool_error", tool=name, error=f"{type(error).__name__}: {error}"[:300])
             return f"ERROR: {type(error).__name__}: {str(error)[:200]}"
 
-    # ---------------------------------------------------------------- model-selected content
-    async def _extract_urls(self, args: dict) -> str:
-        urls = [str(u) for u in (args.get("urls") or [])][:12]
-        kind = str(args.get("kind"))
-        fetched: list[tuple[str, str]] = []
-        for u in urls:
-            abs_u = self.site.absolute(u)
-            if not self.site.was_seen(abs_u):
-                fetched.append((abs_u, "ERROR not a link shown on a page you saw (do not guess addresses; open the page that links to it)"))
-                continue
-            text = await self.site.read_url(abs_u)
-            fetched.append((abs_u, text))
-        valid_items = [(u, t) for u, t in fetched if not t.startswith("ERROR")]
-        orch = getattr(self.extractor, "__self__", None)
-        if orch and hasattr(orch, "extract_many") and valid_items:
-            summaries = await orch.extract_many(kind, valid_items, via="page")
-            summary_map = {u: s for (u, _), s in zip(valid_items, summaries)}
-        else:
-            summary_map = {}
-            for u, t in valid_items:
-                summary_map[u] = await self.extractor(kind, t, u, via="page")
-        results = []
-        for u, t in fetched:
-            if t.startswith("ERROR"):
-                results.append(f"{u}: {t}")
-            else:
-                results.append(f"{u}: {summary_map.get(u, '')}")
-        return " | ".join(results)
+    # ---------------------------------------------------------------- background extraction
+    async def _extraction(self, label: str, work) -> str:
+        """Run an extraction now, or (background_extraction) start it and let the model continue navigating."""
+        if not self.mission.background_extraction:
+            return await work
+        label = f"[x{len(self.history) + 1}] {label}"
+        self.pending[label] = asyncio.ensure_future(work)
+        metrics.mission(self.tag)["background"] += 1
+        return (f"extraction started in the background: {label}. Its result and the updated checklist arrive in a "
+                f"later step; continue with the next page meanwhile (do not request it again).")
 
+    def _collect(self) -> list[str]:
+        """Results of background extractions that have finished (also into the step history)."""
+        arrived = []
+        for label, task in list(self.pending.items()):
+            if not task.done():
+                continue
+            del self.pending[label]
+            if task.cancelled():
+                result = "ERROR: cancelled"
+            elif task.exception() is not None:
+                error = task.exception()
+                result = f"ERROR: {type(error).__name__}: {str(error)[:200]}"
+            else:
+                result = task.result()
+            arrived.append(f"{label} -> {result}")
+            self.history.append(f"   (background) {label[:120]} -> {result[:200]}")
+        return arrived
+
+    async def _then(self, args: dict, result: str) -> str:
+        """X-1: after starting an extraction, go on to the page the model named, in the same step."""
+        if not flags.EXTRACT_THEN or result.startswith("ERROR"):
+            return result
+        if args.get("then_click"):
+            metrics.add("extract_then")
+            return result + "\nthen: " + await self.site.act("click", {"ref": args["then_click"]})
+        if args.get("then_open"):
+            metrics.add("extract_then")
+            return result + "\nthen: " + await self.site.act("open_url", {"url": args["then_open"]})
+        return result
+
+    async def _wait_first(self, timeout: float) -> list[str]:
+        """Wait until one background extraction finishes (no model call meanwhile); the labels that finished."""
+        timeout = min(timeout, self.mission.deadline - time.time() - 10)
+        if timeout <= 0 or not self.pending:
+            return []
+        done, _ = await asyncio.wait(list(self.pending.values()), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        return [label for label, task in self.pending.items() if task in done]
+
+    async def _drain(self, timeout: float) -> None:
+        if self.pending and timeout > 0:
+            await asyncio.wait(list(self.pending.values()), timeout=timeout)
+
+    # ---------------------------------------------------------------- model-selected content
     async def _extract_url(self, url: str, kind: str) -> str:
         url = self.site.absolute(url)
         if not self.site.was_seen(url):
@@ -266,7 +380,18 @@ class Explorer:
         text = await self.site.read_url(url)
         if text.startswith("ERROR"):
             return f"{url}: {text}"
-        return f"{url}: " + await self.extractor(kind, text, url, via="page")
+        return f"{url}: " + await self.extractor(kind, text, url, via="page") + self._new_links(url, text)
+
+    def _new_links(self, url: str, text: str) -> str:
+        """X-2: the links on an extracted page not listed before, so the model can extract the next views directly
+        (they count as seen: the page was read in this session)."""
+        if not flags.LINKS_IN_RESULTS:
+            return ""
+        page = url.split("#")[0]
+        found = [(label, href) for label, href in _links([(url, text)])
+                 if href.split("#")[0] != page and href not in self.offered_links][:8]
+        self.offered_links.update(href for _, href in found)
+        return ("\n  links there: " + "; ".join(f"{label[:60]} -> {href}" for label, href in found)) if found else ""
 
     def _collection(self, collection_id) -> Collection | None:
         collections = self.site.collections
@@ -393,13 +518,8 @@ class Explorer:
     async def _inspect_visual(self, question: str, ref: str | None) -> str:
         if self.visual_used >= self.mission.max_visual:
             return "ERROR: screenshot budget of this mission used up; continue with the text view"
-        jpeg, shows = await self.site.screenshot(re.sub(r"[^\w]", "", ref) if ref else None)
-        digest = hashlib.sha1(jpeg).hexdigest()
-        if digest in self.pictures_seen:     # the same picture again teaches nothing: no model call, no budget
-            return ("ERROR: this screenshot is identical to one you already looked at. Target the picture's own ref "
-                    "(e.g. a [eN] canvas/image line), scroll the document, or open another view first.")
-        self.pictures_seen.add(digest)
         self.visual_used += 1
+        jpeg = await self.site.screenshot(re.sub(r"[^\w]", "", ref) if ref else None)
         context = (await self.site.observe(limit=3000))
         data = await llm.ask_json(VISION_SYSTEM, [
             {"type": "text", "text": f"QUESTION: {question}\n\nText view of the same page (refs usable for actions):\n{context}"},
@@ -407,9 +527,22 @@ class Explorer:
         answer = str(data.get("answer", "")).strip()
         if answer:
             self.site.note_visual(self.site.page.url, f"{question} -> {answer}")
-        log("visual", site=self.site.site_id, question=question[:200], shows=shows, data=data)
-        return (f"visual answer ({shows}): " + json.dumps(data, ensure_ascii=False)[:1200]
+        log("visual", site=self.site.site_id, question=question[:200], data=data)
+        return ("visual answer: " + json.dumps(data, ensure_ascii=False)[:1200]
                 + "\n(the answer is now part of this page's text for extract)")
+
+
+async def _joined(*parts) -> str:
+    return " | ".join(await asyncio.gather(*parts))
+
+
+THEN_HINT = """
+- Save steps: extract(kind, then_click=<ref of the next page you need>) and extract_urls(urls, kind,
+  then_open=<address>) start the extraction and open the next page in the same step."""
+
+WAIT_HINT = """
+- When nothing is left to do but wait for background extractions, call wait_for (any condition): it returns as soon
+  as one of them has finished, with its result."""
 
 
 def _content_lines(text: str) -> set[str]:
@@ -419,9 +552,8 @@ def _content_lines(text: str) -> set[str]:
 
 def _hints(observation: str, vision_left: bool) -> str:
     hints = []
-    if vision_left and re.search(r"(?:canvas|image) without text|\[(?:f\d+)?e\d+\] canvas", observation):
-        hints.append("This page shows a picture without text alternative. If you need its content, use inspect_visual "
-                     "with the picture's ref ([eN] canvas/image line), not the ref of a tab or button.")
+    if vision_left and re.search(r"\[(?:canvas|image) without text", observation):
+        hints.append("This page shows a picture without text alternative. If you need its content, use inspect_visual.")
     return "\n".join(hints)
 
 
@@ -431,16 +563,12 @@ def _body(text: str) -> str:
 
 
 def _next_link(text: str, label: str) -> str | None:
-    """Address of the link labelled like the chosen next-page link, wherever it sits: table rows and pagers
-    often put several links in one line ("Vorherige Seite ; Nächste Seite")."""
     for line in text.splitlines():
-        for match in _LINK.finditer(line):
-            if match.group(1).strip() == label:
-                return match.group(2)
+        match = re.match(r'\[\w+\] link "(.*?)" -> (\S+)', line.strip())
+        if match and match.group(1).strip() == label:
+            return match.group(2)
     return None
 
-
-OUTSIDE_STATE = {"wait_for", "get_tan"}   # their result changes without the page changing: asking again is no loop
 
 _LINK = re.compile(r'\[\w+\] link "(.*?)" -> (\S+)(?: \([^)]*\))*')
 

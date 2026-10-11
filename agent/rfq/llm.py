@@ -13,21 +13,27 @@ import time
 
 from openai import AsyncOpenAI
 
+from . import flags, metrics
 from .log import log
 
 MODEL = os.environ.get("RFQ_MODEL", "qwen3.8-flash-next")
 _client: AsyncOpenAI | None = None
 _slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL", "10")))
+# With RFQ_LLM_LANES, navigation (tool) calls get slots of their own, so a burst of background extractions never makes
+# the next navigation step wait; 6 + 10 slots stay well below the team's 32.
+_nav_slots: asyncio.Semaphore | None = None
 usage = {"calls": 0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0, "images": 0, "hedges": 0}
 _run_deadline = float("inf")   # epoch seconds; set by the orchestrator
 # Hedged requests ("The Tail at Scale", Dean & Barroso 2013): a request that is still silent long after a normal one
 # would have answered is probably stuck in a queue, so an identical twin is sent and the first answer wins.
 # Measured over 3,000+ calls of our runs: tool calls p50 2.2 s / p99 9.7 s, JSON extractions p50 7.9 s / p99 30 s;
-# a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s).
-HEDGE_AFTER = {True: 12.0, False: 30.0}   # tools / no tools; slower when recent calls are slower (3x their median)
+# a stuck request otherwise blocks a mission for the full per-call timeout (60 s / 150 s). Healthy tool calls with long
+# arguments (a form's `steps`, many URLs) take up to ~18 s, and a twin is billed in full even when it loses: tool calls
+# are hedged after 20 s, not earlier.
+HEDGE_AFTER = {True: float(os.environ.get("RFQ_HEDGE_TOOLS_S", "20")),     # tools / no tools; slower when recent
+               False: float(os.environ.get("RFQ_HEDGE_JSON_S", "30"))}    # calls are slower (3x their median)
 MAX_HEDGES = 2                            # twins in flight at a time: bounded extra load on the shared slots
 _hedging = 0
-MAX_ATTEMPTS = 60   # a model outage of a few minutes must not end a mission: 5xx, 429, timeouts are retried (≤ 8 s apart)
 QUIET_CALLS = bool(os.environ.get("CHALLENGE_RUN_TOKEN"))   # in a run the platform keeps only the end of the log
 _recent: dict[bool, list[float]] = {True: [], False: []}
 
@@ -63,19 +69,24 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         kwargs["response_format"] = {"type": "json_object"}
     end = min(deadline or float("inf"), _run_deadline)
     per_call = timeout or (60 if tools else 150)   # a hung call must not eat minutes
-    delay, refusals = 1.0, 0
-    for attempt in range(MAX_ATTEMPTS):     # transient failures are retried while the deadline allows
+    delay = 1.0
+    for attempt in range(6):
         left = end - time.time()
         if left < 3:
             log("llm_deadline", tag=tag, attempt=attempt)
             raise DeadlineExceeded(tag)
         started = time.monotonic()
-        slots = _slots
+        slots = _lane(bool(tools))
+        lane = "nav" if tools else "json"
         try:
             await asyncio.wait_for(slots.acquire(), timeout=left - 2)
         except asyncio.TimeoutError:
             log("llm_deadline", tag=tag, attempt=attempt, waiting="slot")
             raise DeadlineExceeded(tag)
+        waited = time.monotonic() - started
+        metrics.add(f"slot_wait_s:{lane}", waited)
+        if waited > 1:
+            metrics.add(f"slot_waits_over_1s:{lane}")
         try:
             try:
                 requested = time.monotonic()
@@ -85,17 +96,15 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
                 slots.release()
         except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
-            status = getattr(error, "status_code", None)
-            # Refusals: the request (400/413/422) or the access (401/403, e.g. the run token after the accepted
-            # answer). A proxy in trouble also answers 403 once in a while, so only the third refusal in a row ends
-            # the call; 404/409/429/5xx and timeouts are hiccups and are retried while the deadline allows.
-            refusals = refusals + 1 if status in (400, 401, 403, 413, 422) else 0
-            if refusals >= 3:
-                raise DeadlineExceeded(f"{tag}: request refused ({status})")
+            if getattr(error, "status_code", None) in (401, 403):
+                # the run token is revoked once the answer is accepted (or the key is wrong): retrying cannot help
+                raise DeadlineExceeded(f"{tag}: access refused ({error.status_code})")
             await asyncio.sleep(max(0.0, min(delay, end - time.time() - 3)))
             delay = min(delay * 2, 8)
             continue
         seconds = time.monotonic() - started
+        metrics.add(f"calls:{lane}")
+        metrics.add(f"call_s:{lane}", seconds - waited)
         message = response.choices[0].message
         tokens = response.usage
         cached = getattr(getattr(tokens, "prompt_tokens_details", None), "cached_tokens", 0) or 0 if tokens else 0
@@ -113,8 +122,18 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         if not QUIET_CALLS or seconds > 8 or attempt:   # sandbox: only slow or retried calls (usage has the totals)
             log("llm", tag=tag, s=round(seconds, 2),
                 tokens=[getattr(tokens, "prompt_tokens", None), getattr(tokens, "completion_tokens", None), cached])
-        return {"content": message.content or "", "tool_calls": calls}
+        return {"content": message.content or "", "tool_calls": calls,
+                "output_tokens": getattr(tokens, "completion_tokens", None) if tokens else None}
     raise DeadlineExceeded(f"LLM unavailable after retries ({tag})")
+
+
+def _lane(tools: bool) -> asyncio.Semaphore:
+    global _nav_slots
+    if tools and flags.LLM_LANES:
+        if _nav_slots is None:
+            _nav_slots = asyncio.Semaphore(int(os.environ.get("RFQ_LLM_PARALLEL_NAV", "6")))
+        return _nav_slots
+    return _slots
 
 
 def _hedge_after(tools: bool) -> float:
@@ -150,6 +169,8 @@ async def _first_answer(kwargs: dict, per_call: float, end: float, hedge_after: 
                 if task.exception() is None:
                     if twin:
                         log("llm_hedge_won", tag=tag, by="twin" if task is tasks[-1] else "first")
+                        if task is tasks[-1]:
+                            metrics.add("hedge_won_by_twin")
                     return task.result()
                 error = task.exception()
         raise error

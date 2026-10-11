@@ -14,7 +14,7 @@ import time
 
 from playwright.async_api import async_playwright
 
-from rfq import contract
+from rfq import contract, flags, llm, metrics
 from rfq.agent.orchestrator import Orchestrator
 from rfq.browser.site import Site
 from rfq.log import log
@@ -52,6 +52,15 @@ async def open_sites(playwright, access: list[dict]) -> tuple[dict[str, Site], l
 STARTED = time.time()
 
 
+def summarize() -> None:
+    """Where the time went, in a few lines at the very end (the platform keeps only the end of the log)."""
+    try:
+        for line in metrics.summary_lines(usage=llm.usage):
+            log("run_summary", **line)
+    except Exception as error:      # never let the summary break the exit
+        log("run_summary_failed", error=f"{type(error).__name__}: {error}"[:300])
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
@@ -65,12 +74,12 @@ async def main() -> int:
         sites=[a["siteId"] for a in run["access"]], submission=run.get("submission", {}).get("kind"))
     async with async_playwright() as playwright:
         sites, browsers = await open_sites(playwright, run["access"])
-        # A site that cannot be reached at once must not block the others: missions retry it later.
-        started = await asyncio.gather(*(asyncio.wait_for(site.start(), timeout=100) for site in sites.values()),
-                                       return_exceptions=True)
-        for site, outcome in zip(sites.values(), started):
-            log("site_ready", site=site.site_id, ok=not isinstance(outcome, Exception),
-                error=str(outcome)[:200] if isinstance(outcome, Exception) else None)
+        # The websites load in the background while the brief is read; each mission waits only for its own website,
+        # and one that cannot be reached at once blocks nothing (missions retry it later).
+        for site in sites.values():
+            site.begin_start(timeout=100)
+        if not flags.START_OVERLAP:          # switched off: every website first, as before
+            await asyncio.gather(*(site.wait_started() for site in sites.values()))
         orchestrator = Orchestrator(run, sites, started=STARTED)
         replay = json.load(open(args.evidence)) if args.evidence else None
         try:   # last line of defence: the run ends in time even if something hangs
@@ -78,6 +87,7 @@ async def main() -> int:
         except asyncio.TimeoutError:
             log("watchdog_timeout")
             result = orchestrator.result
+        summarize()
         if args.out:
             with open(args.out, "w") as handle:
                 json.dump({"answer": result.answer if result else None, "skipped": result.skipped if result else None,
@@ -96,6 +106,7 @@ if __name__ == "__main__":
         code = asyncio.run(main())
     except Exception as error:   # last resort: log and exit cleanly
         log("fatal", error=f"{type(error).__name__}: {error}"[:1000])
+        summarize()
         code = 1
     log("exit", code=code, seconds=round(time.time() - started, 1))
     sys.exit(code)

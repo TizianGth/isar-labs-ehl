@@ -280,34 +280,326 @@ def test_no_bid_is_checked_again_with_fresh_qa_before_it_is_accepted(monkeypatch
     assert o.evidence_digest()["amendments"] == [["R1", "A-1", "stroke", "480"]]
 
 
-def test_waiting_for_outside_changes_is_not_a_loop(monkeypatch):
-    """Fake portal legacy/blocked: get_tan was blocked as 'the same action without progress' for three minutes.
-    Waiting (wait_for, get_tan) on an unchanged page is legitimate; clicking the same thing again is not."""
-    from types import SimpleNamespace
-    from rfq import llm as llm_module
-    from rfq.agent import explorer as ex
-    assert "get_tan" in ex.OUTSIDE_STATE
+def test_a_slow_website_blocks_only_its_own_missions(monkeypatch):
+    """N3: websites load in the background; waiting for one never waits for another, and a failed start is no error."""
+    from rfq.browser.site import Site
 
-    def run(tool: str, args: dict) -> list:
-        acted = []
+    async def scenario():
+        fast, slow, broken = (Site(n, f"http://{n}.test", {}, None) for n in ("fast", "slow", "broken"))
+        delays = {"fast": 0.05, "slow": 2.0}
 
-        async def act(name, arguments):
-            acted.append(name)
-            return "done"
+        async def start(self):
+            if self.site_id == "broken":
+                raise RuntimeError("unreachable")
+            await asyncio.sleep(delays[self.site_id])
+        monkeypatch.setattr(Site, "start", start)
+        for site in (fast, slow, broken):
+            site.begin_start(timeout=5)
+        began = time.time()
+        await fast.wait_started()
+        fast_wait = time.time() - began
+        await broken.wait_started()
+        await slow.wait_started()
+        return fast_wait, time.time() - began
+    fast_wait, all_wait = asyncio.run(scenario())
+    assert fast_wait < 0.5 and all_wait >= 1.9
 
-        async def observe(limit=None):
-            return "URL: x\nthe same page"
 
-        site = SimpleNamespace(act=act, observe=observe, site_id="s", url="http://x", page=SimpleNamespace(url="http://x"))
-        replies = iter([{"content": "", "tool_calls": [(tool, args)]}] * 4 + [{"content": "", "tool_calls": [("finish", {"summary": "ok"})]}])
+class _FakeSite:
+    """Just enough of a Site for the explorer loop (no browser)."""
+    site_id, url = "erp", "http://erp.test"
 
-        async def chat(messages, **kwargs):
-            return next(replies)
+    def __init__(self):
+        self.page = type("P", (), {"url": "http://erp.test/list"})()
+        self.clicks = []
 
-        monkeypatch.setattr(llm_module, "chat", chat)
-        explorer = ex.Explorer(site, ex.Mission("t", "goal", {}, deadline=10**10), None)
-        asyncio.run(explorer.run())
-        return acted
+    async def wait_started(self):
+        pass
 
-    assert run("wait_for", {"condition": "change"}) == ["wait_for"] * 4
-    assert run("click", {"ref": "e1"}) == ["click"] * 2          # the third identical click is a loop
+    async def observe(self, limit=0):
+        return f"URL: {self.page.url}?view={len(self.clicks)}\n[e1] link \"Detail\" -> /detail"
+
+    async def act(self, name, args):
+        self.clicks.append((name, time.time()))
+        await asyncio.sleep(0.25)          # a page load
+        return "clicked"
+
+    def absolute(self, url):
+        return url if url.startswith("http") else "http://erp.test" + url
+
+    def was_seen(self, url):
+        return True
+
+    async def read_url(self, url):
+        return f"URL: {url}\npage text"
+
+
+def _scripted(monkeypatch, calls: list, prompts: list):
+    async def chat(messages, **kwargs):
+        prompts.append(messages[-1]["content"])
+        return {"content": "", "tool_calls": [calls.pop(0)]}
+    monkeypatch.setattr(llm, "chat", chat)
+
+
+def test_background_extraction_lets_the_mission_navigate_meanwhile(monkeypatch):
+    """Evidence speed-up: extract_urls returns at once; the model clicks on while the page is extracted, sees the
+    result in a later step, and the mission completes only once the extraction has landed."""
+    from rfq.agent.explorer import Explorer, Mission
+    done, prompts = {"facts": False, "at": None}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.6)
+        done.update(facts=True, at=time.time())
+        return "M-1: price"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/detail"], "kind": "materials"}),
+                            ("click", {"ref": "e1"}), ("click", {"ref": "e1"}), ("click", {"ref": "e1"})], prompts)
+    site = _FakeSite()
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: ("facts" if done["facts"] else "missing", done["facts"]),
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert site.clicks and site.clicks[0][1] < done["at"]            # navigated before the extraction finished
+    assert "STILL EXTRACTING IN THE BACKGROUND" in prompts[1]
+    assert explorer.status == "complete" and not explorer.pending
+    assert any("(background)" in h and "M-1: price" in h for h in explorer.history)
+
+
+def test_finish_waits_for_background_results_and_is_postponed_if_work_remains(monkeypatch):
+    from rfq.agent.explorer import Explorer, Mission
+    state, prompts = {"pages": 0}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.3)
+        state["pages"] += 1
+        return "found another material"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/a"], "kind": "materials"}),
+                            ("finish", {"summary": "done"}),
+                            ("extract_urls", {"urls": ["/b"], "kind": "materials"}),
+                            ("finish", {"summary": "done"})], prompts)
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: (f"pages {state['pages']}/2", state["pages"] >= 2),
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(_FakeSite(), mission, extractor).run())
+    assert any("postponed" in h for h in explorer.history)       # first finish: results came, checklist incomplete
+    assert state["pages"] == 2 and explorer.status in ("complete", "finished") and not explorer.pending
+
+
+def test_a_slow_new_erp_tab_does_not_hold_up_the_other_groups(monkeypatch):
+    started = {}
+    calls = {"n": 0}
+
+    async def tab(self, base):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            await asyncio.sleep(3)          # this group's tab takes long to load
+        return object()
+
+    async def mission_run(self, site, mission):
+        started[mission.name] = time.time()
+        self.status[mission.name] = "complete"
+
+    monkeypatch.setattr(Orchestrator, "_tab", tab)
+    monkeypatch.setattr(Orchestrator, "run_mission", mission_run)
+
+    async def scenario():
+        o = _orchestrator()
+        o.bb.add("positions", {"positions": [{"position": str(i), "requirement_ref": f"A-{i}"} for i in (1, 2, 3)]}, "u")
+        o.bb.add("spec_revisions", {"revisions": [{"revision": "V2", "status_text": "gültig"}]}, "u")
+        o.bb.add("requirements", {"revision": "V2", "requirements": [
+            {"ref": f"A-{i}", "catalog_group": f"G-{i}"} for i in (1, 2, 3)]}, "u")
+        o.done["specification"].set()
+        o.done["tender"].set()
+        began = time.time()
+        await o.erp_phase()
+        return {k: v - began for k, v in started.items()}
+    times = asyncio.run(scenario())
+    assert len(times) == 3 and sorted(times.values())[1] < 1.5     # base + the fast tab start without waiting
+
+
+class _RoleSite:
+    def __init__(self, site_id, fail_spawn=False):
+        self.site_id, self.url, self.fail_spawn, self.tabs = site_id, f"http://{site_id}.test", fail_spawn, []
+
+    async def wait_started(self):
+        pass
+
+    async def spawn(self):
+        if self.fail_spawn:
+            raise RuntimeError("no new tab")
+        tab = _RoleSite(self.site_id)
+        self.tabs.append(tab)
+        return tab
+
+
+def _shared_site_run(monkeypatch, fail_spawn: bool):
+    portal = _RoleSite("portal", fail_spawn)
+    sites = {"portal": portal, "erp": _RoleSite("erp"), "mail": _RoleSite("mail")}
+    runs = []
+
+    async def fake_mission(self, site, mission, attempts=2):
+        runs.append((mission.name, site, time.time()))
+        await asyncio.sleep(0.3)
+        runs.append((mission.name + ":end", site, time.time()))
+
+    async def no_erp(self):
+        return []
+    from rfq import flags
+    monkeypatch.setattr(flags, "GAP_RECOVERY", False)            # this test is about tabs, not about recovery
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "erp_phase", no_erp)
+
+    async def scenario():
+        run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+        o = Orchestrator(run, sites, started=time.time())
+        o.brief = {"tender_reference": "XT-1", "authorized_records": [],
+                   "sites": {"tender": "portal", "specification": "portal", "mail": "mail", "erp": "erp"}}
+        await o.gather_evidence()
+        return o
+    o = asyncio.run(scenario())
+    at = {name: (site, t) for name, site, t in runs}
+    return portal, o, at
+
+
+def test_two_roles_on_one_website_get_their_own_tabs(monkeypatch):
+    """G-1: information split differently: the specification lives on the tender website. Each mission gets its
+    own tab and both run at the same time."""
+    portal, o, at = _shared_site_run(monkeypatch, fail_spawn=False)
+    assert at["tender"][0] is portal and at["specification"][0] is portal.tabs[0]
+    assert at["specification"][1] < at["tender:end"][1]               # in parallel
+    assert o.role_site("specification") is portal.tabs[0] and o.role_site("tender") is portal
+
+
+def test_without_a_new_tab_the_missions_take_turns(monkeypatch):
+    portal, o, at = _shared_site_run(monkeypatch, fail_spawn=True)
+    assert at["tender"][0] is portal and at["specification"][0] is portal
+    first, second = sorted(("tender", "specification"), key=lambda n: at[n][1])
+    assert at[second][1] >= at[first + ":end"][1]                      # never two missions on one tab at once
+
+
+def test_wait_for_returns_with_the_next_background_result(monkeypatch):
+    """P-3: in sandbox runs the model called wait_for 18-22 times per run while extractions ran in the background
+    (page conditions that never came, 8-10 s each). With the switch on, one wait_for returns as soon as a result is
+    there; repeating it is not a loop."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission
+    monkeypatch.setattr(flags, "WAIT_ON_BACKGROUND", True)
+    state, prompts = {"pages": 0}, []
+
+    async def extractor(kind, text, url, via="page"):
+        await asyncio.sleep(0.4 if url.endswith("/a") else 0.9)
+        state["pages"] += 1
+        return "facts"
+
+    _scripted(monkeypatch, [("extract_urls", {"urls": ["/a", "/b"], "kind": "materials"}),
+                            ("wait_for", {"condition": "text:Konditionen"}),
+                            ("wait_for", {"condition": "text:Konditionen"}),
+                            ("wait_for", {"condition": "text:Konditionen"})], prompts)
+    site = _FakeSite()
+    mission = Mission("erp:G", "goal", {}, max_steps=6, deadline=time.time() + 60,
+                      progress=lambda: (f"pages {state['pages']}/2", state["pages"] >= 2), background_extraction=True)
+    started = time.time()
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert explorer.status == "complete" and time.time() - started < 3
+    assert not site.clicks                                         # the page was never waited on
+    assert not any("already did exactly this" in h for h in explorer.history)
+    assert len(prompts) <= 3                                       # extract + at most two waits, no idle loop
+
+
+def test_extract_then_starts_the_extraction_and_opens_the_next_page(monkeypatch):
+    """X-1: one model step starts a background extraction of this page and clicks on to the next one; the text
+    extracted is the page as it was before the click."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission, explorer_tools
+    monkeypatch.setattr(flags, "EXTRACT_THEN", True)
+    names = {t["function"]["name"]: t["function"]["parameters"]["properties"] for t in explorer_tools()}
+    assert "then_click" in names["extract"] and "then_open" in names["extract_urls"]
+    seen_texts, prompts = [], []
+
+    async def extractor(kind, text, url, via="page"):
+        seen_texts.append(text)
+        return "facts"
+
+    class _Site(_FakeSite):
+        async def full_text(self):
+            return f"page before the click ({len(self.clicks)} clicks so far)"
+
+    _scripted(monkeypatch, [("extract", {"kind": "materials", "then_click": "e1"}), ("finish", {"summary": "ok"})], prompts)
+    site = _Site()
+    mission = Mission("erp:G", "goal", {"materials": "m"}, max_steps=4, deadline=time.time() + 60,
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert site.clicks and seen_texts == ["page before the click (0 clicks so far)"]
+    assert "then: clicked" in explorer.history[0]
+    monkeypatch.setattr(flags, "EXTRACT_THEN", False)
+    assert "then_click" not in {t["function"]["name"]: t["function"]["parameters"]["properties"]
+                                for t in explorer_tools()}["extract"]
+
+
+def test_extraction_results_list_the_new_links_of_the_extracted_page(monkeypatch):
+    """X-2: sub-views (stock levels, price scales) are linked from the pages the model extracts; listing them lets
+    it extract them next without clicking there first. Each link is listed once."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission
+    monkeypatch.setattr(flags, "LINKS_IN_RESULTS", True)
+
+    class _Site(_FakeSite):
+        async def read_url(self, url):
+            return f"URL: {url}\nLager\n[e3] link \"Bestand je Lagerort\" -> /stock?level=2\n[e4] link \"Staffeln\" -> /scales"
+
+    async def extractor(kind, text, url, via="page"):
+        return "facts"
+    explorer = Explorer(_Site(), Mission("erp:G", "goal", {}), extractor)
+    first = asyncio.run(explorer._extract_url("http://erp.test/stock", "materials"))
+    again = asyncio.run(explorer._extract_url("http://erp.test/stock?view=b", "materials"))
+    assert "links there: Bestand je Lagerort" in first and "http://erp.test/scales" in first
+    assert "links there" not in again
+    monkeypatch.setattr(flags, "LINKS_IN_RESULTS", False)
+    assert "links there" not in asyncio.run(Explorer(_Site(), Mission("erp:G", "goal", {}), extractor)
+                                            ._extract_url("http://erp.test/stock", "materials"))
+
+
+def test_bid_form_is_prepared_after_the_tender_mission_without_signing_tools(monkeypatch):
+    """X-5: the free tender tab fills registration and bidder data during the evidence phase; it can neither sign
+    nor submit, and nothing happens with the switch off."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer
+    sites = {"portal": _RoleSite("portal"), "supplier": _RoleSite("supplier"), "erp": _RoleSite("erp"),
+             "mail": _RoleSite("mail")}
+    order, prepared = [], []
+
+    async def fake_mission(self, site, mission, attempts=2):
+        order.append(mission.name)
+
+    async def fake_run(self, tools=None):
+        prepared.append((self.mission.name, [t["function"]["name"] for t in tools], self.mission.goal))
+        order.append(self.mission.name)
+        self.status = "finished"
+        return self
+
+    async def no_erp(self):
+        return []
+    monkeypatch.setattr(flags, "GAP_RECOVERY", False)
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "erp_phase", no_erp)
+    monkeypatch.setattr(Explorer, "run", fake_run)
+
+    def scenario(switch):
+        monkeypatch.setattr(flags, "PREPARE_BID", switch)
+        order.clear(), prepared.clear()
+
+        async def go():
+            run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+            o = Orchestrator(run, sites, started=time.time())
+            o.brief = {"tender_reference": "XT-1", "bidder_company": "B GmbH", "bidder_vat_id": "DE1",
+                       "authorized_records": [],
+                       "sites": {"tender": "portal", "specification": "supplier", "mail": "mail", "erp": "erp"}}
+            await o.gather_evidence()
+        asyncio.run(go())
+    scenario(True)
+    assert len(prepared) == 1 and order.index("prepare_bid") > order.index("tender")
+    name, tools, goal = prepared[0]
+    assert "get_tan" not in tools and "submit_bid" not in tools and "B GmbH" in goal and "Do NOT" in goal
+    scenario(False)
+    assert not prepared

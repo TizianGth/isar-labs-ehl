@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal as D
 from math import ceil
 
-from .parse import cert, clean, day, integer, mail_address, norm_id, number, qa_number, revision_is_current, same_text, when
+from .parse import cert, clean, day, integer, mail_address, norm_id, number, revision_is_current, same_text, when
 
 CENT = D("0.01")
 
@@ -83,17 +83,9 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
     for item in bb.get("clarifications", []):
         for e in item["data"].get("entries") or []:
             if e.get("number"):
-                entries[qa_number(e["number"])] = e
-    def in_force(e: dict) -> bool:            # dated after the scenario date: no effect yet, nor its withdrawals
-        at = when(e.get("datetime_utc"))
-        return at is None or at <= T
-
-    withdrawn = {qa_number(f.get("withdrawn_number")) for e in entries.values() if in_force(e) for f in e.get("facts") or []
+                entries[norm_id(e["number"])] = e
+    withdrawn = {norm_id(f.get("withdrawn_number")) for e in entries.values() for f in e.get("facts") or []
                  if f.get("type") == "withdrawal" and f.get("withdrawn_number")}
-    later = sorted({qa_number(f.get("withdrawn_number")) for e in entries.values() if not in_force(e)
-                    for f in e.get("facts") or [] if f.get("type") == "withdrawal" and f.get("withdrawn_number")})
-    if later:
-        note(f"withdrawals dated after the scenario date (no effect): {later}")
     if withdrawn:
         note(f"withdrawn Q&A answers: {sorted(withdrawn)}")
     facts = []                                                   # (datetime, number, fact)

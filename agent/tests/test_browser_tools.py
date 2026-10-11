@@ -205,254 +205,70 @@ def test_decisive_steps_get_a_fresh_start_on_a_site():
     site = Site("mail", BASE, {"username": "u", "password": "p"}, None)
     site.hung[BASE] = 2
     site._recoveries = 8
-    site.collections["c1"] = object()          # an inbox list collected before the TAN mail arrived
     site.fresh_start()
-    assert site.hung == {} and site._recoveries == 0 and site.collections == {}
+    assert site.hung == {} and site._recoveries == 0
 
 
-def test_next_page_link_inside_a_table_row():
-    """Pagers in table rows hold several links in one line; the next page must still be found."""
-    from rfq.agent.explorer import _next_link
-    row = ('| Seite 2 von 3 ; [e6] link "Vorherige Seite" -> /qa?page=1 ; [e7] link "Nächste Seite" -> /qa?page=3 ; '
-           '[e8] link "Drucken" -> /qa/print |')
-    assert _next_link(row, "Nächste Seite") == "/qa?page=3"
-    assert _next_link('[e1] link "Nächste Seite" -> /next', "Nächste Seite") == "/next"
-    assert _next_link('| [e6] link "Vorherige Seite" -> /qa?page=2 |', "Nächste Seite") is None   # the last page
+def _cascade_page(query: dict) -> str:
+    a, b = query.get("a", ""), query.get("b", "")
+    notice = '<a href="/help">Hinweis zur Auswahl</a>' if a else ""      # shifts every ref after the first apply
+    opts = lambda name, values, chosen: "".join(f'<option{" selected" if v == chosen else ""}>{v}</option>' for v in values)
+    return f"""<html><body>{notice}<form action="/form" method="get">
+      <label>Größe <select name="a">{opts("a", ["-", "S", "M"], a)}</select></label>
+      <button type="submit">Übernehmen</button>
+      <label>Farbe <select name="b" {"" if a else "disabled"}>{opts("b", ["-", "rot", "blau"], b)}</select></label>
+      <label>Anzahl <input name="n" value=""></label>
+      <button type="submit" formaction="/done">Weiter</button></form></body></html>"""
 
 
-def test_a_click_folds_only_its_own_popup(monkeypatch):
-    """Another mission's tab in the same browser context is neither closed nor loaded into our tab."""
+def test_steps_do_a_whole_form_in_one_action_across_rerenders():
+    """N1: one `steps` call does filter, apply, dependent filter, apply, fields and 'next', although every apply
+    re-renders the page and renumbers its refs."""
+    from urllib.parse import parse_qs, urlparse
+
     async def scenario():
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             context = await browser.new_context()
 
             async def handle(route):
-                url = route.request.url
-                if url.endswith("/opener"):
-                    body = ("<html><body><p>Start page of the test portal</p><button onclick=\"window.open('/target')\">Open</button>"
-                            "<button onclick=\"window.otherMission()\">Mark</button></body></html>")
-                elif url.endswith("/target"):
-                    body = "<html><body><p>Target window with its own readable content</p></body></html>"
+                url = urlparse(route.request.url)
+                query = {k: v[0] for k, v in parse_qs(url.query).items()}
+                if url.path == "/done":
+                    body = f"<html><body><p>Fertig a={query.get('a')} b={query.get('b')} n={query.get('n')}</p></body></html>"
                 else:
-                    body = "<html><body><p>A page another mission works on right now</p></body></html>"
+                    body = _cascade_page(query)
                 await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
 
             await context.route(f"{BASE}/**", handle)
-            site = Site("popups", BASE + "/opener", {"username": "u", "password": "p"}, context)
-            await asyncio.wait_for(site.start(), timeout=40)
-            others = []
-
-            async def other_mission():          # another mission opens a tab exactly while our click is handled
-                others.append(await context.new_page())
-                await others[0].goto(BASE + "/elsewhere")
-
-            await site.page.expose_function("otherMission", other_mission)
-            # 1) our click opens nothing while another mission opens a tab: that tab is not ours to fold
-            marked = await site.act("click", {"ref": _ref(await site.observe(), "Mark")})
-            await asyncio.sleep(0.5)
-            other = others[0]
-            first = (marked, other.is_closed(), site.page.url)
-            # 2) our click opens a window: it is loaded in our tab
-            opened = await site.act("click", {"ref": _ref(await site.observe(), "Open")})
-            state = (first, opened, site.page.url, other.is_closed())
-            await browser.close()
-            return state
-    (marked, other_closed, url_after_mark), opened, url_after_open, other_closed_later = asyncio.run(scenario())
-    assert marked == "clicked" and not other_closed and url_after_mark.endswith("/opener")
-    assert "popup window opened" in opened and url_after_open.endswith("/target") and not other_closed_later
-
-
-def test_vision_targets_the_document_and_never_looks_twice(monkeypatch):
-    """Scanned documents (canvas) get a ref; a tab button is not the document; an unchanged picture is not looked at
-    again (fake-portal 'scanned': the budget went to a tab button and to repeated, cut-off views)."""
-    calls = []
-
-    async def fake_ask_json(system, user, **kwargs):
-        calls.append(user)
-        return {"answer": "Preis 12,50", "uncertain": None}
-
-    monkeypatch.setattr(llm, "ask_json", fake_ask_json)
-    page = ("<html><body><p>Technisches Datenblatt</p><button>Preise</button>"
-            "<canvas id='doc' width='600' height='400'></canvas>"
-            "<script>const c = document.getElementById('doc').getContext('2d'); c.fillStyle = '#fff';"
-            "c.fillRect(0, 0, 600, 400); c.fillStyle = '#000'; c.font = '30px sans-serif'; c.fillText('Preis 12,50', 40, 80);"
-            "</script><img src='data:image/gif;base64,R0lGODlhAQABAAAAACw=' width='16' height='16'></body></html>")
-
-    async def scenario():
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            context = await browser.new_context()
-
-            async def handle(route):
-                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=page)
-
-            await context.route(f"{BASE}/**", handle)
-            site = Site("scan", BASE + "/doc", {"username": "u", "password": "p"}, context)
-            await asyncio.wait_for(site.start(), timeout=40)
-            observation = await site.observe()
-            explorer = Explorer(site, Mission("t", "goal", {}, deadline=10**10), None)
-            first = await explorer._inspect_visual("Welcher Preis steht im Dokument?", _ref(observation, "Preise"))
-            again = await explorer._inspect_visual("Und nochmal?", _ref(observation, "Preise"))
-            untargeted = await explorer._inspect_visual("Und ohne Ziel?", None)    # same picture: not looked at again
-            await browser.close()
-            return observation, first, again, explorer.visual_used, untargeted
-    observation, first, again, used, untargeted = asyncio.run(scenario())
-    assert untargeted.startswith("ERROR: this screenshot is identical")
-    assert re.search(r"\[\w+\] canvas without text: needs screenshot \(600x400 px\)", observation)
-    assert not re.search(r"\[\w+\] image without text", observation)       # a 16 px icon is no document
-    assert "largest picture" in first and "12,50" in first
-    assert again.startswith("ERROR: this screenshot is identical") and used == 1 and len(calls) == 1
-
-
-CASCADE = """<html><body><form id="f"></form><script>
-const state = {bore: "", extra: false, stroke: "", mount: "", level: 1};
-function render() {
-  const opt = (vals, sel) => vals.map((v) => `<option${v === sel ? " selected" : ""}>${v}</option>`).join("");
-  document.getElementById("f").innerHTML =
-    `<label>Bohrung <select name="bore">${opt(["", "40", "50"], state.bore)}</select></label>` +
-    (state.extra ? `<label>Variante <select name="variant"><option></option><option>A</option></select></label>` : "") +
-    `<label>Hub <select name="stroke" ${state.level < 2 ? "disabled" : ""}>${opt(["", "500", "600"], state.stroke)}</select></label>` +
-    `<label>Befestigung <select name="mount" ${state.level < 3 ? "disabled" : ""}>${opt(["", "Flansch", "Fuss"], state.mount)}</select></label>` +
-    `<button type="button" onclick="apply()">Auswahl übernehmen</button>`;
-}
-function apply() {
-  const f = document.getElementById("f");
-  state.bore = f.bore.value; state.stroke = f.stroke.value; state.mount = f.mount.value;
-  state.level = Math.min(3, state.level + 1);
-  state.extra = location.hash === "#insert";
-  render();                 // the whole form again: earlier element handles are gone
-}
-render();
-</script></body></html>"""
-
-
-def _cascade_site(p, fragment=""):
-    async def make():
-        browser = await p.chromium.launch()
-        context = await browser.new_context()
-
-        async def handle(route):
-            await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=CASCADE)
-
-        await context.route(f"{BASE}/**", handle)
-        site = Site("form", BASE + "/form" + fragment, {"username": "u", "password": "p"}, context)
-        await asyncio.wait_for(site.start(), timeout=40)
-        return browser, site
-    return make()
-
-
-def _select_ref(observation: str, name: str) -> str:
-    return re.search(r'\[(\w+)\] select "' + name, observation).group(1)
-
-
-def test_a_chain_of_dependent_selects_takes_one_step():
-    async def scenario():
-        async with async_playwright() as p:
-            browser, site = await _cascade_site(p)
+            site = Site("form", BASE, {"username": "u", "password": "p"}, context)
+            await site.start()
+            await site.goto(f"{BASE}/form")
             seen = await site.observe()
-            apply = _ref(seen, "Auswahl übernehmen")
-            result = await site.act("fill_fields", {"fields": [
-                {"ref": _select_ref(seen, "Bohrung"), "value": "50", "apply": apply},
-                {"ref": _select_ref(seen, "Hub"), "value": "600", "apply": apply},
-                {"ref": _select_ref(seen, "Befestigung"), "value": "Flansch"}]})
-            values = await site.page.evaluate("() => { const f = document.getElementById('f'); return [f.bore.value, f.stroke.value, f.mount.value]; }")
+            ref = lambda kind, name: re.search(r'\[(\w+)\] ' + re.escape(kind) + r' "' + re.escape(name), seen).group(1)
+            size, apply, colour, count, nxt = (ref("select", "Größe"), ref("button", "Übernehmen"), ref("select", "Farbe"),
+                                               ref("input[text]", "Anzahl"), ref("button", "Weiter"))
+            result = await site.act("steps", {"steps": [
+                {"action": "select", "ref": size, "option": "S", "then_click": apply},
+                {"action": "select", "ref": colour, "option": "blau", "then_click": apply},
+                {"action": "fill_fields", "fields": [{"ref": count, "value": "7"}]},
+                {"action": "click", "ref": nxt},
+                {"action": "type", "ref": count, "text": "8"},
+                {"action": "click", "ref": nxt}]})
+            final = await site.observe()
             await browser.close()
-            return result, values
-    result, values = asyncio.run(scenario())
-    assert values == ["50", "600", "Flansch"] and "STOPPED" not in result and "ERROR" not in result
+            return result, final
+    result, final = asyncio.run(scenario())
+    assert "Fertig a=S b=blau n=7" in final
+    assert "5. type: ERROR" in result and "no longer on the page" in result and "STOPPED: 1 later action" in result
 
 
-def test_a_chain_stops_when_the_form_changes_under_it():
-    async def scenario():
-        async with async_playwright() as p:
-            browser, site = await _cascade_site(p, "#insert")
-            seen = await site.observe()
-            apply = _ref(seen, "Auswahl übernehmen")
-            result = await site.act("fill_fields", {"fields": [
-                {"ref": _select_ref(seen, "Bohrung"), "value": "50", "apply": apply},
-                {"ref": _select_ref(seen, "Hub"), "value": "600", "apply": apply}]})
-            stroke = await site.page.evaluate("() => document.getElementById('f').stroke.value")
-            await browser.close()
-            return result, stroke
-    result, stroke = asyncio.run(scenario())
-    assert "STOPPED, the form changed" in result and stroke == "" and "Observe the page and continue" in result
-
-
-def test_a_labelled_scan_is_still_a_picture_to_read(monkeypatch):
-    """Fake portal scanned/future-withdrawal: the canvas said only 'Scanned document attachment', got no ref, and
-    the screenshots showed the tab button next to it."""
-    async def fake_ask_json(system, user, **kwargs):
-        return {"answer": "Staffel ab 10: 9,50", "uncertain": None}
-
-    monkeypatch.setattr(llm, "ask_json", fake_ask_json)
-    page = ("<html><body><button>3. Conditions and quantity tiers</button>"
-            "<canvas aria-label='Scanned document attachment' width='500' height='300'></canvas></body></html>")
-
-    async def scenario():
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            context = await browser.new_context()
-
-            async def handle(route):
-                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=page)
-
-            await context.route(f"{BASE}/**", handle)
-            site = Site("scan2", BASE + "/cond", {"username": "u", "password": "p"}, context)
-            await asyncio.wait_for(site.start(), timeout=40)
-            observation = await site.observe()
-            explorer = Explorer(site, Mission("t", "goal", {}, deadline=10**10), None)
-            seen = await explorer._inspect_visual("Welche Staffeln?", _ref(observation, "3. Conditions"))
-            await browser.close()
-            return observation, seen
-    observation, seen = asyncio.run(scenario())
-    assert "[canvas: Scanned document attachment]" in observation
-    assert re.search(r"\[\w+\] canvas \(500x300 px\)", observation) and "inspect_visual" in _hints(observation, True)
-    assert "largest picture" in seen and "9,50" in seen
-
-
-LOGIN_FORM = ("<html><body><form action='/login' method='get'><input name='user'><input type='password' name='pw'>"
-              "<button type='submit'>Anmelden</button></form></body></html>")
-
-
-def test_a_session_that_hangs_is_replaced(monkeypatch):
-    """Sandbox runs 6289/4cb6: after one request that never ended, every page of the site hung for our session
-    (fresh tabs too) while the start page loaded. A new session (cookies dropped, login again) loads them."""
-    import rfq.browser.site as site_module
-    monkeypatch.setattr(site_module, "NAVIGATION_TIMEOUT_MS", 1500)
-    monkeypatch.setattr(site_module, "LOADED_TIMEOUT_MS", 1500)
-    locked, sessions = set(), []
-
-    async def scenario():
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            context = await browser.new_context()
-
-            async def handle(route):
-                url, cookie = route.request.url, route.request.headers.get("cookie", "")
-                found = re.search(r"sid=(\w+)", cookie)
-                sid = found.group(1) if found else None
-                if "/login" in url:                      # the login form sends here: a new session
-                    sessions.append(f"s{len(sessions) + 1}")
-                    await route.fulfill(status=200, content_type="text/html", headers={"Set-Cookie": f"sid={sessions[-1]}; Path=/"},
-                                        body="<html><body><p>Willkommen im Portal, Sie sind angemeldet.</p></body></html>")
-                elif sid is None:
-                    await route.fulfill(status=200, content_type="text/html", body=LOGIN_FORM)
-                elif sid in locked:
-                    return                               # this session is never answered again
-                elif url.endswith("/trap"):
-                    locked.add(sid)                      # a request that never ends, holding the session
-                else:
-                    await route.fulfill(status=200, content_type="text/html",
-                                        body="<html><body><p>Inhalt der Seite mit genug Text zum Lesen.</p></body></html>")
-
-            await context.route(f"{BASE}/**", handle)
-            site = Site("locky", BASE + "/", {"username": "u", "password": "p"}, context)
-            await asyncio.wait_for(site.start(), timeout=60)
-            trapped = await site.goto(BASE + "/trap")
-            loaded = await site.goto(BASE + "/page")
-            text = await site.observe()
-            await browser.close()
-            return trapped, loaded, list(sessions), text
-    trapped, loaded, sessions_made, text = asyncio.run(scenario())
-    assert not trapped and loaded and sessions_made == ["s1", "s2"] and "Inhalt der Seite" in text
+def test_rematch_follows_controls_by_kind_name_and_order():
+    from rfq.browser.site import _rematch
+    before = '[e1] button "OK"\n[e2] select "Größe" options: a\n[e3] button "OK"'
+    after = '[e1] link "Hinweis" -> /h\n[e2] button "OK"\n[e3] select "Größe" options: a\n[e4] button "OK"'
+    assert _rematch({"action": "select", "ref": "e2", "then_click": "e3"}, before, after) == \
+        {"action": "select", "ref": "e3", "then_click": "e4"}
+    assert _rematch({"action": "fill_fields", "fields": [{"ref": "[e1]", "value": "x"}]}, before, after)["fields"] == \
+        [{"ref": "e2", "value": "x"}]
+    assert "no longer on the page" in _rematch({"action": "click", "ref": "e2"}, before, '[e1] button "OK"')

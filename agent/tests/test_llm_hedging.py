@@ -101,38 +101,10 @@ def test_thinking_calls_are_not_hedged(monkeypatch, fast_hedge):
     assert started == [0]
 
 
-def test_a_short_model_outage_is_waited_out(monkeypatch, fast_hedge):
-    """Fake portal legacy/blocked: the model proxy answered 502 for a while and the submission gave up after six
-    attempts with minutes left. Service errors are retried while the deadline allows; refused requests are not."""
-    class Unavailable(Exception):
-        status_code = 502
-
-    class Refused(Exception):
-        status_code = 400
-
-    calls = []
-
-    async def create(**kwargs):
-        calls.append(1)
-        if len(calls) <= 8:
-            raise Unavailable("Cannot reach the platform")
-        return _response('{"ok": true}')
-
-    async def no_wait(seconds):
-        return None
-
-    monkeypatch.setattr(llm, "client", lambda: _client(create))
-    monkeypatch.setattr(llm.asyncio, "sleep", no_wait)
-    reply = asyncio.run(llm.chat([], deadline=time.time() + 120))
-    assert reply["content"] == '{"ok": true}' and len(calls) == 9
-
-    refused = []
-
-    async def create_refused(**kwargs):
-        refused.append(1)
-        raise Refused("context too long")
-
-    monkeypatch.setattr(llm, "client", lambda: _client(create_refused))
-    with pytest.raises(llm.DeadlineExceeded):
-        asyncio.run(llm.chat([], deadline=time.time() + 120))
-    assert len(refused) == 3
+def test_healthy_long_tool_calls_are_not_hedged(monkeypatch):
+    """P-1: the slowest healthy tool call measured in 584 sandbox calls took 18 s (long `steps`/URL arguments); a
+    twin is billed in full even when it loses, so tool calls get a twin only after 20 s."""
+    monkeypatch.setattr(llm, "_recent", {True: [], False: []})
+    assert llm._hedge_after(True) >= 20 and llm._hedge_after(False) >= 30
+    monkeypatch.setattr(llm, "_recent", {True: [8.0] * 10, False: []})     # slow phase: 3x the typical latency
+    assert llm._hedge_after(True) == 24.0

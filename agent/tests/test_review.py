@@ -68,3 +68,35 @@ def test_number_formats_on_the_review_page():
     assert not validate_review(EXPECTED, page)["blocking"]
     page = _page(total_net="1234.60")                     # a genuinely wrong amount is still caught
     assert validate_review(EXPECTED, page)["blocking"]
+
+
+def test_review_read_during_the_tan_wait_is_used_only_for_the_same_page():
+    """N2: the review page is read while the TAN arrives; submit_bid reuses that reading only when the page is the
+    same apart from renumbered refs and the TAN typed in, otherwise it reads the page again."""
+    import asyncio
+    from rfq.agent.explorer import Mission
+    from rfq.agent.submit import SubmitExplorer, _unchanged
+
+    before = '[e3] input[text] "TAN" value=""\nSumme 1.234,50\n[e4] button "Verbindlich abgeben"'
+    after = '[e5] input[text] "TAN" value="Q7X2"\nSumme 1.234,50\n[e6] button "Verbindlich abgeben"'
+    assert _unchanged(before, after, "Q7X2")
+    assert not _unchanged(before, after.replace("1.234,50", "1.234,60"), "Q7X2")
+
+    async def scenario(page_text):
+        explorer = SubmitExplorer(None, Mission("submit", "goal", {}), None)
+        explorer.tan = "Q7X2"
+        fresh = []
+
+        async def read(kind, text):
+            fresh.append(text)
+            return {"from": "fresh"}
+        explorer._read = read
+
+        async def early():
+            return {"from": "prefetch"}
+        explorer.review_prefetch = (before, asyncio.ensure_future(early()))
+        return await explorer._review_reading(page_text), fresh
+
+    assert asyncio.run(scenario(after)) == ({"from": "prefetch"}, [])
+    changed = after.replace("1.234,50", "1.234,60")
+    assert asyncio.run(scenario(changed)) == ({"from": "fresh"}, [changed])
