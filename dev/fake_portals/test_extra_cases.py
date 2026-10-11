@@ -18,6 +18,35 @@ def cents(value):
 
 
 class ExtraCasesTests(unittest.TestCase):
+    def test_requirement_pages_describe_actual_case_values_without_baseline_defaults(self):
+        from test_server import HTTPClient
+        from variant_server import PortalCluster
+        for profile, login, first, second in [
+            ('classic', '/anmeldung', '/anforderungen/teil1', '/anforderungen/teil2'),
+            ('modern', '/login', '/requirements/req-a', '/requirements/req-b'),
+            ('legacy', '/auth.cgi', '/legacy_spec/req1.html', '/legacy_spec/req2.html'),
+        ]:
+            with self.subTest(profile=profile):
+                cluster = PortalCluster('shared-stock', profile)
+                # Exercise the opposite conversion assignment to the original
+                # baseline. Display metadata must follow data, not row number.
+                cluster.case['requirements'][0]['pieces_per_set'] = 7
+                cluster.case['requirements'][1]['pieces_per_set'] = None
+                with cluster:
+                    client = HTTPClient()
+                    origin = cluster.origins['specification']
+                    client.login(origin, login)
+                    status, page = client.get(origin + second)
+                    self.assertEqual(status, 200)
+                    self.assertIn('<td>TEST-CERT-A</td>', page)
+                    self.assertNotIn('Standard: none', page)
+                    self.assertIn('Keine Satzumrechnung / Einzelteil', page)
+                    self.assertNotIn('Satzumrechnung erforderlich', page)
+                    status, page = client.get(origin + first)
+                    self.assertEqual(status, 200)
+                    self.assertIn('7 Stk pro Satz', page)
+                    self.assertNotIn('Keine Satzumrechnung / Einzelteil', page)
+
     def test_originals_are_unchanged_and_no_gold_is_in_fixture(self):
         originals = json.loads((Path(__file__).resolve().parent / 'cases.json').read_text())
         cases = load_cases()

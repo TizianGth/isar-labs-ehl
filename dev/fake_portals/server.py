@@ -921,7 +921,7 @@ def make_handler_class(cluster, role):
                   <tr><td>Befestigungsart (mounting)</td><td>{escape(req_a['mounting'])}</td></tr>
                   <tr><td>Zertifizierung (certification)</td><td>{escape(req_a['certification'])}</td></tr>
                   <tr><td>Kataloggruppe (catalog_group)</td><td>{escape(req_a['catalog_group'])}</td></tr>
-                  <tr><td>Stück pro Satz (pieces_per_set)</td><td>{escape(str(req_a['pieces_per_set']))} (Keine Satzumrechnung / Einzelteil)</td></tr>
+                  <tr><td>Stück pro Satz (pieces_per_set)</td><td>{escape(str(req_a['pieces_per_set'])) + ' Stk pro Satz' if req_a['pieces_per_set'] is not None else 'Keine Satzumrechnung / Einzelteil'}</td></tr>
                 </table>
                 """
                 self._send_html(200, render_layout("Requirement REQ-A", content, p, role, path, self._get_nav_links()))
@@ -939,9 +939,9 @@ def make_handler_class(cluster, role):
                   <tr><td>Hub (stroke_mm)</td><td>{escape(str(req_b['stroke_mm']))} mm</td></tr>
                   <tr><td>Nenndruck (pressure_bar)</td><td>{escape(str(req_b['pressure_bar']))} bar</td></tr>
                   <tr><td>Befestigungsart (mounting)</td><td>{escape(req_b['mounting'])}</td></tr>
-                  <tr><td>Zertifizierung (certification)</td><td>{escape(req_b['certification'])} (Standard: none)</td></tr>
+                  <tr><td>Zertifizierung (certification)</td><td>{escape(req_b['certification'])}</td></tr>
                   <tr><td>Kataloggruppe (catalog_group)</td><td>{escape(req_b['catalog_group'])}</td></tr>
-                  <tr><td>Stück pro Satz (pieces_per_set)</td><td>{escape(str(req_b['pieces_per_set']))} Stk pro Satz (Satzumrechnung erforderlich)</td></tr>
+                  <tr><td>Stück pro Satz (pieces_per_set)</td><td>{escape(str(req_b['pieces_per_set'])) + ' Stk pro Satz' if req_b['pieces_per_set'] is not None else 'Keine Satzumrechnung / Einzelteil'}</td></tr>
                 </table>
                 """
                 self._send_html(200, render_layout("Requirement REQ-B", content, p, role, path, self._get_nav_links()))
