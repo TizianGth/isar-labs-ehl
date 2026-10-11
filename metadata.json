@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M6S8P9DQEM94V24MBQQZXG",
+  "strategy": "manual-commit",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_evidence_gaps.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 6541,
+    "cache_read_tokens": 2758487,
+    "output_tokens": 5470,
+    "api_call_count": 3
+  }
+}
