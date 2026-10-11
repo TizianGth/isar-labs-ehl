@@ -135,4 +135,4 @@ def test_a_short_model_outage_is_waited_out(monkeypatch, fast_hedge):
     monkeypatch.setattr(llm, "client", lambda: _client(create_refused))
     with pytest.raises(llm.DeadlineExceeded):
         asyncio.run(llm.chat([], deadline=time.time() + 120))
-    assert len(refused) == 2
+    assert len(refused) == 3

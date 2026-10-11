@@ -125,6 +125,37 @@ def test_refused_access_is_not_retried(monkeypatch):
     monkeypatch.setattr(llm, '_slots', asyncio.Semaphore(1))
     monkeypatch.setattr(llm, '_run_deadline', float('inf'))
     monkeypatch.setattr(llm, 'client', lambda: _client(create))
+    monkeypatch.setattr(llm.asyncio, "sleep", _no_sleep)
     with pytest.raises(llm.DeadlineExceeded):
         asyncio.run(llm.chat([], deadline=time.time() + 30))
-    assert len(calls) == 1
+    assert len(calls) == 3                     # three refusals in a row, not sixty attempts
+
+
+async def _no_sleep(seconds):
+    return None
+
+
+def test_a_single_403_of_a_proxy_in_trouble_is_retried(monkeypatch):
+    """Fake portal workbench/shared-stock: the model proxy answered 502, 503, 403, 409 while it recovered; the one
+    403 ended the whole tender mission after 41 s."""
+    class Status(Exception):
+        def __init__(self, code):
+            super().__init__(f"Error code: {code}")
+            self.status_code = code
+
+    codes = iter([502, 403, 409, 503])
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(1)
+        code = next(codes, None)
+        if code:
+            raise Status(code)
+        return _response()
+
+    monkeypatch.setattr(llm, '_slots', asyncio.Semaphore(1))
+    monkeypatch.setattr(llm, '_run_deadline', float('inf'))
+    monkeypatch.setattr(llm, 'client', lambda: _client(create))
+    monkeypatch.setattr(llm.asyncio, "sleep", _no_sleep)
+    reply = asyncio.run(llm.chat([], deadline=time.time() + 60))
+    assert reply["content"] == '{}' and len(calls) == 5

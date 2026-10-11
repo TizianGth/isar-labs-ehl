@@ -63,7 +63,7 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         kwargs["response_format"] = {"type": "json_object"}
     end = min(deadline or float("inf"), _run_deadline)
     per_call = timeout or (60 if tools else 150)   # a hung call must not eat minutes
-    delay = 1.0
+    delay, refusals = 1.0, 0
     for attempt in range(MAX_ATTEMPTS):     # transient failures are retried while the deadline allows
         left = end - time.time()
         if left < 3:
@@ -86,10 +86,11 @@ async def chat(messages: list[dict], *, tools: list[dict] | None = None, thinkin
         except Exception as error:
             log("llm_error", tag=tag, attempt=attempt, error=f"{type(error).__name__}: {str(error)[:200]}")
             status = getattr(error, "status_code", None)
-            if status in (401, 403):
-                # the run token is revoked once the answer is accepted (or the key is wrong): retrying cannot help
-                raise DeadlineExceeded(f"{tag}: access refused ({status})")
-            if status in (400, 404, 413, 422) and attempt >= 1:   # the request itself is refused, not the service
+            # Refusals: the request (400/413/422) or the access (401/403, e.g. the run token after the accepted
+            # answer). A proxy in trouble also answers 403 once in a while, so only the third refusal in a row ends
+            # the call; 404/409/429/5xx and timeouts are hiccups and are retried while the deadline allows.
+            refusals = refusals + 1 if status in (400, 401, 403, 413, 422) else 0
+            if refusals >= 3:
                 raise DeadlineExceeded(f"{tag}: request refused ({status})")
             await asyncio.sleep(max(0.0, min(delay, end - time.time() - 3)))
             delay = min(delay * 2, 8)
