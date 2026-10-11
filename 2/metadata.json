@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M4JEV6MYWKTBR8101N1AZS",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:07:34.704703079Z",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_speed_quality_rules.py",
+    "agent/tests/test_speed_scheduling.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:07:34.678937644Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1074,
+    "human_modified": 42,
+    "human_removed": 0,
+    "total_committed": 1074,
+    "total_lines_changed": 1116,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
