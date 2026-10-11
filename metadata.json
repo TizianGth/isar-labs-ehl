@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MQF59BRHD19RA5EF4AK2EV",
   "strategy": "manual-commit",
   "branch": "claude/prompt-budget",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "agent/main.py",
     "agent/rfq/agent/fused.py",
@@ -44,14 +44,21 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 173345,
-    "cache_creation_tokens": 200076,
-    "cache_read_tokens": 19994947,
-    "output_tokens": 97034,
-    "api_call_count": 165,
+    "input_tokens": 175173,
+    "cache_creation_tokens": 2948055,
+    "cache_read_tokens": 442785359,
+    "output_tokens": 1230466,
+    "api_call_count": 1080,
     "subagent_tokens": {
       "input_tokens": 380193,
       "cache_creation_tokens": 0,
