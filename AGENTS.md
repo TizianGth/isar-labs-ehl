@@ -142,5 +142,7 @@ läuft lokal gegen Scouting-Sites · Logs nachvollziehbar.
 | `docs/09-glossary-de.md` | Deutsch-Glossar (für Runtime-Prompts geeignet, keine Szenario-Werte) |
 | `docs/11-mvp-status.md` | Was funktioniert, Messwerte, offene Punkte, nächste Aufgaben je Person |
 | `docs/10-risks-error-handling.md` | Fehlerbehandlung in Schichten, Deadline, LLM-/Browser-Edge-Cases, Review-Sicherheit |
+| `docs/12-optimization-analysis.md` | Optimierungsanalyse: Messwerte je Version, Kosten/Zeit, kritischer Pfad, Alternativen, Entscheidung |
+| `docs/13-optimization-roadmap.md` | Optimierungs-Roadmap: Schritte, Feature-Schalter (`agent/rfq/flags.py`), Validierungsablauf, Startprompt |
 | `docs/prompts/*.md` | Kickoff-Prompts je Workstream zum Einfügen in Codex/Claude |
 | `docs/reference/` | Brief, Answer-Schema, Plattform-Docs (Snapshot) |
