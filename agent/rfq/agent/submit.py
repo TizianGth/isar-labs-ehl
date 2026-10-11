@@ -60,15 +60,23 @@ def de(value, digits: int = 2) -> str:
     return text.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
+def money(value) -> str:
+    """An amount in German format with the plain decimal behind it: '1.234,50 [1234.50]'."""
+    return f"{de(value)} [{Decimal(str(value)):.2f}]"
+
+
 def answer_table(answer: dict, skipped: list[str], breakdown: dict | None = None) -> str:
+    discount = answer["discount_percent"]
     lines = [f"tender_reference: {answer['tender_reference']}", f"decision: {answer['decision']}",
-             f"discount percent: {de(answer['discount_percent'])} (type it as {_plain(answer['discount_percent'])})",
-             f"net total EUR: {de(answer['total_net'])}"]
+             f"discount percent: {de(discount)} (type just the number: {_plain(discount)} or "
+             f"{_plain(discount).replace(',', '.')}, as the form expects)",
+             f"net total EUR: {money(answer['total_net'])}"]
     for p in answer["positions"]:
         lines.append(f"- position {p['position']}: material {p['material_number']}; quantity {p['quantity']} pieces; "
-                     f"unit price net {de(p['unit_price'])}; base price per piece {de(p['base_unit_price'])}; "
-                     f"surcharges per piece {de(p['surcharge_per_unit'])}; packaging per piece {de(p['packaging_per_unit'])}; "
-                     f"project bonus for the whole position {de(p['rebate_total'])}; lead time {p['lead_time_weeks']} weeks")
+                     f"unit price net {money(p['unit_price'])}; base price per piece {money(p['base_unit_price'])}; "
+                     f"surcharges per piece {money(p['surcharge_per_unit'])}; packaging per piece "
+                     f"{money(p['packaging_per_unit'])}; project bonus for the whole position {money(p['rebate_total'])}; "
+                     f"lead time {p['lead_time_weeks']} weeks")
         filters = ((breakdown or {}).get(p["position"]) or {}).get("filters")
         if filters:
             lines.append("    product filters for this material: " + ", ".join(f"{k} {v}" for k, v in filters.items() if v)
@@ -270,10 +278,12 @@ async def submit_bid(orch, result) -> None:
 Submission instructions from the brief: {brief.get('submission_steps')}
 Bidder: company "{brief.get('bidder_company')}", VAT id "{brief.get('bidder_vat_id')}"{f', contact e-mail "{mail_identity}"' if mail_identity else ''}.
 
-THE BID (enter exactly these values; German number format as shown):
+THE BID (enter exactly these values; amounts in German format, the plain decimal in [brackets]):
 {answer_table(answer, result.skipped, result.breakdown)}
 
 Procedure and traps:
+- Number format: type amounts the way the form expects them, following its placeholder, example or the numbers it
+  already shows (German 1.234,56 or plain 1234.56). If nothing tells, use the German format.
 - If participation/interest must be registered first, do it. Each form step is saved only with "Weiter"/next;
   going back clears later steps. If the form is already in a later step, check the values and go back only if needed.
 - Offer type: decision 'bid' = main offer (Hauptangebot), NOT an alternative/secondary offer (Nebenangebot, may be

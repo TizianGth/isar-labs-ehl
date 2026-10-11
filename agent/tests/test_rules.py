@@ -153,7 +153,7 @@ def test_whole_quantities_with_thousands_separators_and_no_locale_tag():
     thousands separator for whole quantities, never three decimals (prices keep their own locale handling)."""
     from rfq.rules.parse import count, integer
     for raw, expected in (("1.250", 1250), ("1.250 Stück", 1250), ("12.500", 12500), ("1,250", 1250),
-                          ("1.875 g", 1875), ("12 500", 12500), ("1.250.000", 1250000), ("875", 875),
+                          ("2.375 g", 2375), ("12 500", 12500), ("1.250.000", 1250000), ("640", 640),
                           ("0.250", D("0.250")), ("2.5", D("2.5")), ("1.250,5", D("1250.5")), ("1,25", D("1.25"))):
         assert count(raw) == D(str(expected)), raw
     assert integer("2.000 Stk") == 2000 and integer("Seite 2 von 6") == 2

@@ -63,3 +63,14 @@ def test_a_browser_dialog_site_still_needs_one_click(monkeypatch):
     explorer, _ = _explorer(monkeypatch, [{"confirmed": True, "receipt": "Q-3", "errors": []}])
     asyncio.run(explorer._submit("e50"))
     assert explorer.site.clicks == ["e50"] and explorer.state == "confirmed"
+
+
+def test_the_bid_table_gives_both_number_formats():
+    """#6: another configurator may expect '2468.13' instead of '2.468,13': the table offers both."""
+    answer = {"tender_reference": "XT-1", "decision": "bid", "discount_percent": 5.5, "total_net": 12345.6,
+              "positions": [{"position": "1", "material_number": "M-1", "quantity": 1250, "unit_price": 2468.13,
+                             "base_unit_price": 2000.0, "surcharge_per_unit": 1.5, "packaging_per_unit": 0.0,
+                             "rebate_total": 0.0, "lead_time_weeks": 3}]}
+    table = submit.answer_table(answer, [], {})
+    assert "2.468,13 [2468.13]" in table and "12.345,60 [12345.60]" in table
+    assert "5,5 or 5.5" in table and "quantity 1250 pieces" in table
