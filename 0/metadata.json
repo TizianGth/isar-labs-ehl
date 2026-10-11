@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M45YEDM7ER7F9523720KK7",
+  "session_id": "01a12776-a91f-7ff0-b250-d68ad877798b",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:00:41.14705Z",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "agent/rfq/agent/explorer.py",
+    "agent/tests/test_deadlines.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "9b7988158349",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 65557,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 325767,
+    "output_tokens": 9156,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:00:41.135607Z",
+    "agent_lines": 318,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 14,
+    "total_committed": 318,
+    "total_lines_changed": 332,
+    "agent_percentage": 95.78313253012048,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 553,
+      "user_lines_removed": 14,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "agent/rfq/agent/explorer.py": 96,
+        "docs/12-optimization-analysis.md": 457
+      },
+      "user_removed_per_file": {
+        "agent/rfq/agent/explorer.py": 14
+      }
+    }
+  ]
+}
