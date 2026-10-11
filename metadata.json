@@ -3,8 +3,13 @@
   "checkpoint_id": "01M4M4JEV6MYWKTBR8101N1AZS",
   "strategy": "manual-commit",
   "branch": "codex/speed-quality",
-  "checkpoints_count": 5,
-  "files_touched": null,
+  "checkpoints_count": 6,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/rules/resolve.py",
+    "agent/tests/test_speed_quality_rules.py",
+    "agent/tests/test_speed_scheduling.py"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,6 +17,12 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
