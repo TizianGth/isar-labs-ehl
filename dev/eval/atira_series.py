@@ -155,7 +155,8 @@ def stats(rows, required_count):
             'cost_time_sum_usd_seconds': sum(r.get('cost_time_usd_seconds', 0) or 0 for r in rows),
             'failures': [r['run_id'] for r in rows if not r.get('quality_ok')],
             'release_gate_passed': len(rows) == required_count and required_count >= 10
-            and all(r.get('quality_ok') for r in rows) and mean is not None and mean <= 300}
+            and all(r.get('quality_ok') and r.get('kind') == 'rehearsal' and not r.get('submission_id')
+                    for r in rows) and mean is not None and mean <= 300}
 
 
 def accepted_by_platform(view):
@@ -163,6 +164,15 @@ def accepted_by_platform(view):
     # eligible browser bid. Neither a pending status nor quality alone is proof.
     return (view.get('phase') == 'done' and view.get('status') in {'submitted', 'scored'}
             and (view.get('score') or {}).get('eligible') is True)
+
+
+def require_test_identity(view):
+    """Stop serial uploads if the platform classified a test as scored/unknown.
+
+    Preserve its measured result; never cancel or revoke the remote run.
+    """
+    if view.get('kind') != 'rehearsal' or view.get('submission_id'):
+        raise RuntimeError('platform test identity is scored or unconfirmed; stop uploads and inspect with a human')
 
 
 def main():
@@ -198,6 +208,8 @@ def main():
         return 0
     client = MCP()
     try:
+        if state['results']:
+            require_test_identity(readonly_api(f'/v1/runs/{state["results"][-1]["run_id"]}'))
         for index in range(len(state['results']), args.count):
             folder = root / f'{index + 1:02}'
             folder.mkdir(exist_ok=True)
@@ -247,6 +259,11 @@ def main():
                 save(folder / f'{name}.json', value)
                 evidence[name] = mcp_text(value)
             score = view.get('score') or {}
+            identity = readonly_api(f'/v1/runs/{run_id}')
+            if identity.get('run_id') != run_id:
+                raise ValueError('test identity returned a different run')
+            save(folder / 'platform_identity.json', {key: identity.get(key)
+                 for key in ('run_id', 'kind', 'submission_id', 'status')})
             seconds = score.get('duration_ms')
             if seconds is not None:
                 seconds /= 1000
@@ -256,6 +273,7 @@ def main():
             receipt = bool(re.search(r'"event"\s*:\s*"(?:submission_accepted|submitted)"', evidence.get('run_logs', '')))
             platform_accepted = accepted_by_platform(view)
             row = {'run_id': run_id, 'status': view['status'], 'quality': score.get('quality'),
+                   'kind': identity.get('kind'), 'submission_id': identity.get('submission_id'),
                    'eligible': score.get('eligible'), 'confirmed_receipt': receipt,
                    'accepted_by_platform': platform_accepted, 'seconds': seconds,
                    'cost_usd': cost, 'cost_time_usd_seconds': cost * seconds if seconds is not None else None,
@@ -272,6 +290,7 @@ def main():
             state['summary'] = stats(state['results'], args.count)
             save(state_file, state)
             print(json.dumps({'event': 'finished', **row, 'breakdown': '[saved]'}), flush=True)
+            require_test_identity(identity)
         return 0 if all(r['quality_ok'] for r in state['results']) else 1
     finally:
         client.close()

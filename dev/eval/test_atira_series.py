@@ -6,10 +6,16 @@ import subprocess
 import tempfile
 from unittest.mock import Mock, patch
 
-from atira_series import accepted_by_platform, live_logs, read_status, stats
+from atira_series import accepted_by_platform, live_logs, read_status, require_test_identity, stats
 
 
 class GateTests(unittest.TestCase):
+    def test_unexpected_scored_identity_stops_more_uploads(self):
+        require_test_identity({'kind': 'rehearsal', 'submission_id': None})
+        for view in ({'kind': 'scored'}, {}, {'kind': 'rehearsal', 'submission_id': 'sub_synthetic'}):
+            with self.assertRaisesRegex(RuntimeError, 'stop uploads'):
+                require_test_identity(view)
+
     def test_terminal_platform_statuses_require_done_and_eligible(self):
         for status in ('submitted', 'scored'):
             view = {'phase': 'done', 'status': status, 'score': {'eligible': True, 'quality': 100}}
@@ -20,7 +26,12 @@ class GateTests(unittest.TestCase):
 
     def rows(self):
         return [{'run_id': f'synthetic-{i}', 'seconds': 280, 'cost_usd': .1,
-                 'cost_time_usd_seconds': 28, 'quality_ok': True} for i in range(10)]
+                 'cost_time_usd_seconds': 28, 'quality_ok': True, 'kind': 'rehearsal'} for i in range(10)]
+
+    def test_promoted_run_cannot_pass_test_series_gate(self):
+        rows = self.rows()
+        rows[0].update(kind='scored', submission_id='sub_synthetic')
+        self.assertFalse(stats(rows, 10)['release_gate_passed'])
 
     def test_all_ten_required(self):
         self.assertTrue(stats(self.rows(), 10)['release_gate_passed'])
