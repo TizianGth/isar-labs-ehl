@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4N03JC0H04M7SVKNG3R80H9",
   "strategy": "manual-commit",
   "branch": "codex/token-reuse",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "dev/benchmark_reuse.py",
     "dev/measure_reuse_requests.py",
@@ -21,13 +21,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 905310,
+    "input_tokens": 1408724,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 37548672,
-    "output_tokens": 207836,
-    "api_call_count": 306
+    "cache_read_tokens": 45818496,
+    "output_tokens": 274678,
+    "api_call_count": 375
   }
 }
