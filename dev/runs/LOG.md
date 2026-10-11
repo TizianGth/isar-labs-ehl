@@ -18,3 +18,6 @@
 | 2026-10-10 19:59 | 01c8371 (3 parallel) | run_628958b450683b5c | 0 · keine Abgabe | 18 min | $0.077 | Bieterfragen-Tab (iframe) lud nicht → no_bid; Tender-Detailseite hing in der Abgabe (Startseite lud) |
 | 2026-10-10 19:59 | 01c8371 (3 parallel) | run_c149b0e54aaee796 | **100 · eligible** | 8:17 | $0.097 (253 Calls) | sauber; Abgabe 47 Modellschritte (7 je Position) |
 | 2026-10-10 19:59 | 01c8371 (3 parallel) | run_4cb6547f1f3ded33 | 0 · keine Abgabe | 18 min | $0.088 | Evidenz komplett (404 s, Q&A 6/6), dann 11 min Abgabe ohne Erfolg: 16 Seiten-Timeouts am Vergabeportal |
+| 2026-10-10 22:19 | fc2c5cc (main) | run_af2c9746c819df92 | **100 · eligible** | 14:07 (Plattform-Störung) | $0.118 (268 Calls) | lief durch, obwohl CLI/Modell-Host zeitweise nicht erreichbar waren |
+| 2026-10-10 22:48 | fc2c5cc (main, parallel) | run_3c2af28a03720c51 | **100 · eligible** | 8:39 | $0.087 (217 Calls) | Evidenz 334 s; Abgabe 26 Schritte (6× verkettetes fill_fields, 0 Abbrüche), 187 s |
+| 2026-10-10 22:47 | fc2c5cc (main, parallel) | run_6ed27b8b18f38d85 | **100 · eligible** | 8:05 | $0.079 (212 Calls) | Evidenz 330 s; Abgabe 24 Schritte (vorher 47), 158 s |

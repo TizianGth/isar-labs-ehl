@@ -116,6 +116,14 @@ Weitere Fixes aus den Läufen (Unit-getestet, noch ohne End-to-End-Beleg): TAN-P
 Sitzungsseite mehr, die Startseite schon) – Cookies löschen, neu einloggen, max. 2× je Site; **Modell-Ausfälle**
 (5xx/429/Timeout) werden bis zur Deadline wiederholt statt nach 6 Versuchen aufzugeben.
 
+**Vollständige Matrix (11.10., 6 Oberflächen × 5 Fälle = 30):** alle 30 Kombinationen mindestens einmal
+**100/100** (Portal-Abgabe und Berechnung), darunter alle fünf `no_bid`-Fälle (blocked). Gefunden und behoben auf dem
+Weg: einzelnes 403 eines gestörten Modell-Proxys beendete Missionen (`fix/flaky-proxy`); Anforderung ohne gelesene
+Werte zählte als vollständig, leere Extraktion überschrieb gelesene Werte, Gegenprüfung vor `no_bid` las nur Q&A,
+Schema-Wort „standard“ kollidierte mit „(Standard: none)“ auf der Seite (`fix/spec-values`).
+Sandbox mit `main` `fc2c5cc`: 3/3 **100 · eligible** (8:05, 8:39, 14:07 während Plattform-Störung), $0,079–0,118.
+Werkzeug: `dev/eval/replay_fake_portals.py` spielt alle aufgezeichneten Fake-Läufe ohne Modell durch die aktuellen Regeln.
+
 Schneller abgeben: abhängige Auswahlfelder in **einem** `fill_fields`-Schritt (`apply` je Feld, Formular wird neu
 beobachtet, Feld-Identität geprüft); Sandbox-Lauf c149 brauchte 7 Modellschritte je Position.
 
