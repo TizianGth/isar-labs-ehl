@@ -436,13 +436,17 @@ search says there are too many results, add the subject keyword.""",
         """Not bidding is the most expensive answer when it is wrong, and one bidder answer that was missed (e.g. a
         corrected stroke) is enough to cause it. Before accepting it, one short mission reads every Q&A page again,
         fresh (no cached pages or extractions), and the rules run once more."""
-        reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line]
-        log("no_bid_recheck", reasons=reasons[:12])
+        reasons = [line for line in result.trace if "no_bid" in line or "fitting=[]" in line or "nominal" in line
+                   or " differs in " in line]
+        log("no_bid_recheck", reasons=reasons[:16])
         site = self.site_for("tender")
         site.fresh_start()
         site.collections.clear()
-        self._cache = {k: v for k, v in self._cache.items() if not k.startswith("clarifications")}
+        self._cache = {k: v for k, v in self._cache.items() if not k.startswith(("clarifications", "requirements"))}
         before = len(self.bb.get("clarifications"))
+        failing = {m.group(1) for line in result.trace for m in [re.match(r"(\S+): group .* fitting=\[\]", line)] if m}
+        refs = sorted({parse.clean(p.get("requirement_ref")) for p in self.positions()
+                       if parse.clean(p.get("position")) in failing and p.get("requirement_ref")})
 
         def progress() -> tuple[str, bool]:
             new = self.bb.get("clarifications")[before:]
@@ -458,8 +462,29 @@ The usual reason is a bidder answer that was missed: open the tender's bidder qu
 Bieterfragen) and read ALL their pages again with read_all_pages(kind='clarifications'), then finish. Do not start the
 bid submission.""", ["clarifications"], 14, progress=progress)
         mission.deadline = min(self.evidence_end, time.time() + 150)
+        checks = [self.run_mission(site, mission, attempts=1)]
+        if refs:          # the requirement itself may have been misread (e.g. a value missing): read it again
+            spec_site, reqs_before = self.site_for("specification"), len(self.bb.get("requirements"))
+            spec_site.fresh_start()
+
+            def spec_progress() -> tuple[str, bool]:
+                read = {parse.norm_id(r.get("ref")) for i in self.bb.get("requirements")[reqs_before:]
+                        for r in i["data"].get("requirements") or []}
+                todo = [ref for ref in refs if parse.norm_id(ref) not in read]
+                return (f"requirements read again: {sorted(read) or 'none yet'}"
+                        + (f"; still to read: {todo}" if todo else "")), not todo
+
+            spec = self.mission("recheck_spec", f"""Our rules would decide NOT to bid because no material fits:
+{chr(10).join(line for line in reasons if " differs in " in line or "fitting=[]" in line)}
+Read the requirement(s) {refs} of the CURRENT specification revision again and extract kind 'requirements' with
+EVERY value (bore, stroke, pressure, mounting, certification, catalogue group, pieces per set), paying attention to
+the values named above. A scanned sheet is a picture: use inspect_visual with its ref first. Then finish.""",
+                                ["requirements"], 12, progress=spec_progress)
+            spec.deadline = mission.deadline
+            checks.append(self.run_mission(spec_site, spec, attempts=1))
         try:
-            await asyncio.wait_for(self.run_mission(site, mission, attempts=1), timeout=max(10, mission.deadline - time.time() + 5))
+            await asyncio.wait_for(asyncio.gather(*checks, return_exceptions=True),
+                                   timeout=max(10, mission.deadline - time.time() + 5))
         except (Exception, asyncio.TimeoutError) as error:
             log("no_bid_recheck_error", error=f"{type(error).__name__}: {error}"[:300])
         checked = self.resolve()

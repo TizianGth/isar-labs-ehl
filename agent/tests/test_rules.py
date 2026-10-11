@@ -169,3 +169,13 @@ def test_qa_numbers_in_any_form_are_the_same_answer():
         e["number"] = f"Answer #{e['number']}"                     # the withdrawal fact still says "12"
     result = build(CTX, bb)
     assert result.answer["positions"][0]["quantity"] == 10             # #12 (99) is withdrawn by #13
+
+
+def test_the_trace_says_why_no_material_fits():
+    """Fake portal legacy/shared-stock: REQ-B was read without its certification; the trace must name it, so the
+    re-check before no_bid knows what to read again."""
+    bb = _evidence()
+    reqs = bb["requirements"][1]["data"]["requirements"]
+    reqs[0] = {**reqs[0], "certification": "EN 1"}                     # M-1 has no certification
+    result = build(CTX, bb)
+    assert any("M-1 differs in certification (requirement EN 1, material none)" in line for line in result.trace)

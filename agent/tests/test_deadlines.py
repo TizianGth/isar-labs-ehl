@@ -328,3 +328,36 @@ def test_a_requirement_without_values_is_not_read_yet():
     o.bb.add("requirements", {"revision": "V2", "requirements": [{"ref": "R-1", "bore_mm": None, "catalog_group": None}]}, "u3")
     text, complete = o.spec_progress()
     assert complete and o.requirements()["R-1"]["bore_mm"] == "40"
+
+
+def test_no_bid_recheck_also_reads_the_requirement_again(monkeypatch):
+    from types import SimpleNamespace
+    from rfq.rules.resolve import Result
+    o = _orchestrator()
+    o.bb.add("positions", {"positions": [{"position": "1", "requirement_ref": "R-1"}]}, "u")
+    sites = {}
+
+    def site_for(self, role):
+        site = sites.setdefault(role, SimpleNamespace(collections={}, fresh_start=lambda: None))
+        return site
+
+    monkeypatch.setattr(Orchestrator, "site_for", site_for)
+    missions = []
+
+    async def fake_mission(self, s, mission, attempts=2):
+        missions.append(mission.name)
+        if mission.name == "recheck_spec":
+            assert "certification" in mission.goal and "R-1" in mission.goal
+            self.bb.add("requirements", {"revision": "V2", "requirements": [{"ref": "R-1", "certification": "EN 1"}]}, "u-spec")
+
+    def fake_resolve(self):
+        fixed = any(r.get("certification") for i in self.bb.get("requirements") for r in i["data"]["requirements"])
+        trace = ["1: group G1 candidates=['M-1'] fitting=[] active=[]",
+                 "1: M-1 differs in certification (requirement -, material EN 1)",
+                 "no active matching material for ['1']: no_bid"]
+        return Result({"decision": "bid" if fixed else "no_bid"}, [] if fixed else trace, [], {})
+
+    monkeypatch.setattr(Orchestrator, "run_mission", fake_mission)
+    monkeypatch.setattr(Orchestrator, "resolve", fake_resolve)
+    checked = asyncio.run(o.recheck_no_bid(o.resolve()))
+    assert sorted(missions) == ["recheck", "recheck_spec"] and checked.answer["decision"] == "bid"

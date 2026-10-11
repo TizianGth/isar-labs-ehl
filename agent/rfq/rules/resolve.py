@@ -214,6 +214,22 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             return False
         return cert(mat.get("certification")) == cert(req.get("certification"))
 
+    def differences(mat: dict, req: dict, stroke: D | None) -> list[str]:
+        """Why a material does not fit (same comparison as matches): for the trace and the re-check before no_bid."""
+        found = []
+        for name, have, want in (("bore", number(mat.get("bore_mm")), number(req.get("bore_mm"))),
+                                 ("pressure", number(mat.get("pressure_bar")), number(req.get("pressure_bar"))),
+                                 ("stroke", number(mat.get("stroke_mm")), stroke)):
+            if name == "stroke" and stroke is None:
+                continue
+            if have is None or want is None or have != want:
+                found.append(f"{name} (requirement {want}, material {have})")
+        if not same_text(mat.get("mounting"), req.get("mounting")):
+            found.append(f"mounting (requirement {req.get('mounting')}, material {mat.get('mounting')})")
+        if cert(mat.get("certification")) != cert(req.get("certification")):
+            found.append(f"certification (requirement {req.get('certification') or '-'}, material {mat.get('certification') or '-'})")
+        return found
+
     # ---------------------------------------------------------------- per position
     resolved: dict[str, dict] = {}
     skipped: list[str] = []
@@ -271,6 +287,9 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
         active = [m for m in fitting if m.get("status_meaning") == "active"]
         note(f"{pid}: group {group} candidates={[m['material_number'] for m in candidates]} "
              f"fitting={[m['material_number'] for m in fitting]} active={[m['material_number'] for m in active]}")
+        if not fitting:
+            for m in candidates[:4]:
+                note(f"{pid}: {m['material_number']} differs in " + ("; ".join(differences(m, attrs, stroke)) or "nothing"))
         if not active:
             if fitting and all(m.get("status_meaning") is None for m in fitting):
                 active = fitting
