@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4M480JTY2GXCNC2K0A94NCM",
   "strategy": "manual-commit",
   "branch": "feat/agent-improvements",
-  "checkpoints_count": 4,
+  "checkpoints_count": 5,
   "files_touched": [
     "agent/rfq/agent/explorer.py",
     "agent/tests/test_deadlines.py"
@@ -15,6 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
-  ]
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 2425,
+    "cache_read_tokens": 1587529,
+    "output_tokens": 2273,
+    "api_call_count": 2
+  }
 }
