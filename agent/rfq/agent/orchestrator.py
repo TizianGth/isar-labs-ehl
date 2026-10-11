@@ -382,17 +382,6 @@ class Orchestrator:
             complete &= not missing
             lines.append(f"[{'x' if not missing else ' '}] {m['material_number']} ({m.get('status_meaning') or 'status ?'})"
                          + (f": missing {', '.join(missing)}" if missing else ": complete"))
-        if bool(reqs) and all(
-            any(
-                m.get("status_meaning") == "active"
-                and not _mismatch(m, [r])
-                and not [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
-                and any(c.get("scales") for c in m.get("conditions") or [])
-                for m in mats
-            )
-            for r in reqs
-        ):
-            complete = True
         return "\n".join(lines), complete
 
     def _qa_facts(self) -> list[dict]:

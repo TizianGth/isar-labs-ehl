@@ -8,6 +8,23 @@ from rfq.agent.orchestrator import Orchestrator
 from test_pricing_evidence import mail_fixture, assign, add_mail
 
 
+def test_matching_material_does_not_hide_unread_price_records():
+    o = Orchestrator({"brief": "Synthetic", "expires_at": (time.time() + 1200) * 1000}, {})
+    req = {"bore_mm": "40", "stroke_mm": "70", "pressure_bar": "120", "mounting": "hinge"}
+    material = {"material_number": "SYN-MAT", "catalog_group": "SYN-GROUP", **req,
+                "status_meaning": "active", "unrestricted_stock": "10", "lead_time_stock_weeks": "2",
+                "lead_time_production_weeks": "4", "pieces_per_carton": "5", "condition_records_total": "2",
+                "conditions": [{"valid_from": "2032-01-01", "currency": "EUR", "price_unit_qty": "1",
+                                "scales": [{"from_qty": "1", "price": "20"}]}]}
+    o.bb.add("materials", {"materials": [material]}, "https://fixture.example/material")
+    text, complete = o.erp_progress("SYN-GROUP", [req])
+    assert not complete and "all 2 condition records" in text
+    o.bb.add("materials", {"materials": [{"material_number": "SYN-MAT", "conditions": [
+        {"valid_from": "2032-02-01", "currency": "EUR", "price_unit_qty": "1",
+         "scales": [{"from_qty": "1", "price": "18"}]}]}]}, "https://fixture.example/conditions")
+    assert o.erp_progress("SYN-GROUP", [req])[1]
+
+
 def test_cached_identical_text_keeps_distinct_source_provenance(monkeypatch):
     async def scenario():
         o = Orchestrator({"brief": "Synthetic", "expires_at": (time.time() + 1200) * 1000}, {})
