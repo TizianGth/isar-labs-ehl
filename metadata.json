@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4MXH90YHVMG5MV4JWPRNB95",
   "strategy": "manual-commit",
   "branch": "codex/inference-fusion",
-  "checkpoints_count": 5,
+  "checkpoints_count": 6,
   "files_touched": [
     "agent/main.py",
     "agent/rfq/agent/fused.py",
@@ -56,6 +56,12 @@
       "compact_transcript": "/3/transcript.jsonl",
       "content_hash": "/3/content_hash.txt",
       "prompt": "/3/prompt.txt"
+    },
+    {
+      "metadata": "/4/metadata.json",
+      "transcript": "/4/full.jsonl",
+      "content_hash": "/4/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
