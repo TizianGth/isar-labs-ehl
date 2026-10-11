@@ -18,7 +18,7 @@ from ..log import log
 
 OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
-MAX_OBSERVATION = 14000
+MAX_OBSERVATION = 9000
 EVAL_TIMEOUT = 12
 NAVIGATION_TIMEOUT_MS = 20000
 LOADED_TIMEOUT_MS = 12000
@@ -449,6 +449,10 @@ class Site:
     async def _ready(self, el) -> str | None:
         """Make a form control usable (open collapsed <details> around it); explain why it is not."""
         await el.evaluate("e => { for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; }")
+        for _ in range(12):
+            if not await el.is_disabled():
+                return None
+            await asyncio.sleep(0.2)
         if await el.is_disabled():
             return ("ERROR: this field is disabled right now. Usually the previous choice must be applied first "
                     "(e.g. an 'apply/übernehmen' button), or a gate must be unlocked.")
@@ -456,6 +460,9 @@ class Site:
 
     async def _do_type(self, ref: str, text: str, submit: bool = False) -> str:
         _, el = await self._element(ref)
+        return await self._type_el(el, text, submit=submit)
+
+    async def _type_el(self, el, text: str, submit: bool = False) -> str:
         if problem := await self._ready(el):
             return problem
         await el.fill(str(text), timeout=4000)
@@ -471,6 +478,9 @@ class Site:
 
     async def _select(self, ref: str, option: str, hint: bool = False) -> str:
         _, el = await self._element(ref)
+        return await self._select_el(el, option, hint=hint)
+
+    async def _select_el(self, el, option: str, hint: bool = False) -> str:
         if problem := await self._ready(el):
             return problem
         options = await el.evaluate("e => [...e.options].map(o => [o.value, o.textContent.trim()])")
@@ -493,11 +503,14 @@ class Site:
 
     async def _do_check(self, ref: str, checked: bool = True) -> str:
         _, el = await self._element(ref)
+        return await self._check_el(el, checked=checked)
+
+    async def _check_el(self, el, checked: bool = True) -> str:
         if problem := await self._ready(el):
             return problem
         kind = await el.evaluate("e => e.type")
         if kind not in ("checkbox", "radio"):
-            return f"ERROR: {ref} is not a checkbox/radio (it is {kind}); click it instead"
+            return f"ERROR: element is not a checkbox/radio (it is {kind}); click it instead"
         await el.set_checked(bool(checked), force=True, timeout=4000)
         return f"{'checked' if checked else 'unchecked'}"
 
@@ -530,11 +543,11 @@ class Site:
                     break
                 tag, kind = await el.evaluate("e => [e.tagName, e.type]")
                 if tag == "SELECT":
-                    result = await self._select(ref, str(value))
+                    result = await self._select_el(el, str(value))
                 elif kind in ("checkbox", "radio"):
-                    result = await self._do_check(ref, str(value).lower() not in ("false", "0", "no", "nein", ""))
+                    result = await self._check_el(el, str(value).lower() not in ("false", "0", "no", "nein", ""))
                 else:
-                    result = await self._do_type(ref, str(value))
+                    result = await self._type_el(el, str(value))
             except (PlaywrightError, ValueError) as error:
                 result = f"ERROR {str(error).splitlines()[0][:150]}"
             results.append(f"{ref}: {result}")
@@ -544,7 +557,7 @@ class Site:
                     break
                 results.append(f"applied ({apply}): " + await self._do_click(str(apply)))
                 await self.settle(rounds=3)
-                await self.observe()          # the form may have been rendered again: refs in page order again
+                await self.observe()
         if stopped:
             done = [str(f.get("ref")) for f in fields[:index]]
             return ("; ".join(results) + f". Done before stopping: {done or 'nothing'}. Observe the page and continue "

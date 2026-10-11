@@ -31,6 +31,9 @@ blob-report/
 
 # Runtime research artifact (may contain tender, supplier, ERP and mail content)
 evidence.json
+dev/runs/*.json
+dev/runs/*.jsonl
+dev/runs/sandbox/
 
 # OS metadata
 .DS_Store

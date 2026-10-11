@@ -156,10 +156,10 @@ class Explorer:
                 log("mission_complete", mission=tag, step=step, checklist=checklist[:800])
                 return self
             hints = _hints(observation, self.visual_used < self.mission.max_visual)
-            last = (f"\n\nRESULT OF THE LAST STEP:\n{self.last_result[:3000]}" if self.last_result else "")
+            last = (f"\n\nRESULT OF THE LAST STEP:\n{self.last_result[:800]}" if self.last_result else "")
             messages = [{"role": "system", "content": EXPLORER_SYSTEM},
                         {"role": "user", "content": intro},
-                        {"role": "user", "content": "STEPS SO FAR:\n" + ("\n".join(self.history[-20:]) or "-") + last
+                        {"role": "user", "content": "STEPS SO FAR:\n" + ("\n".join(self.history[-5:]) or "-") + last
                          + (f"\n\nPROGRESS CHECKLIST (computed from what was extracted so far):\n{checklist}" if checklist else "")
                          + (f"\n\nHINTS:\n{hints}" if hints else "")
                          + f"\n\nStep {step + 1}/{self.mission.max_steps}, ~{int(remaining)} s left."
@@ -191,7 +191,7 @@ class Explorer:
                 result = await self._call(name, args)
             log("action", mission=tag, step=step + 1, tool=name, args=args, result=result[:300])
             # older steps stay short in the prompt (tokens); the latest result is shown in full once
-            self.history.append(f"{step + 1}. {name} {json.dumps(args, ensure_ascii=False)[:160]} -> {result[:260]}")
+            self.history.append(f"{step + 1}. {name} {json.dumps(args, ensure_ascii=False)[:100]} -> {result[:120]}")
             self.last_result = result
             if self.stop:
                 return self
@@ -218,9 +218,7 @@ class Explorer:
                     return await self._extract_collection(collection, kind)
                 return await self.extractor(kind, await self.site.full_text(), self.site.page.url, via="page")
             if name == "extract_urls":
-                urls = [str(u) for u in (args.get("urls") or [])][:12]
-                results = await asyncio.gather(*(self._extract_url(u, str(args.get("kind"))) for u in urls))
-                return " | ".join(results)
+                return await self._extract_urls(args)
             if name == "read_document":
                 return await self._read_document(args)
             if name == "inspect_visual":
@@ -233,6 +231,34 @@ class Explorer:
             return f"ERROR: {type(error).__name__}: {str(error)[:200]}"
 
     # ---------------------------------------------------------------- model-selected content
+    async def _extract_urls(self, args: dict) -> str:
+        urls = [str(u) for u in (args.get("urls") or [])][:12]
+        kind = str(args.get("kind"))
+        fetched: list[tuple[str, str]] = []
+        for u in urls:
+            abs_u = self.site.absolute(u)
+            if not self.site.was_seen(abs_u):
+                fetched.append((abs_u, "ERROR not a link shown on a page you saw (do not guess addresses; open the page that links to it)"))
+                continue
+            text = await self.site.read_url(abs_u)
+            fetched.append((abs_u, text))
+        valid_items = [(u, t) for u, t in fetched if not t.startswith("ERROR")]
+        orch = getattr(self.extractor, "__self__", None)
+        if orch and hasattr(orch, "extract_many") and valid_items:
+            summaries = await orch.extract_many(kind, valid_items, via="page")
+            summary_map = {u: s for (u, _), s in zip(valid_items, summaries)}
+        else:
+            summary_map = {}
+            for u, t in valid_items:
+                summary_map[u] = await self.extractor(kind, t, u, via="page")
+        results = []
+        for u, t in fetched:
+            if t.startswith("ERROR"):
+                results.append(f"{u}: {t}")
+            else:
+                results.append(f"{u}: {summary_map.get(u, '')}")
+        return " | ".join(results)
+
     async def _extract_url(self, url: str, kind: str) -> str:
         url = self.site.absolute(url)
         if not self.site.was_seen(url):

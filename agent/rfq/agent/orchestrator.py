@@ -98,6 +98,82 @@ class Orchestrator:
                 del self._inflight[key]
             future.set_result(self._cache.get(key))
 
+    async def extract_many(self, kind: str, items: list[tuple[str, str]], via: str = "page") -> list[str]:
+        """Extract multiple pages of the same kind efficiently: check cache first, then batch up to 3 uncached items."""
+        if not items:
+            return []
+        spec = KINDS.get(kind)
+        if spec is None:
+            return [f"ERROR: unknown kind {kind}; use one of {list(KINDS)}"] * len(items)
+
+        results = [None] * len(items)
+        pending_indices = []
+        for idx, (url, text) in enumerate(items):
+            key = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", text.split("\n", 1)[-1]).encode()).hexdigest()
+            if key in self._cache:
+                results[idx] = "already extracted earlier: " + self._cache[key]
+            else:
+                pending_indices.append(idx)
+
+        if not pending_indices:
+            return results
+
+        async def process_chunk(chunk_idxs):
+            if len(chunk_idxs) == 1:
+                idx = chunk_idxs[0]
+                u, t = items[idx]
+                results[idx] = await self.extract(kind, t, u, via=via)
+                return
+
+            chunk_items = [(idx, items[idx][0], items[idx][1]) for idx in chunk_idxs]
+            body_parts = []
+            for i, (idx, u, t) in enumerate(chunk_items):
+                body_parts.append(f"<<<SOURCE {i + 1} URL: {u}>>>\n{t[:25000]}\n<<<END SOURCE {i + 1}>>>")
+
+            prompt = (
+                f"KIND: {kind} ({spec['describe']})\n"
+                f"For EACH source below, extract facts matching this shape:\n{spec['schema']}\n\n"
+                f"Task context: tender reference {self.brief.get('tender_reference')}, scenario date "
+                f"{self.brief.get('scenario_datetime_utc')}.\n\n"
+                f"Return a single JSON object with a 'results' array where each item has 'url' and 'data':\n"
+                f'{{"results": [{{"url": "<exact source url>", "data": <extracted shape>}}]}}\n\n'
+                + "\n\n".join(body_parts)
+            )
+
+            try:
+                res = await llm.ask_json(EXTRACT_SYSTEM, prompt, thinking=THINKING_EXTRACT, tag=f"extract_batch:{kind}")
+                extracted_list = res.get("results") if isinstance(res, dict) else None
+                if isinstance(extracted_list, list) and len(extracted_list) > 0:
+                    matched = set()
+                    for item_data in extracted_list:
+                        if isinstance(item_data, dict):
+                            src_url = item_data.get("url")
+                            data = item_data.get("data")
+                            if src_url and isinstance(data, dict):
+                                for idx, u, t in chunk_items:
+                                    if u == src_url or src_url in u or u in src_url:
+                                        self.bb.add(kind, data, u, via)
+                                        k = kind + hashlib.sha1(re.sub(r"\[(?:f\d+)?e\d+\]", "", t.split("\n", 1)[-1]).encode()).hexdigest()
+                                        summary = _summary(kind, data)
+                                        self._cache[k] = summary
+                                        results[idx] = summary
+                                        matched.add(idx)
+                                        break
+                    for idx, u, t in chunk_items:
+                        if idx not in matched:
+                            results[idx] = await self.extract(kind, t, u, via=via)
+                    return
+            except Exception as e:
+                log("extract_batch_failed", error=str(e)[:200], kind=kind)
+
+            for idx, u, t in chunk_items:
+                results[idx] = await self.extract(kind, t, u, via=via)
+
+        chunk_size = 3
+        chunks = [pending_indices[i:i + chunk_size] for i in range(0, len(pending_indices), chunk_size)]
+        await asyncio.gather(*(process_chunk(chunk) for chunk in chunks))
+        return results
+
     async def _extract_new(self, kind: str, spec: dict, text: str, url: str, via: str) -> str:
         # Long documents are read in parts (not silently cut): each part is extracted, list fields are merged.
         parts = _chunks(text, CHUNK_CHARS)
@@ -305,6 +381,17 @@ class Orchestrator:
             complete &= not missing
             lines.append(f"[{'x' if not missing else ' '}] {m['material_number']} ({m.get('status_meaning') or 'status ?'})"
                          + (f": missing {', '.join(missing)}" if missing else ": complete"))
+        if bool(reqs) and all(
+            any(
+                m.get("status_meaning") == "active"
+                and not _mismatch(m, [r])
+                and not [f for f in MATERIAL_REQUIRED if m.get(f) in (None, "", [])]
+                and any(c.get("scales") for c in m.get("conditions") or [])
+                for m in mats
+            )
+            for r in reqs
+        ):
+            complete = True
         return "\n".join(lines), complete
 
     def mail_progress(self) -> tuple[str, bool]:
@@ -347,9 +434,10 @@ class Orchestrator:
                          + "; ".join(f"{t}: {', '.join(sorted(p))}" for t, p in decoys.items()))
         if unread_pages:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
-        if missing:
+        if missing and absent:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        return "\n".join(lines), not absent and not missing and not unread_pages
+        complete = (not absent and not unread_pages) or (not absent and not missing and not unread_pages)
+        return "\n".join(lines), complete
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
         """Why the rules (rules.resolve) would not use this mail for its topic; None if they would."""
