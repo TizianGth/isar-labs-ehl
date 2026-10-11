@@ -1,0 +1,263 @@
+analyze this solution and search for improvements. make a master plan to achieve the best cost x price. if you need to make structural differences do it. i just need to reach 100/100 and get the best cost x price. dont push. just local.
+
+---
+
+<task-notification>
+<task-id>a9675c5e5cb1e3d1b</task-id>
+<tool-use-id>toolu_012PYdrTfUYE6HKp8MyYBZdz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-matin-dev-ehl-isar-labs-ehl/565f7c97-7db8-467d-9079-a3bdcc487da8/tasks/a9675c5e5cb1e3d1b.output</output-file>
+<status>completed</status>
+<summary>Agent "Explore generalization branch and harness" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've finished all four tasks. Nothing in the working tree, index or refs was changed. The `git merge-tree --write-tree` calls you suggested did add a few unreferenced objects to `.git/objects`; `git gc` will clean them up eventually.
+
+**Before anything else:** your working tree is not 006bc96. It is on branch `perf/cost-time` at commit 070f1fe ("Restore the package that ranked #1: a63757d3aa83"), which branches off 257e464 and has none of the ten commits up to 01c8371. On top of that it has large uncommitted changes in `main.py`, `explorer.py`, `orchestrator.py`, `prompts.py`, `submit.py`, `site.py`, `llm.py` and `resolve.py`, plus untracked `health.py` and new tests. The merge assessment below covers 006bc96 + origin/main only. Merging either line into your working tree would be a separate and larger job.
+
+## 1. The generalization commits on origin/main, and merging them into 006bc96
+
+| Commit | What it fixes (where it was found) | Files |
+|---|---|---|
+| 25f878c | Q&amp;A paging stopped after page 2 when the "next page" link sat in a table row with other links. Withdrawals dated after the scenario date were applied. A TAN mail for another tender could be used (`pick_tan`). The review gate now holds a wrong tender reference until the last minute and allows 3 fix rounds (was 2). Popups from another mission's tab were closed and loaded into ours. | `explorer.py`, `submit.py`, `site.py`, `resolve.py` + tests |
+| a179540 | Canvas/img pictures get a ref and their size. A screenshot aimed at a tab or button shows the page's largest picture instead. An identical screenshot is not sent to the model twice. Dropdown choices are read back after selecting. (Fake portal "scanned") | `explorer.py`, `observe.js`, `site.py` |
+| 0b21dc2 | `fill_fields` takes an `apply` button per field, so a chain of dependent selects is one step. The form is re-observed after each apply and field identity is checked. (Sandbox run c149: 7 model steps per position) | `explorer.py`, `submit.py`, `site.py` |
+| 293e2f0 | A screenshot without a target shows the document picture, also inside frames. | `site.py` |
+| 2fd7d80 | New `parse.qa_number`: "Answer #3", "Frage Nr. 3" and "3" are the same answer (modern/locale-boundary scored 67). A no_bid declaration now carries no position rows (legacy/blocked scored 80). | `orchestrator.py`, `submit.py`, `parse.py`, `resolve.py` |
+| 1ee6877 | `wait_for` and `get_tan` are no longer blocked as loops. `fresh_start()` clears the cached lists, so the inbox is re-read for every TAN fetch. (legacy/blocked) | `explorer.py`, `site.py` |
+| b20e833 | A canvas with a label ("Scanned document attachment") still gets a ref. (scanned/future-withdrawal scored 47.5) | `explorer.py`, `observe.js`, `site.py` |
+| 928a3fd | After 2 failed page loads in a row on a site: drop its cookies, log in again, retry (at most twice per site). (Sandbox runs 6289/4cb6, where every page hung for our session) | `site.py` |
+| 1ed694c | Model errors 5xx/429/timeout are retried until the deadline (backoff up to 8 s, max 60 tries) instead of giving up after 6. 4xx stops after 2 tries, 401/403 at once. | `llm.py` |
+| fc2c5cc | Docs only: before/after table of fake-portal results | `docs/11-mvp-status.md`, `dev/runs/LOG.md` |
+| 0d47065 | New `dev/eval/replay_fake_portals.py`: re-scores recorded fake-portal evidence with the current rules (no browser, no model) | dev only |
+
+**Merging origin/main into 006bc96:** `git merge-tree --write-tree --name-only 006bc96 origin/main` reports 4 conflicting files. `explorer.py`, `orchestrator.py`, `site.py` and `docs/11-mvp-status.md` merge automatically. I'd rate it easy: about 30 minutes plus a test run.
+
+- **`agent/rfq/agent/submit.py`, 2 hunks:**
+  - At about line 217 both sides added helper functions in the same place (`_unchanged` from 006bc96; `_mentions` and `pick_tan` from main). Keep all three.
+  - At about line 268 there is a **real conflict in the submission instructions**. 006bc96 says to do a whole position with one `steps` call (each select with `then_click`). Main says to do the filter chain in one `fill_fields` with `apply`, then a second `fill_fields`. After the merge both tools exist and both work, so you have to choose one text. The `steps` text is the one with sandbox evidence: 27 submission calls versus about 47 before. Also keep main's separate no_bid addition ("carries NO positions…"), which merged cleanly.
+- **`agent/tests/test_browser_tools.py`:** both sides appended tests at the end; keep both. At line 211 vs 231, take main's assertion, which adds `site.collections == {}`.
+- **`agent/tests/test_deadlines.py`:** both appended tests; keep both.
+- **`dev/runs/LOG.md`:** keep both sets of rows, sorted by time.
+
+Things to check after merging; none of these show up as conflicts:
+- `site.screenshot()` now returns `(bytes, description)`. The only caller (`explorer._inspect_visual`) is already updated in the merged tree.
+- `_do_click` now uses main's `_watch_popups`/`_fold_popups(popups)`. 006bc96's `_do_steps` goes through `_do_click`, so it picks this up.
+- 006bc96's `_rematch` (inside `steps`) re-matches `ref`, `then_click` and `fields[].ref`, but not `fields[].apply`. The `steps` tool schema also has no `apply` field.
+- 006bc96's review prefetch in `_get_tan` sits next to main's `fresh_start` + `pick_tan`. They merged cleanly but should get a sandbox run.
+
+The suite branch (next section) merges cleanly into both 006bc96 and origin/main.
+
+## 2. The synthetic portal suite (2f06cd5 line)
+
+- **Where:** only on branch `remotes/origin/codex/fake-portal-suite-review` (2f06cd5, 37f22cb, 32c525a, 3808083). All files are under `dev/fake_portals/`, and `Makefile` adds `include dev/fake_portals/Makefile.inc`. The servers use only the Python standard library and bind to loopback; login is `demo` / `synthetic-only`, ports 18540–18543.
+- **How to run:**
+  - `make fake-test`: portal, scorer and isolation tests, no model.
+  - `make fake-browser`: Chromium smoke tests, form/TAN/receipt checks, no model.
+  - `make fake-serve FAKE_PROFILE=… FAKE_CASE=…`: start the four portals to look at by hand.
+  - Model-driven runs (need `atira models proxy` running):
+    - `make fake-agent FAKE_PROFILE=workbench FAKE_CASE=future-withdrawal`: one run.
+    - `make fake-matrix`: 6 runs in sequence: classic/baseline, modern/locale-boundary, legacy/blocked, workbench/future-withdrawal, scanned/baseline, busy-office/shared-stock.
+    - `run_matrix.py --full`: all 30 combinations. `--dry-run` only prints the list.
+  - The agent is copied once (frozen) and run as `main.py --out` with `CHALLENGE_SCOUTING` set to a synthetic brief. It does a real submission into the fake portal.
+  - Reports go to `dev/runs/fake-portals/&lt;ts&gt;-matrix/matrix.json` plus a `report.json` per run. They show `submission_score` (graded on what the portal actually received), `calculation_score`, failed fields and `model_error_count`.
+- **What it varies:**
+  - Six interfaces: classic (German, links and tables); modern (English labels, tabs, other paths); legacy (real iframes); workbench (dynamic navigation, disclosure, Q&amp;A "load more"); scanned (documents and conditions drawn on canvas); busy-office (nested frames, modals, real popups).
+  - All URLs are rewritten to opaque base64 routes, so paths give no hints.
+  - Five data cases: baseline; blocked (correct answer is no_bid); future-withdrawal; locale-boundary (number formats, GBP, price per 100, discount and tier boundaries); shared-stock.
+  - The expected answers are computed by hand and kept separate from the agent (`scoring.py`, `extra_cases.py`).
+- **What it does not vary** (this matters for the private dataset):
+  - Which site holds which information is fixed: Q&amp;A is always on the tender site, approvals always in mail. Re-dispatch to other sites is never exercised.
+  - The synthetic brief states every rule explicitly and describes each site's role in the access list (`run_agent.make_contract`), which a real brief may not do.
+  - Only 2 positions and a small catalogue.
+  - No cookie or consent walls, flaky 5xx pages, session expiry, PDF/ZIP documents or hidden-text traps. A keyword count of the server code found 0 hits for consent, 503, expire, pdf and aria-hidden.
+- **Reported results** (`git show origin/main:docs/11-mvp-status.md`, section "Generalisierung auf Codex' Fake-Portalen"), before → after:
+
+  | Profile / case | Before | After |
+  |---|---|---|
+  | legacy/future-withdrawal | 73.75 | 100 |
+  | scanned/baseline | 26.4 | 100 |
+  | modern/locale-boundary | 67.1 | 100 |
+  | scanned/future-withdrawal | 47.5 | 100 |
+  | workbench/baseline | – | 100 |
+  | busy-office/shared-stock | – | 100 |
+  | classic/baseline | 100 | 100 |
+  | legacy/blocked | 80, 0 | calculation 100; submission not verified because of a proxy 502 |
+
+  The replay in 0d47065 found no regression across 18 runs (locale-boundary 67 → 100, scanned 33 → 58 from the rules alone). `dev/runs/LOG.md` on main has no fake-portal rows, only sandbox runs.
+- **Usable as a regression gate?** Yes, as a gate for changes to the browser layer, rules and submission flow across different interfaces. It doesn't measure robustness to information being placed on different sites, and its timings don't predict sandbox cost × time.
+  - The results above were produced from `~/Documents/Codex/2026-10-10/s/outputs/fake-portals`, which **does not exist on this machine**. `dev/runs/fake-portals/` doesn't exist either, so there are no local baselines yet.
+  - `replay_fake_portals.py` expects `&lt;portals&gt;/runs/&lt;ts&gt;-&lt;case&gt;-&lt;profile&gt;`. That matches `run_agent.py`'s default output folder, not the Makefile's `FAKE_OUT`.
+- **How long a run takes:** no measured durations are recorded anywhere in the repo. The defaults put a hard cap of 480 s budget + 90 s kill margin = about 9.5 min per run, so `fake-matrix` takes at most about 57 min, and `--full` several hours. The defaults also use 2 model slots (production uses 10) and a 480/180 s budget (production 1080/420), so the times are not comparable with sandbox times. `fake-test` needs no model and should take minutes or less.
+
+## 3. Facts from the docs
+
+- **Ranking:** eligible first, then quality (higher is better), then cost × time (lower is better). Cost counts as at least $0.01 and time as at least 1 s (`docs/reference/atira-challenge-rfq.md:322-327`, `docs/01-challenge.md:55`). Winners are picked on the private dataset first, then the public one.
+- **Quality points (bid case):** decision 5, reference 5 (also decides eligibility), discount 5, total 5, arithmetic 5, withdrawn-Q&amp;A check 5, metal-index check 5, positions 75 minus the checks. Within a position: material 20 %, quantity 15 %, base price 15 %, then 10 % each for surcharge, packaging, project bonus, final price and lead time. Each extra or duplicate position costs one position's share. No_bid case: 75 / 5 / 5 / 15 (`docs/01-challenge.md:58-80`).
+- **When the clock stops:**
+  - Time runs from the start of the `run` command until the answer is **accepted**: the 202 response, which for a site submission happens when the portal forwards it (`atira-llms-full.txt:1616, 1758`).
+  - After a 202 the agent has 10 s to exit; that grace period is outside the measured time.
+  - A malformed answer (400) does not stop the clock.
+  - Setup (up to 5 min) and model warm-up don't count. The scored limit is 20 min.
+  - In practice: the clock stops at the final confirmed submission, so everything after it is free.
+- **Time budget** (`docs/02-architecture.md:28-39`): target ≤ 8 min in total. Brief &lt; 15 s, login &lt; 60 s, evidence &lt; 4 min, rules &lt; 30 s, submission &lt; 2 min. Missions are cut at expires_at − 6 min and the submission is forced at − 4 min. The code uses `RFQ_RUN_BUDGET` = 1080 s and `RFQ_SUBMIT_RESERVE` = 420 s.
+- **Models through the proxy:**
+  - Qwen3.8-Flash-Next: $0.15/M input, $0.016/M cached input, cache writes free, $0.47/M output. No usage cap; **32 simultaneous calls per team across all its runs**, further calls queue.
+  - Cloudflare Clef: $0.24/M input, output not priced, 16 simultaneous calls. It is a decision model (choice / probability of yes / score), not a general LLM.
+  - Your own keys for Anthropic, OpenAI, OpenRouter, Google, Groq, Mistral, DeepSeek, xAI, Together, Fireworks are billed at published list prices. A call that reports no cost is charged at the highest published price; unpriced models outside an allowlist are refused (`atira-llms-full.txt:211-300, 1849`).
+  - So Qwen is the only cheap general-purpose hosted model. The docs give no prices for the bring-your-own-key models.
+- **Limits:** request body ≤ 32 MiB. At most 4 browsers (tabs and contexts are free). Up to 4 test runs at once. One submission in flight. The 32 Qwen slots are shared with teammates' test runs (`docs/08-pitfalls.md:29`); `docs/10-risks-error-handling.md:41` recommends 8–12 parallel calls per run.
+- **Caching and parallel calls:**
+  - The platform tip is to use prompt caching for the system prompt and tool definitions (`atira-llms-full.txt:2044`); a stable prompt prefix gets the cached price.
+  - Parallel agents, browsers and calls are explicitly allowed. Hedged duplicate calls are allowed, but each one is billed.
+  - Forbidden: hardcoded scenario values, pre-solving, fixed scripts, crawl-then-one-shot. Helpers may only work on pages and lists the model selected (`docs/01-challenge.md:103-112`).
+
+## 4. Local end-to-end run against the scouting sites, and scoring it
+
+From the repo root (working tree `Makefile` and `README.md`; 006bc96's Makefile is the same plus a `submit` target):
+1. `make setup` (once: `uv sync` and Chromium).
+2. Terminal 1: `atira models proxy`.
+3. Terminal 2: `make run-local [OUT=dev/runs/x.json]`. This runs `cd agent &amp;&amp; eval "$(atira scout --env)" &amp;&amp; uv run --no-sync python main.py --dry-run --out ../dev/runs/local.json &gt; ../dev/runs/local.log`. `--dry-run` sets `RFQ_DRY_RUN=1` and stops before the binding submission, so local timings leave out the final submit step. Expect about 7–12 min.
+4. `make score`: runs `python3 dev/eval/score.py dev/runs/local.json` (it reads the `answer` key) against `dev/oracle/public-1.json`. That oracle was confirmed by test run `run_ed06b2d2e8a71fac` (Quality 100); `compute_public1.py` regenerates it. The working-tree `score.py` adds no_bid scoring and oracle-declared checks compared with 006bc96.
+5. `make replay`: re-runs the rules and the submission dry run from saved evidence (`main.py --dry-run --evidence ../dev/runs/local.json --out ../dev/runs/replay.json`).
+6. Timeline: `uv run --project agent python dev/eval/timeline.py dev/runs/local.log` shows time and tokens per phase, mission and model-call group. It also reads a platform `run_logs` export. This file exists only in the working tree (untracked, with `dev/tests/test_timeline_tool.py`).
+7. Before a test run: `make check` (pytest, `dev/check_no_leaks.py`, `atira test-run ./agent --dry-run` manifest), then `make test-run`.</result>
+<usage><subagent_tokens>157128</subagent_tokens><tool_uses>44</tool_uses><duration_ms>274043</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae5a302f830352302</task-id>
+<tool-use-id>toolu_01L6oo2xaFaffr5TCDMMu7pP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-matin-dev-ehl-isar-labs-ehl/565f7c97-7db8-467d-9079-a3bdcc487da8/tasks/ae5a302f830352302.output</output-file>
+<status>completed</status>
+<summary>Agent "Explore submit flow and WT diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># Submission phase: (A) 006bc96 vs (B) working tree
+
+On top of reading both code lines, I pulled platform logs: (A) is the scored run `run_f0fadd6cb4e855ce`. (B) is package `c6357314864f`: the 87.2 run `run_226145e49b345868` and the two cancelled runs `run_53a78d6e45ecde1d` and `run_cd8900063e67c8cb`. The platform became unreachable near the end, so one gap in (A) stays unexplained.
+
+**Short version**
+- **Cause of the 87.2:** the resolver logged `bonus=[]` and `bonus plan PB-1474: not found`. In (A) the same mail (`calc-2265`, same sender `finanzen@`) gave `bonus=['PB-1474']`. (B) changed the mail extraction prompt and its mail checklist never checks whether a found mail is usable, so a mail without bonus data still counted as found.
+- **Cause of the hangs:** in `run_53a78…`, (B) lowered the page-load timeout from 15 s to 10 s. That produced 36 `goto_error … Timeout 10000ms` and 8 `tab_replaced`; the spec mission failed twice and was sent to the wrong websites. `run_cd89…` was not stuck in submission: evidence took 349 s and the run was cancelled during the TAN step.
+- **Biggest submission speedups:** (B)'s form preparation during evidence (measured about 17 s saved), letting the model map fields once so code types the values, and less browser overhead between sub-actions.
+
+## 1. How (A) submits the bid
+
+File references for (A) are `git show 006bc96:&lt;path&gt;`.
+
+**Code flow**
+1. `orchestrator.py:573-601`: gather evidence, then `resolve()` (pure code), then `submit_bid(orch, result)`.
+2. `submit.py:215-259` (`submit_bid`):
+   - Builds a goal with the bidder data and `answer_table()` (`submit.py:46-61`). Values are in German format and include per-position product filters.
+   - The procedure text is at lines 230-247.
+   - Mission settings: `max_steps=170`, deadline `end-5`. It calls `site.fresh_start()` and `responsive()`, then `SubmitExplorer.run(SUBMIT_TOOLS)`.
+3. Tools (`submit.py:19-37`): the base tools minus the read/extract tools, plus:
+   - `get_tan`
+   - `steps`: up to 20 actions from `select / type / check / click / fill_fields`
+   - `submit_bid`
+4. Agent loop (`explorer.py:162-231`): one model call per step (`thinking=False`, `tool_choice=required`). Each prompt has the system prompt, goal, last 20 history lines, the last result and the page view (up to 14k characters).
+5. `steps` runs in `site.py:502-531`. Before each later sub-action it runs `settle()` and a full `observe()`, then `_rematch` (`site.py:674-710`) maps the model's refs to the re-rendered page by (frame, kind, name, n-th).
+6. `get_tan` (`submit.py:89-121`):
+   - First starts a background reading of the review page (`full_text` plus a `bid_review` model call).
+   - Then runs a TAN mini-mission on the mail site: Explorer, `max_steps=10`, kind `mail_message`, done when a new message with a TAN appears.
+   - Picks the message with the highest `request_number`.
+7. `submit_bid` tool (`submit.py:128-168`):
+   - `_review_reading` (`170-187`) reuses the background reading if `_unchanged` (`205-212`): same text apart from refs and the TAN.
+   - `validate_review` (`review.py:33-91`) is pure code. Critical mismatches go back to the model, at most twice and only with more than 150 s left.
+   - Clicks the final button with `accept_next_dialog`, then `_outcome` (one `submission_result` model call, up to 2 tries).
+
+**Measured timeline, (A) scored run** (agent clock; 22 model calls between 03:30 and 05:05)
+
+| t (s) | What happened | Cost |
+|---|---|---|
+| 214.1 | evidence done, answer ready | |
+| 225.9 | step 1 `click e13`: model call 2.3 s, then about 9 s until the click returned (cause not checked) | **11.8 s** |
+| 228.9 / 230.4 | `open_url` to the tender page, then open `/submission` (a detour) | 4.5 s |
+| 233.8 / 237.0 | bidder data `fill_fields`, offer type `select` | 6.6 s |
+| 245.6 → 277.8 | 5 × `steps` (one per position). Model 4.6–6.7 s for 324–331 output tokens, plus about 3 s of browser time each | **40.8 s** |
+| 279.8 → 286.9 | discount/total, check box, click next, click, click (request TAN): 5 steps | 9.1 s |
+| 294.4 | `get_tan`: 1 navigation call + 2 parallel `mail_message` extractions (212 tokens each). `bid_review` ran in parallel: 9.0 s, 744 tokens | 7.5 s |
+| 295.6 / 297.5 | type the TAN; `submit_bid` (`review_prefetch used=true`, ready just in time), then the click. The token is revoked and the run ends | 3 s |
+
+Total is about 83 s, from about 21 model calls. With (B)'s streaming log, model time per step is roughly 1 s to the first token plus about 55–60 tokens/s. A 290-token step takes about 5 s; a 27-token click takes about 1.5 s. **Output tokens set the cost of each position step.**
+
+**Same phase in (B), run 226 (form prepared earlier):** about 66 s.
+- First action 2.4 s after evidence (the form was already at step 2, "Angebotsart").
+- Positions about 8.3 s each: model 4.4–5.8 s for about 287 tokens, `fill_form` about 2.9 s.
+- TAN 5.3 s (the small `tan_message` extraction is 31 tokens).
+- `bid_review` 11.9 s for 733 tokens. It held up the final click by about 3 s.
+
+### Ranked submission speedups for (A)
+
+1. **Prepare the form while evidence is still running (port from (B)): about 17 s.**
+   - Covers participation, the bidder-data step and stopping at the offer type. The model navigates, so it stays within the fair-play rule.
+   - Without it, (A) spends 19.6 s from answer to the offer-type step.
+   - Port it with `fill_fields`, not `fill_form`. Stop it between steps instead of `task.cancel()` in the middle of an action.
+
+2. **Model chooses the field mapping, code fills the values: about 15–20 s.**
+   - Add a tool such as `fill_position(position, mapping)`. The model maps page labels or refs to answer fields once (`{"Menge…": "quantity", filter labels: "filters.bore"…}`) plus the apply and next buttons.
+   - Code reads the values for that position from `result.answer`/`breakdown`, finds the controls (B's `_controls/_find/_address`, `site.py:677-716`, are reusable), fills them, applies the cascade and reads values back.
+   - Later positions become one roughly 30-token call (`fill_position {"position":"01.03"}`) instead of 330 tokens: about 1.5 s instead of about 5 s each, and no number-copying errors.
+   - Fair play: the model still decides every step and the mapping; code only fills forms. No labels may be hard-coded in the package.
+   - Letting code loop through all positions itself would save more, but code clicking "Weiter" through the wizard is close to code-driven navigation. I would keep one cheap model call per position.
+
+3. **Less browser overhead inside `steps`: about 5–10 s (needs measuring).**
+   - Today every sub-action pays `settle()`, a full `observe()` and the checks inside `act()`. `settle()` alone means `responsive` plus load state, guard state, close-overlays and unlock-gates in every frame (`site.py:198-238`, `361-380`).
+   - Only re-settle and re-observe after clicks (apply/next), not after `type`, `fill_fields` or a select without `then_click`. That targets the about 3 s per position seen in both lines.
+
+4. **Fewer one-action steps: about 4–6 s.**
+   - The prompt should ask for `fill_fields`/`steps` with `then_click` on the declarations page. (A) used two steps there (check, then click); (B) used one.
+   - Let `get_tan(tan_ref)` or `submit_bid(ref, tan_ref)` type the TAN itself: code fills the form and checks it, saving one call.
+
+5. **Faster TAN: about 2–3 s.** Port (B)'s `tan_message` kind (`prompts.py:110-114`): 31 output tokens instead of 212. Optionally load the inbox in the background when the TAN is requested.
+
+6. **Get `bid_review` off the critical path: 0–3 s, and cheaper.**
+   - A code pre-check: are all expected `de()`-formatted values present in the review text, per position row? This is allowed validation.
+   - Alternatively, start the reading at the first view of the review page, or use a compact schema for this one kind only.
+
+7. **Pre-filling positions during evidence is not recommended.** Prices only exist after `resolve()`, each wizard step saves only on "Weiter", and going back clears later steps.
+
+8. **Outside submission:** (B)'s brief split starts the tender and spec missions at 6.6 s instead of about 15 s, which moves the ERP start forward too.
+
+## 2. Features in (B)'s uncommitted diff
+
+(B) is based on 257e464/070f1fe. It lacks everything in 257e464..006bc96, including hedging, `_mail_problem`, `fresh_start`, the no-bid re-check, background extraction and `steps`. Porting has to go from (B) onto (A).
+
+| Feature | (B) location (agent/…) | Compared with (A) | Verdict |
+|---|---|---|---|
+| Streaming, time-to-first-token, abort after 20 s silence | `rfq/llm.py:7-10, 31-36, 144-191` | (A) is not streamed | Optional port. Not the cause of either failure |
+| Hedging (duplicate request when silent) | `llm.py:194-249`: after max(7 s, 4× median first-token time), up to 3 duplicates, also for thinking calls | `006bc96 llm.py:27-28, 115-158`: after 12 s (tools) / 30 s (JSON) or 3× median, up to 2, never for thinking | (B)'s signal is better but adds load. Port only with limits |
+| LLM slots | `llm.py:26` (16 slots), counters 29/39-41, released in `finally` 97-99 | 10 slots, also released in `finally` | Keep 10: the team shares 32 slots |
+| `steps` tool | **not present in (B)** | `submit.py:23-34`, `site.py:500-531, 674-710` | (A)'s is the safer one |
+| `fill_form` | `explorer.py:47-56` (offered to every mission), `site.py:431-512, 677-716` | (A) uses `steps` | Do not port as is: same speed as `steps` (about 287 vs 330 tokens, about 3 s browser time). Problems: duplicate labels always hit the first match; buttons don't skip disabled decoys; a full observe after every field; on its 150 s timeout it prints "60 s" (`site.py:311`) and marks the tab stuck, so the tab is replaced and the wizard state is lost. Reuse its label helpers for speedup #2 |
+| Select-option matching | `site.py:651-675` (`_option_value`: "50" → "50 mm" not "150 mm"; "none" → "ohne …") | `site.py:448-464` (exact or single substring match) | Port: small pure function with tests |
+| Review prefetch | `submit.py:52-57, 86-106, 108-113` | already in `submit.py:87-99, 170-187, 205-212` | Equivalent; skip |
+| `tan_message` kind | `prompts.py:110-114`, `submit.py:108-140` | (A) uses `mail_message` | Port |
+| Start overlap | `main.py:55-61, 76-78`, `orchestrator.py:182-186` | (A) already has `begin_start`/`wait_started` (`site.py:60-73`, `main.py`) | Duplicate; skip |
+| Brief split (core + full) | `orchestrator.py:135-180`, `prompts.py:62-65`, mail mission built later at 479-493 | (A) makes one brief call | Port |
+| Prepare form during evidence | `submit.py:218-262`, `orchestrator.py:455-461, 552-566, 594` | (A) has none | **Port**, with the fixes above |
+| `submission_site()` | `orchestrator.py:188-193` | (A) uses `site_for("tender")` | Port (robustness) |
+| Health log | `rfq/health.py`, `main.py:76` | none | Harmless, optional |
+| Timeline | `orchestrator.py:79-107`, `explorer.py:129-143, 188-217`, `submit.py:162`, `dev/eval/timeline.py` | none | Port, but keep (A)'s quiet LLM logging (see below) |
+| Short `extracted` log line | `orchestrator.py:130` | (A) logs the full data | Do not port: it hid the bonus data in run 226 |
+| Extraction prompt: leave out fields instead of null, compact JSON; mail `body` → short `quote` | `prompts.py:86-90, 170, 182` | (A) `prompts.py:66, 143, 155` | **Do not port: likely cause of the 87.2** (the full mail text helped the model fill `data.plans`). It also saves output tokens: (B) cost $0.085 vs (A) $0.104 |
+| Mail checklist | `orchestrator.py:393-425`: a topic counts as found with no usability check | (A) `orchestrator.py:310-375` (`_mail_problem`: draft, date, sender) | Keep (A)'s. **Add to (A):** "topic found but its data (plans/pools/…) is empty", because neither line checks this |
+| Page-load timeout 15 → 10 s, settle 45 → 30 s | `site.py:23, 142` | (A) 20 s plus accepting partially loaded pages (`site.py:22-23, 183-196`) | **Do not port: caused the hang in `run_53a78…`** |
+| `resolve.py` `.get("revision")` | `rules/resolve.py:113` | (A) indexes directly at :113 | Harmless one-line port |
+| Per-call LLM logging | `llm.py:124` logs every call | (A) logs only slow or retried calls on the platform | Keep (A)'s: the platform keeps only the end of the log, and run 226 lost its first part, including the brief |
+
+## 3. LLM call configuration (`agent/rfq/llm.py`)
+
+| | (A) 006bc96 | (B) working tree |
+|---|---|---|
+| Client | AsyncOpenAI, `QWEN_BASE_URL`, timeout 180 s, `max_retries=0`, model `qwen3.8-flash-next` | same |
+| Streaming | no | yes (`stream=True`, `include_usage`), falls back to plain requests if the endpoint rejects streaming (`llm.py:105-108`) |
+| max_tokens | **not set** | **not set** (output length is uncapped, e.g. the 744-token review) |
+| Thinking | `enable_thinking=False` by default; extraction thinking only with `RFQ_THINKING_EXTRACT=1` (`orchestrator.py:27`) | same |
+| Temperature, tool choice | 0.1 with `tool_choice=required` for tools; 0 with `json_object` for JSON | same |
+| Timeouts and retries | 60 s (tools) / 150 s per call, 6 attempts, backoff 1 → 8 s, bounded by the deadline | same, plus abort after 20 s of silence mid-stream |
+| Concurrency | 10 slots | 16 slots |
+| Hedging | after max(12 s / 30 s, 3× median latency), ≤ 2, not for thinking | after max(7 s, 4× median first-token time), ≤ 3, also for thinking |
+| On 401/403 | raises `DeadlineExceeded` (mission status "deadline") | re-raises the API error (mission status "failed", cosmetic) |</result>
+<usage><subagent_tokens>210782</subagent_tokens><tool_uses>55</tool_uses><duration_ms>524418</duration_ms></usage>
+</task-notification>
