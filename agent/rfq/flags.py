@@ -21,6 +21,7 @@ START_OVERLAP = _on("RFQ_START_OVERLAP", True)                  # websites load 
 # robustness (on: no effect unless the situation occurs)
 TAB_ISOLATION = _on("RFQ_TAB_ISOLATION", True)                  # own tab when two roles share one website
 GAP_RECOVERY = _on("RFQ_GAP_RECOVERY", True)                    # look for missing facts on another website
+CROSS_KINDS = _on("RFQ_CROSS_KINDS", True)                      # missions take along evidence of other roles they meet
 
 # performance steps: off until paired test runs confirm them (docs/13 §4)
 BRIEF_SPLIT = _on("RFQ_BRIEF_SPLIT", False)                     # core brief fields first, the rest in parallel

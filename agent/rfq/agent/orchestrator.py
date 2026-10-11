@@ -30,6 +30,15 @@ RUN_BUDGET = float(os.environ.get("RFQ_RUN_BUDGET", "1080"))          # our own 
 SUBMIT_RESERVE = float(os.environ.get("RFQ_SUBMIT_RESERVE", "420"))   # seconds kept for the submission phase
 CHUNK_CHARS, MAX_CHUNKS = 60000, 4      # as before up to 60k chars in one call; longer documents in parts (≤ 240k)
 BRIEF_CORE = ("tender_reference", "scenario_datetime_utc", "sites")   # what the missions need to start
+# The information can be split differently across the websites (the private dataset does that, e.g. bidder Q&A as a
+# mail or the specification in the tender portal): evidence missions also take along facts of these kinds when they
+# meet them, without searching for them.
+CROSS_KINDS = {"tender": ["spec_revisions", "requirements", "mail_message"],
+               "specification": ["positions", "clarifications"],
+               "mail": ["clarifications", "positions", "requirements"]}
+CROSS_LINE = ("\nInformation may be split differently across the websites: if this website also shows other evidence for "
+              "this tender (bidder Q&A, positions, specification revisions or requirements, approvals), extract it too "
+              "with the matching kind listed below; do not search for it here.")
 MATERIAL_REQUIRED = ["status_meaning", "bore_mm", "stroke_mm", "pressure_bar", "mounting", "unrestricted_stock",
                      "lead_time_stock_weeks", "lead_time_production_weeks", "pieces_per_carton"]
 
@@ -204,8 +213,10 @@ class Orchestrator:
             self.role_sites[role] = site
 
     def mission(self, name: str, goal: str, kinds: list[str], steps: int, progress=None, context: str = "") -> Mission:
-        return Mission(name=name, goal=goal, kinds={k: KINDS[k]["describe"] for k in kinds}, max_steps=steps,
-                       deadline=self.evidence_end, context=context, progress=progress)
+        extra = CROSS_KINDS.get(name, []) if flags.CROSS_KINDS else []
+        kinds = list(dict.fromkeys([*kinds, *extra]))
+        return Mission(name=name, goal=goal + (CROSS_LINE if extra else ""), kinds={k: KINDS[k]["describe"] for k in kinds},
+                       max_steps=steps, deadline=self.evidence_end, context=context, progress=progress)
 
     def site_memory(self, site) -> str:
         """What this run has learned about a website (no fixed knowledge): the kinds of pages where facts of each kind

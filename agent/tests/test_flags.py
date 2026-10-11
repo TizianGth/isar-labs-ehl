@@ -75,3 +75,18 @@ def test_trimmed_schema_only_drops_the_material_description(monkeypatch):
     assert trimmed["mail_message"] == prompts.KINDS["mail_message"]
     monkeypatch.setattr(flags, "SCHEMA_TRIM", False)
     assert prompts.kinds() is prompts.KINDS
+
+
+def test_missions_take_along_evidence_of_other_roles(monkeypatch):
+    """#3: on the private dataset bidder Q&A may come by mail or the specification sit in the tender portal; the
+    missions extract such facts when they meet them (kinds + one line), ERP and rechecks stay as they are."""
+    run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+    o = Orchestrator(run, {}, started=time.time())
+    monkeypatch.setattr(flags, "CROSS_KINDS", True)
+    mail = o.mission("mail", "goal", ["mail_list", "mail_message"], 40)
+    assert {"clarifications", "positions", "requirements"} <= set(mail.kinds) and "split differently" in mail.goal
+    tender = o.mission("tender", "goal", ["tender_overview", "positions", "clarifications"], 30)
+    assert "requirements" in tender.kinds and list(tender.kinds).count("positions") == 1
+    assert set(o.mission("erp:G", "goal", ["materials"], 35).kinds) == {"materials"}
+    monkeypatch.setattr(flags, "CROSS_KINDS", False)
+    assert set(o.mission("mail", "goal", ["mail_list", "mail_message"], 40).kinds) == {"mail_list", "mail_message"}
