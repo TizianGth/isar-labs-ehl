@@ -122,3 +122,36 @@ def test_no_recovery_when_the_model_sees_no_candidate_or_the_switch_is_off(monke
     assert asked and not any(name.endswith("+gap") for name, _, _ in missions)
     o, sites, asked, missions = _gap_run(monkeypatch, {"site": "tender"}, switch=False)
     assert not asked and not any(name.endswith("+gap") for name, _, _ in missions)
+
+
+def test_positions_without_requirement_ids_are_matched_by_the_model(monkeypatch):
+    """#4: a bill of quantities that does not name requirement ids: one model call matches the positions, so the
+    rules price them instead of skipping them; positions that name their requirement need no call."""
+    import asyncio
+    import time
+    from rfq import llm
+    from rfq.agent.orchestrator import Orchestrator
+    asked = []
+
+    async def ask_json(system, user, **kwargs):
+        asked.append(user)
+        return {"mapping": {"1": "R-2", "2": "nonsense"}}
+    monkeypatch.setattr(llm, "ask_json", ask_json)
+    run = {"expires_at": (time.time() + 7200) * 1000, "brief": ""}
+    o = Orchestrator(run, {}, started=time.time())
+    o.bb.add("positions", {"positions": [{"position": "1", "short_text": "Zylinder 63/500", "quantity": "8", "unit": "Stk"},
+                                         {"position": "2", "short_text": "Ventil", "quantity": "2", "unit": "Stk"}]}, "u")
+    o.bb.add("requirements", {"revision": "V1", "requirements": [{"ref": "R-1", "bore_mm": "40"},
+                                                                 {"ref": "R-2", "bore_mm": "63", "stroke_mm": "500"}]}, "u2")
+    asyncio.run(o.map_positions())
+    by_id = {p["position"]: p for p in o.positions()}
+    assert by_id["1"]["requirement_ref"] == "R-2" and by_id["1"]["quantity"] == "8"
+    assert not by_id["2"].get("requirement_ref") and "Zylinder 63/500" in asked[0]
+    asked.clear()
+    asyncio.run(o.map_positions())                                    # position 2 is still unmapped: asked again
+    o2 = Orchestrator(run, {}, started=time.time())
+    o2.bb.add("positions", {"positions": [{"position": "1", "quantity": "8", "requirement_ref": "R-1"}]}, "u")
+    o2.bb.add("requirements", {"revision": "V1", "requirements": [{"ref": "R-1"}]}, "u2")
+    asked.clear()
+    asyncio.run(o2.map_positions())
+    assert asked == []                                                 # nothing to match: no model call

@@ -20,8 +20,8 @@ from ..log import log
 from ..rules import parse
 from ..rules.resolve import Context, Result, build
 from .explorer import Explorer, Mission
-from .prompts import (BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, PREPARE_BID_GOAL,
-                      SITE_CHOICE_SYSTEM, kinds)
+from .prompts import (BRIEF_CORE_SYSTEM, BRIEF_SYSTEM, EXTRACT_SYSTEM, GAP_GOAL, KINDS, MAP_POSITIONS_SYSTEM,
+                      PREPARE_BID_GOAL, SITE_CHOICE_SYSTEM, kinds)
 from .submit import SUBMIT_TOOLS, submit_bid
 
 # Qwen's reasoning combined with JSON output can run for minutes on long inputs; measured off by default.
@@ -513,6 +513,39 @@ the revision list.
         metrics.mark("bid_prepared")
         log("bid_prepared", status=explorer.status, summary=explorer.summary[:300])
 
+    async def map_positions(self) -> None:
+        """Another tender's bill of quantities may not name the requirement of each position. Positions without a
+        known requirement are matched to the requirements by the model (one call); the rules skip a position only
+        when nothing fits. No call when every position names its requirement."""
+        reqs = self.requirements()
+        unmapped = [p for p in self.positions() if parse.norm_id(p.get("requirement_ref")) not in reqs]
+        if not reqs or not unmapped:
+            return
+        try:
+            listing = "\n".join(f"- position {p.get('position')}: {parse.clean(p.get('short_text'))[:300]} "
+                                f"({p.get('quantity')} {p.get('unit')}; given requirement: {p.get('requirement_ref')})"
+                                for p in unmapped)
+            requirements = "\n".join(
+                f"- {r.get('ref')}: bore {r.get('bore_mm')}, stroke {r.get('stroke_mm')}, pressure {r.get('pressure_bar')}, "
+                f"mounting {r.get('mounting')}, certification {r.get('certification') or 'none'}, group "
+                f"{r.get('catalog_group')}; text: {parse.clean(r.get('original_text'))[:300]}" for r in reqs.values())
+            data = await llm.ask_json(MAP_POSITIONS_SYSTEM, f"POSITIONS:\n{listing}\n\nREQUIREMENTS:\n{requirements}",
+                                      tag="map_positions", deadline=self.end - 60)
+            mapping = {parse.clean(k): v for k, v in (data.get("mapping") or {}).items()}
+            mapped = []
+            for p in unmapped:
+                ref = parse.norm_id(mapping.get(parse.clean(p.get("position"))) or "")
+                if ref in reqs:
+                    mapped.append({**p, "requirement_ref": reqs[ref].get("ref")})
+            if mapped:
+                self.bb.add("positions", {"positions": mapped}, "model:map_positions", via="mapping")
+            log("positions_mapped", mapped={p["position"]: p["requirement_ref"] for p in mapped},
+                unmapped=[p.get("position") for p in unmapped if p not in mapped])
+        except llm.DeadlineExceeded:
+            log("positions_mapped", error="deadline")
+        except Exception as error:      # never cost the bid: without a mapping the rules skip those positions
+            log("positions_mapped", error=f"{type(error).__name__}: {error}"[:300])
+
     def mail_mission(self) -> Mission:
         ref = self.brief.get("tender_reference")
         records = self.brief.get("authorized_records") or []
@@ -736,6 +769,8 @@ The progress checklist tells you what is still missing per material.""", ["mater
         except (Exception, asyncio.TimeoutError) as error:   # never stop before submitting
             log("evidence_phase_error", error=f"{type(error).__name__}: {error}"[:500], status=self.status)
         await self.full_brief()                                 # the rules and the submission need the whole brief
+        if not replay:
+            await self.map_positions()
         try:
             result = self.resolve()
             if not replay and result.answer.get("decision") == "no_bid" and time.time() < self.evidence_end - 30:
