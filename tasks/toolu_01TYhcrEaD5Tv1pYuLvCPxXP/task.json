@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01TYhcrEaD5Tv1pYuLvCPxXP",
+  "agent_id": "ac0b3a66ffb84726b",
+  "subagent_type": "Explore",
+  "task_description": "Research fast web agent papers",
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 71910,
+    "cache_read_tokens": 520144,
+    "output_tokens": 233,
+    "api_call_count": 13
+  },
+  "started_at": "2026-10-11T05:33:31.950308896+02:00",
+  "completed_at": "2026-10-11T05:37:05.299666037+02:00"
+}
