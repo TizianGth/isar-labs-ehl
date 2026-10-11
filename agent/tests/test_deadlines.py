@@ -505,3 +505,33 @@ def test_wait_for_returns_with_the_next_background_result(monkeypatch):
     assert not site.clicks                                         # the page was never waited on
     assert not any("already did exactly this" in h for h in explorer.history)
     assert len(prompts) <= 3                                       # extract + at most two waits, no idle loop
+
+
+def test_extract_then_starts_the_extraction_and_opens_the_next_page(monkeypatch):
+    """X-1: one model step starts a background extraction of this page and clicks on to the next one; the text
+    extracted is the page as it was before the click."""
+    from rfq import flags
+    from rfq.agent.explorer import Explorer, Mission, explorer_tools
+    monkeypatch.setattr(flags, "EXTRACT_THEN", True)
+    names = {t["function"]["name"]: t["function"]["parameters"]["properties"] for t in explorer_tools()}
+    assert "then_click" in names["extract"] and "then_open" in names["extract_urls"]
+    seen_texts, prompts = [], []
+
+    async def extractor(kind, text, url, via="page"):
+        seen_texts.append(text)
+        return "facts"
+
+    class _Site(_FakeSite):
+        async def full_text(self):
+            return f"page before the click ({len(self.clicks)} clicks so far)"
+
+    _scripted(monkeypatch, [("extract", {"kind": "materials", "then_click": "e1"}), ("finish", {"summary": "ok"})], prompts)
+    site = _Site()
+    mission = Mission("erp:G", "goal", {"materials": "m"}, max_steps=4, deadline=time.time() + 60,
+                      background_extraction=True)
+    explorer = asyncio.run(Explorer(site, mission, extractor).run())
+    assert site.clicks and seen_texts == ["page before the click (0 clicks so far)"]
+    assert "then: clicked" in explorer.history[0]
+    monkeypatch.setattr(flags, "EXTRACT_THEN", False)
+    assert "then_click" not in {t["function"]["name"]: t["function"]["parameters"]["properties"]
+                                for t in explorer_tools()}["extract"]

@@ -78,6 +78,28 @@ TOOLS = [
           "missing": {"type": "array", "items": {"type": "string"}, "description": "what you could not find"}},
           ["summary"]),
 ]
+THEN = {"extract": ("then_click", {"type": "string", "description": "optional: ref of the next page's link/button "
+                                    "to click right after starting the extraction (saves a step)"}),
+        "extract_urls": ("then_open", {"type": "string", "description": "optional: address (seen on a page) to open "
+                                       "right after starting the extractions (saves a step)"})}
+
+
+def explorer_tools() -> list[dict]:
+    """The explorer's tools; with RFQ_EXTRACT_THEN, extract/extract_urls can also go on to the next page."""
+    if not flags.EXTRACT_THEN:
+        return TOOLS
+    tools = []
+    for tool in TOOLS:
+        name = tool["function"]["name"]
+        if name in THEN:
+            key, schema = THEN[name]
+            parameters = tool["function"]["parameters"]
+            tool = {"type": "function", "function": {**tool["function"], "parameters": {
+                **parameters, "properties": {**parameters["properties"], key: schema}}}}
+        tools.append(tool)
+    return tools
+
+
 ACTIONS = ("click", "type", "select", "check", "set_slider", "open_url", "back", "fill_fields", "hover", "press_key",
            "scroll", "wait_for", "steps")
 
@@ -125,7 +147,7 @@ class Explorer:
         return f"{self.mission.name}@{self.site.site_id}"
 
     async def run(self, tools: list[dict] | None = None) -> "Explorer":
-        tools = tools or TOOLS
+        tools = tools or explorer_tools()
         tag = self.tag
         metrics.mission(tag)
         try:
@@ -243,9 +265,12 @@ class Explorer:
         return self
 
     def _system(self) -> str:
+        text = EXPLORER_SYSTEM
+        if flags.EXTRACT_THEN and self.mission.kinds:          # only missions that extract
+            text += THEN_HINT
         if flags.WAIT_ON_BACKGROUND and self.mission.background_extraction:
-            return EXPLORER_SYSTEM + WAIT_HINT
-        return EXPLORER_SYSTEM
+            text += WAIT_HINT
+        return text
 
     def _waits_on_background(self, name: str) -> bool:
         return name == "wait_for" and bool(self.pending) and flags.WAIT_ON_BACKGROUND
@@ -270,16 +295,18 @@ class Explorer:
                     collection = self._collection(args.get("collection_id"))
                     if collection is None:
                         return "ERROR: no collection yet; use read_all_pages first"
-                    return await self._extraction(f"extract {collection.id} ({kind})",
-                                                  self._extract_collection(collection, kind))
+                    return await self._then(args, await self._extraction(
+                        f"extract {collection.id} ({kind})", self._extract_collection(collection, kind)))
                 url = self.site.page.url
-                return await self._extraction(f"extract {url} ({kind})",
-                                              self.extractor(kind, await self.site.full_text(), url, via="page"))
+                text = await self.site.full_text()          # read before any then_click leaves the page
+                return await self._then(args, await self._extraction(
+                    f"extract {url} ({kind})", self.extractor(kind, text, url, via="page")))
             if name == "extract_urls":
                 kind = str(args.get("kind"))
                 urls = [self.site.absolute(str(u)) for u in (args.get("urls") or [])][:12]
-                return await self._extraction(f"extract_urls {len(urls)} page(s) ({kind}): {', '.join(urls)[:300]}",
-                                              _joined(*(self._extract_url(u, kind) for u in urls)))
+                return await self._then(args, await self._extraction(
+                    f"extract_urls {len(urls)} page(s) ({kind}): {', '.join(urls)[:300]}",
+                    _joined(*(self._extract_url(u, kind) for u in urls))))
             if name == "read_document":
                 return await self._read_document(args)
             if name == "inspect_visual":
@@ -319,6 +346,18 @@ class Explorer:
             arrived.append(f"{label} -> {result}")
             self.history.append(f"   (background) {label[:120]} -> {result[:200]}")
         return arrived
+
+    async def _then(self, args: dict, result: str) -> str:
+        """X-1: after starting an extraction, go on to the page the model named, in the same step."""
+        if not flags.EXTRACT_THEN or result.startswith("ERROR"):
+            return result
+        if args.get("then_click"):
+            metrics.add("extract_then")
+            return result + "\nthen: " + await self.site.act("click", {"ref": args["then_click"]})
+        if args.get("then_open"):
+            metrics.add("extract_then")
+            return result + "\nthen: " + await self.site.act("open_url", {"url": args["then_open"]})
+        return result
 
     async def _wait_first(self, timeout: float) -> list[str]:
         """Wait until one background extraction finishes (no model call meanwhile); the labels that finished."""
@@ -484,6 +523,10 @@ class Explorer:
 async def _joined(*parts) -> str:
     return " | ".join(await asyncio.gather(*parts))
 
+
+THEN_HINT = """
+- Save steps: extract(kind, then_click=<ref of the next page you need>) and extract_urls(urls, kind,
+  then_open=<address>) start the extraction and open the next page in the same step."""
 
 WAIT_HINT = """
 - When nothing is left to do but wait for background extractions, call wait_for (any condition): it returns as soon
