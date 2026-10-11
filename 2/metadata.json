@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M4DHW6ES3Q0G96C0T9YTQ0",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:04:54.119968856Z",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/fake_portals/server.py",
+    "dev/fake_portals/test_extra_cases.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:04:54.095700293Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1426,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1426,
+    "total_lines_changed": 1426,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

@@ -3,7 +3,7 @@
   "checkpoint_id": "01M4M4DHW6ES3Q0G96C0T9YTQ0",
   "strategy": "manual-commit",
   "branch": "codex/speed-quality",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "dev/fake_portals/server.py",
     "dev/fake_portals/test_extra_cases.py"
@@ -20,6 +20,12 @@
       "metadata": "/1/metadata.json",
       "transcript": "/1/full.jsonl",
       "content_hash": "/1/content_hash.txt",
+      "prompt": ""
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "content_hash": "/2/content_hash.txt",
       "prompt": ""
     }
   ],
