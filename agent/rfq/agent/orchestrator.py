@@ -244,8 +244,10 @@ class Orchestrator:
             if current and rev and rev != current:
                 continue
             for r in item["data"].get("requirements") or []:
-                if r.get("ref"):
-                    found[parse.norm_id(r["ref"])] = {**r, "revision": rev}
+                if r.get("ref"):      # several reads of one requirement: an empty value never erases a read one
+                    known = found.setdefault(parse.norm_id(r["ref"]), {})
+                    known.update({k: v for k, v in r.items() if v not in (None, "", []) or k not in known})
+                    known["revision"] = rev
         return found
 
     def needed_requirements(self) -> dict[str, dict]:
@@ -262,8 +264,13 @@ class Orchestrator:
         if needed:
             lines.append(f"[{'x' if not missing else ' '}] requirements referenced by the tender positions: "
                          f"{sorted(needed)}" + (f" — missing {missing}" if missing else ""))
+        unread = sorted(k for k in (needed or set(reqs)) if k in reqs and _values_unread(reqs[k]))
+        if unread:
+            lines.append(f"[ ] values NOT read for {unread} (no catalogue group / no technical values): the sheet may "
+                         "be a picture (scan, canvas): use inspect_visual with the picture's ref, then extract kind "
+                         "'requirements' again on that page")
         collected = any(i.get("via") == "collection" for i in self.bb.get("requirements"))
-        complete = bool(current and reqs and (not missing if needed else collected))
+        complete = bool(current and reqs and not unread and (not missing if needed else collected))
         return "\n".join(lines), complete
 
     def materials(self) -> dict[str, dict]:
@@ -596,6 +603,13 @@ The progress checklist tells you what is still missing per material.""", ["mater
             log("submit_error", error=f"{type(error).__name__}: {error}"[:500])
         log("usage", **llm.usage)
         return result
+
+
+def _values_unread(requirement: dict) -> bool:
+    """A requirement whose values were not read (a scanned sheet extracted from its text): no catalogue group, or
+    none of bore, stroke and pressure."""
+    empty = lambda key: requirement.get(key) in (None, "", [])
+    return empty("catalog_group") or all(empty(key) for key in ("bore_mm", "stroke_mm", "pressure_bar"))
 
 
 def _page_pattern(url) -> str:

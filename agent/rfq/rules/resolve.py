@@ -129,8 +129,10 @@ def build(ctx: Context, bb: dict[str, list[dict]]) -> Result:
             note(f"ignoring requirements of revision {rev} (not current)")
             continue
         for r in item["data"].get("requirements") or []:
-            if r.get("ref"):
-                requirements[norm_id(r["ref"])] = {**r, "revision": rev or current_rev}
+            if r.get("ref"):          # several reads of one requirement: an empty value never erases a read one
+                known = requirements.setdefault(norm_id(r["ref"]), {})
+                known.update({k: v for k, v in r.items() if v not in (None, "", []) or k not in known})
+                known["revision"] = rev or current_rev
 
     # ---------------------------------------------------------------- mails (authority and time)
     domain = ctx.mailbox_domain

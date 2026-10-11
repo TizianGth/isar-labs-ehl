@@ -311,3 +311,20 @@ def test_waiting_for_outside_changes_is_not_a_loop(monkeypatch):
 
     assert run("wait_for", {"condition": "change"}) == ["wait_for"] * 4
     assert run("click", {"ref": "e1"}) == ["click"] * 2          # the third identical click is a loop
+
+
+def test_a_requirement_without_values_is_not_read_yet():
+    """Fake portal scanned/shared-stock: REQ-B was extracted from the text around a scanned sheet (all values empty)
+    and the specification counted as complete; a later good read must not be erased by an empty one either."""
+    o = _orchestrator()
+    o.bb.add("positions", {"positions": [{"position": "1", "requirement_ref": "R-1"}, {"position": "2", "requirement_ref": "R-2"}]}, "u")
+    o.bb.add("spec_revisions", {"revisions": [{"revision": "V2", "status_text": "gültig"}]}, "u")
+    good = {"ref": "R-1", "bore_mm": "40", "stroke_mm": "100", "pressure_bar": "200", "catalog_group": "G1"}
+    o.bb.add("requirements", {"revision": "V2", "requirements": [good, {"ref": "R-2", "bore_mm": None, "catalog_group": None}]}, "u1")
+    text, complete = o.spec_progress()
+    assert not complete and "values NOT read for ['R-2']" in text
+    o.bb.add("requirements", {"revision": "V2", "requirements": [{"ref": "R-2", "bore_mm": "50", "stroke_mm": "200",
+                                                                  "pressure_bar": "210", "catalog_group": "G2"}]}, "u2")
+    o.bb.add("requirements", {"revision": "V2", "requirements": [{"ref": "R-1", "bore_mm": None, "catalog_group": None}]}, "u3")
+    text, complete = o.spec_progress()
+    assert complete and o.requirements()["R-1"]["bore_mm"] == "40"
