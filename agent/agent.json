@@ -1,0 +1,25 @@
+{
+  "setup": [
+    "uv",
+    "sync",
+    "--no-dev"
+  ],
+  "run": [
+    "env",
+    "RFQ_WAIT_ON_BACKGROUND=1",
+    "RFQ_BRIEF_SPLIT=1",
+    "RFQ_EXTRACT_THEN=1",
+    "RFQ_LINKS_IN_RESULTS=1",
+    "RFQ_SCHEMA_TRIM=1",
+    "RFQ_PREPARE_BID=1",
+    "uv",
+    "run",
+    "--no-sync",
+    "python",
+    "main.py"
+  ],
+  "browsers": 4,
+  "models": [
+    "qwen"
+  ]
+}
