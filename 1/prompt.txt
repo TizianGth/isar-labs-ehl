@@ -1,0 +1,5 @@
+Audit the existing Scout experiment and its logs in your own checkout. Focus on repeated mail/ERP calls, discarded background results, and early completion that misses newer records. Report reproducible failures and useful fixes to Codex. Do not edit /home/varialbe/isar-labs-ehl, change prompts, or launch backend runs—we share a twelve-run budget.
+
+---
+
+In a separate checkout, review codex/inference-fusion for correctness regressions. Focus on fused decision parsing, source attribution across frames, mail folder/search coverage, material-status conflicts, form bindings, and uncertain writes. Use synthetic offline reproductions. Return concrete bugs with file/line references and minimal fixes. Do not modify the shared checkout, start backend runs, or submit/cancel anything.
