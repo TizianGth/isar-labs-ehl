@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M5B9BPBVJFJNC67WWR1PZW",
+  "session_id": "f9ba9566-287f-4a95-8329-e01f1b10fbbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T00:21:09.13018868Z",
+  "branch": "codex/speed-quality",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/eval/atira_series.py",
+    "dev/eval/test_atira_series.py"
+  ],
+  "agent": "Antigravity",
+  "model": "",
+  "turn_id": "49e6fc1d8068",
+  "checkpoint_transcript_start": 90,
+  "transcript_lines_at_start": 90,
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T00:21:09.106968136Z",
+    "agent_lines": 397,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 397,
+    "total_lines_changed": 397,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
