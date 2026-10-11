@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4M6P5KGEPZS5T9YNJFD2BCQ",
+  "strategy": "manual-commit",
+  "branch": "feat/agent-improvements",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "agent/rfq/agent/explorer.py",
+    "agent/rfq/agent/prompts.py",
+    "agent/rfq/browser/documents.py",
+    "agent/tests/test_documents.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 11812,
+    "cache_read_tokens": 4555022,
+    "output_tokens": 8760,
+    "api_call_count": 5
+  }
+}
