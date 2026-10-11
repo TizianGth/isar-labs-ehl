@@ -39,12 +39,12 @@ SUBMIT_TOOLS = [t for t in TOOLS if t["function"]["name"] not in
 
 
 STEPS_GUIDANCE = """  Do a whole position with ONE `steps` call: each product filter as a select with then_click=<the form's apply
-  button, e.g. "Auswahl übernehmen"> (the next filter stays disabled until the choice is applied), then a fill_fields
+  button for that choice, if it has one> (a next filter may stay disabled until a choice is applied), then a fill_fields
   for catalogue number, quantity, unit price, the price breakdown fields (base, surcharges, packaging, project
   bonus; they may sit in a collapsed section) and the lead time, and finally the click that goes to the next step.
   If `steps` stops early, look at the page and continue from where it stopped."""
-SINGLE_GUIDANCE = """  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button,
-  e.g. "Auswahl übernehmen">) — the next filter stays disabled until the choice is applied. When our catalogue number
+SINGLE_GUIDANCE = """  Choose the product filters of that position one at a time with select(..., then_click=<the form's apply button
+  for that choice, if it has one>) — a next filter may stay disabled until a choice is applied. When our catalogue number
   is selectable, use fill_fields once for catalogue number, quantity, unit price, the price breakdown fields (base,
   surcharges, packaging, project bonus; they may sit in a collapsed section) and the lead time; then go to the next step."""
 

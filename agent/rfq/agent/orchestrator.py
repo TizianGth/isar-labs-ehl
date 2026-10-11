@@ -474,11 +474,10 @@ Do not start the bid submission, do not ask questions.""", ["tender_overview", "
         spec = self.mission("specification", f"""Find the buyer's technical specification (Lastenheft / technical
 specification / data sheet) for tender {ref} and collect the requirements of the revision MARKED CURRENT
 (status such as "gültig"/"aktuell"; the viewer may open an old revision first; dates may use mixed formats).
-The revision history and the requirement sheets are INSIDE the specification document: find the document (e.g. in
-a document register, possibly paged), then OPEN it via its own link/action. A register or list of documents is not
-the revision list.
-1. Pass any document-release form honestly: choose the binding/reference option (not archive copy, not preview),
-   copy the receipt number shown, tick the required acknowledgement, request read access.
+The revision history and the requirement sheets usually belong to the specification document itself (or its
+viewer), not to a list of documents: find the document (e.g. in a document register, possibly paged), then open it.
+1. If access needs a form, fill it honestly: choose the binding/current option (not an archive copy or preview),
+   copy any number it asks you to copy, tick the required acknowledgements.
 2. Extract the revision list with statuses (kind 'spec_revisions'); statuses may be tooltips ([info: …]).
 3. Open the CURRENT revision and read ALL its requirement pages in one step: read_all_pages(next_ref=<its 'next
    page' link, possibly inside the viewer frame>, kind='requirements').""", ["spec_revisions", "requirements"], 30,
