@@ -74,6 +74,64 @@ def test_mail_progress_early_completion():
     assert "topics NOT found yet" not in text
 
 
+def test_mail_progress_completes_when_all_listed_messages_read_with_absent_topics():
+    """mail_progress must complete when all folder pages and messages are read, even if a topic from the brief is not present."""
+    orch = Orchestrator({"brief": "Tender VG-1", "expires_at": 10**12}, {})
+    orch.brief = {
+        "tender_reference": "VG-1",
+        "scenario_datetime_utc": "2026-10-10T12:00:00Z",
+        "director_localpart": "leitung",
+        "authorized_records": [
+            {"topic": "packaging", "subject_keyword": "Verpackung", "sender_localpart": "logistik"},
+            {"topic": "setup_pool", "subject_keyword": "Rüstpool", "sender_localpart": "arbeitsvorbereitung"},
+        ],
+    }
+
+    # Mailbox listing with inbox and archive
+    orch.bb.add("mail_list", {
+        "mailbox_address": "sales@bidder.com",
+        "folder": "inbox",
+        "page": 1,
+        "pages_total": 1,
+        "messages": [
+            {"subject": "VG-1 Rabatt", "url": "/msg/1"},
+            {"subject": "VG-1 Verpackung", "url": "/msg/2"},
+        ],
+    }, "/list-inbox")
+    orch.bb.add("mail_list", {
+        "mailbox_address": "sales@bidder.com",
+        "folder": "archive",
+        "page": 1,
+        "pages_total": 1,
+        "messages": [],
+    }, "/list-archive")
+
+    orch.bb.add("mail_message", {
+        "subject": "VG-1 Rabatt",
+        "sender": "leitung@bidder.com",
+        "datetime_utc": "2026-10-09T10:00:00Z",
+        "reference": "VG-1",
+        "is_draft_or_preview": False,
+        "topic": "discount",
+        "data": {"is_approval": True, "percent": "5"},
+    }, "/msg/1")
+
+    orch.bb.add("mail_message", {
+        "subject": "VG-1 Verpackung",
+        "sender": "logistik@bidder.com",
+        "datetime_utc": "2026-10-09T11:00:00Z",
+        "reference": "VG-1",
+        "is_draft_or_preview": False,
+        "topic": "packaging",
+        "data": {"tariffs": {"T1": {"eur_per_carton": "12.50"}}},
+    }, "/msg/2")
+
+    text, complete = orch.mail_progress()
+    # All listed messages have been read; setup_pool doesn't exist, so complete must be True!
+    assert complete is True, f"Expected mail_progress to complete, got False. Text: {text}"
+    assert "absent topics do not exist in this mailbox" in text
+
+
 def test_erp_progress_early_completion():
     """erp_progress must complete once all requirements are satisfied by an active material with scales."""
     orch = Orchestrator({"brief": "Tender VG-1", "expires_at": 10**12}, {})

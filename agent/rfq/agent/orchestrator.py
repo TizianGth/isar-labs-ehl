@@ -436,7 +436,8 @@ class Orchestrator:
             lines.append(f"list pages not read yet: {unread_pages} (read_all_pages on the list with kind mail_list)")
         if missing and absent:
             lines.append("listed but not opened yet (use extract_urls with kind mail_message):\n  " + "\n  ".join(missing[:30]))
-        complete = (not absent and not unread_pages) or (not absent and not missing and not unread_pages)
+        folders_checked = {"inbox", "archive"}.issubset({f.lower() for f in pages})
+        complete = (not absent and not unread_pages) or (folders_checked and not unread_pages and not missing)
         return "\n".join(lines), complete
 
     def _mail_problem(self, m: dict, ref: str) -> str | None:
