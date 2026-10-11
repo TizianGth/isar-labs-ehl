@@ -111,12 +111,13 @@ def test_release_uses_acquired_semaphore_instance(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_refused_access_is_not_retried(monkeypatch):
-    """After an accepted answer the platform revokes the run token: 401 must end the call at once."""
+@pytest.mark.parametrize("status", [400, 401, 403, 413, 422])
+def test_repeated_refusal_is_bounded(monkeypatch, status):
+    """A revoked token or invalid request stops after three consecutive refusals."""
     calls = []
 
     class Refused(Exception):
-        status_code = 401
+        status_code = status
 
     async def create(**kwargs):
         calls.append(1)
@@ -125,6 +126,56 @@ def test_refused_access_is_not_retried(monkeypatch):
     monkeypatch.setattr(llm, '_slots', asyncio.Semaphore(1))
     monkeypatch.setattr(llm, '_run_deadline', float('inf'))
     monkeypatch.setattr(llm, 'client', lambda: _client(create))
+    monkeypatch.setattr(llm.asyncio, 'sleep', _no_sleep)
     with pytest.raises(llm.DeadlineExceeded):
         asyncio.run(llm.chat([], deadline=time.time() + 30))
-    assert len(calls) == 1
+    assert len(calls) == 3
+
+
+async def _no_sleep(delay):
+    return None
+
+
+@pytest.mark.parametrize("codes", [[502, 403, 409, 503], [403, 403, 502, 403, 403], [404, 404, 404]])
+def test_transient_proxy_refusals_are_retried(monkeypatch, codes):
+    calls = []
+    class Status(Exception):
+        def __init__(self, status):
+            self.status_code = status
+    async def scenario():
+        slots = asyncio.Semaphore(1)
+        async def create(**kwargs):
+            calls.append(1)
+            if len(calls) <= len(codes):
+                raise Status(codes[len(calls) - 1])
+            return _response()
+        async def sleep(delay):
+            await _assert_one_slot(slots)
+        monkeypatch.setattr(llm, '_slots', slots)
+        monkeypatch.setattr(llm, '_run_deadline', float('inf'))
+        monkeypatch.setattr(llm, 'client', lambda: _client(create))
+        monkeypatch.setattr(llm.asyncio, 'sleep', sleep)
+        monkeypatch.setattr(llm, 'usage', dict(llm.usage))
+        reply = await llm.chat([], deadline=time.time() + 60)
+        assert reply['content'] == '{}' and len(calls) == len(codes) + 1
+        await _assert_one_slot(slots)
+    asyncio.run(scenario())
+
+
+def test_retry_does_not_extend_the_deadline(monkeypatch):
+    async def scenario():
+        clock, calls = [100.0], []
+        async def failed(*args, **kwargs):
+            calls.append(1)
+            clock[0] += 2
+            raise TimeoutError('synthetic outage')
+        async def sleep(delay):
+            clock[0] += delay
+        monkeypatch.setattr(llm.time, 'time', lambda: clock[0])
+        monkeypatch.setattr(llm, '_run_deadline', 106.0)
+        monkeypatch.setattr(llm, '_first_answer', failed)
+        monkeypatch.setattr(llm.asyncio, 'sleep', sleep)
+        with pytest.raises(llm.DeadlineExceeded):
+            await llm.chat([], deadline=106.0)
+        assert len(calls) == 2
+    asyncio.run(scenario())
