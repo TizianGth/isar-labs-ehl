@@ -1,0 +1,81 @@
+{
+  "workload": "20 model-selected regular-table sources, identical semantics, changing IDs/values",
+  "baseline_without_template": {
+    "mock_inference_requests": 8,
+    "input_characters": 27319,
+    "output_characters": 2693,
+    "source_reads": 20,
+    "exact_material_rows": 20,
+    "table_cache": {
+      "stored": 0,
+      "hits": 0,
+      "misses": 0
+    },
+    "requests": [
+      {
+        "tag": "erp@synthetic",
+        "input_characters": 6107,
+        "output_characters": 282
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3045,
+        "output_characters": 358
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3045,
+        "output_characters": 358
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3045,
+        "output_characters": 358
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3051,
+        "output_characters": 362
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3054,
+        "output_characters": 364
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 3054,
+        "output_characters": 364
+      },
+      {
+        "tag": "extract_batch:materials",
+        "input_characters": 2918,
+        "output_characters": 247
+      }
+    ],
+    "real_model_calls": 0
+  },
+  "candidate_including_template_learning": {
+    "mock_inference_requests": 1,
+    "input_characters": 6107,
+    "output_characters": 311,
+    "source_reads": 20,
+    "exact_material_rows": 20,
+    "table_cache": {
+      "stored": 1,
+      "hits": 19,
+      "misses": 0
+    },
+    "requests": [
+      {
+        "tag": "erp@synthetic",
+        "input_characters": 6107,
+        "output_characters": 311
+      }
+    ],
+    "real_model_calls": 0
+  },
+  "platform_seconds": null,
+  "metered_tokens": null,
+  "limitation": "Synthetic structured-source regression, not a full-run or model-quality benchmark"
+}

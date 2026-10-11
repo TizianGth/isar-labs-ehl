@@ -1,0 +1,3017 @@
+{
+  "seed": 907,
+  "unique_candidates": 200,
+  "generations": 9,
+  "measurement": "Actual offline prompt builders; synthetic no-inference responses.",
+  "ranking": "characters, extraction calls, read waves; no weighted invented seconds",
+  "release_gate": "BLOCKED: no full-run latency, token or unseen-quality measurement",
+  "baseline_flags": {
+    "RFQ_DECISION_VIEW_CHARS": 6500,
+    "RFQ_TABLE_SAMPLES": 3,
+    "RFQ_RESULT_CHARS": 1200,
+    "RFQ_SOURCE_PARALLEL": 4,
+    "RFQ_EXTRACT_BATCH": 3
+  },
+  "candidates": [
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 1,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 110647,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 2,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111135,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 4
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 4,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 3
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 6,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 2
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 8,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 8,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 2,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 4000,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 4,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 4,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 400,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 2,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 8,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 2400,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 800,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    },
+    {
+      "flags": {
+        "RFQ_DECISION_VIEW_CHARS": 6500,
+        "RFQ_TABLE_SAMPLES": 3,
+        "RFQ_RESULT_CHARS": 1200,
+        "RFQ_SOURCE_PARALLEL": 1,
+        "RFQ_EXTRACT_BATCH": 1
+      },
+      "request_characters": 111627,
+      "independent_read_waves": 16,
+      "synthetic_extraction_calls": 16,
+      "platform_seconds": null,
+      "metered_tokens": null,
+      "release_qualified": false
+    }
+  ]
+}
