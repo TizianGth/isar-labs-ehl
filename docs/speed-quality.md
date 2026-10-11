@@ -68,5 +68,11 @@ team clarifies whether someone promoted the run or the platform changed its clas
 
 The current recorded-evidence audit contains 42 synthetic runs: all 31 previously perfect calculations remain
 perfect. An incomplete historical legacy run drops from 77.125 to 51 because unknown certification is no longer
-treated as explicitly absent. The replay gate reports that regression and remains red. A new model/browser
-legacy/locale test is required; restoring the missing fact from its golden answer would defeat the audit.
+treated as explicitly absent. The replay gate reports that regression and remains red. A fresh model/browser
+legacy/locale test checks whether navigation obtains that fact; inserting it from the golden answer would defeat the audit.
+
+Latest H model/browser validation completed: all six portal styles scored 100 with confirmed receipts,
+mean 152.97 seconds and worst 199.20 seconds. An additional legacy/locale run also scored 100 with a receipt
+in 104.12 seconds, explicitly collecting the certification previously absent from the historical replay.
+The historical replay still reports its regression. These are local synthetic results, not private quality
+or the required ten consecutive official runs. Runtime code in H matches HEAD; H enables only async extraction.
