@@ -1,0 +1,20 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4MVGN95XR0YS6W3JK7VMG1N",
+  "strategy": "manual-commit",
+  "branch": "claude/sixty",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "agent/rfq/agent/orchestrator.py",
+    "agent/rfq/browser/site.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ]
+}
