@@ -1,0 +1,357 @@
+# AGENTS.md instructions for /home/varialbe/isar-labs-ehl
+
+<INSTRUCTIONS>
+# AGENTS.md — isar-labs · Atira EHL Challenge „From RFQ to bid"
+
+Dieses Dokument ist die verbindliche Arbeitsanweisung für alle Coding-Agents (Codex, Claude Code, Cursor) und Menschen
+im Team. Lies es vollständig, bevor du Code schreibst. Details stehen in `docs/` (Index unten); bei Widerspruch gilt
+die Reihenfolge: **Challenge-Brief der Plattform > dieses Dokument > docs/**.
+
+## 1. Mission in einem Absatz
+
+Wir bauen ein Agentensystem, das in einer Sandbox (20 min, bis zu 4 Chromium-Browser über CDP, nur Plattform +
+4 Websites erreichbar) ein öffentliches Tender beantwortet: Vergabeportal (Ausschreibung, Bieterfragen, Konfigurator),
+Lieferantenportal (Lastenheft/Spezifikation), ERP (Material, Bestand, Konditionen) und Webmail (Freigaben, TAN).
+Am Ende wird **ein** signiertes Angebot im Konfigurator des Vergabeportals abgegeben. Gewertet wird:
+**eligible (richtige Tender-Referenz) → Qualität 0–100 → Kosten × Zeit**. Gewinner: zuerst **privater Datensatz**
+(andere Websites, anderes Layout, andere Navigation, Informationen anders verteilt!), dann public, dann Eleganz.
+
+➡️ Wir optimieren für **Generalität und Korrektheit**, nicht für das öffentliche Szenario.
+
+## 2. Nicht verhandelbare Regeln (Fair Play — Verstoß = Disqualifikation)
+
+1. **Keine hardcodierten Szenario-Werte** in `agent/` — weder Code, Config, Prompts, Kommentare, Defaults, Fallbacks
+   noch Tests: keine Tender-Referenzen, Materialnummern, Preise, Rabatte, Keys (`VP-…`, `TZ-…`, `K-…`, `RP-…`, `PB-…`,
+   `MET-…`, `FX-…`, `ER-…`, `GR-…`), Logins, TANs, URLs-Pfade der Public-Sites. Werte aus dem **Brief** (den jeder Lauf
+   bekommt) dürfen zur Laufzeit gelesen werden. Die **Regeln** (Rechenlogik) dürfen wir implementieren.
+2. **Ein LLM entscheidet die Navigation**: wohin klicken, was suchen, welches Dokument relevant ist. Code darf helfen
+   (Seite extrahieren, ausgewähltes Dokument parsen, vom Modell gewählte Ergebnisliste paginieren, rechnen, validieren,
+   retry, Formular füllen). **Verboten**: fester Klickpfad, Crawler der alles einsammelt und am Ende einem Modell gibt.
+3. Keine eigenen Browser in der Sandbox starten (nur `CDP_URLS`), keine lokalen Modelle, kein Netzwerk außer
+   Plattform/Websites/Proxy, alle LLM-Calls über den Proxy (`*_BASE_URL`-Variablen).
+4. Keine Secrets im Repo. Eigene API-Keys nur als Team-Secret auf der Plattform.
+5. Nichts im Package, was den AI-Reviewer „steuern“ soll (Kommentare an den Reviewer zählen gegen uns).
+6. `submit`/`cancel` auf der Plattform **nur nach ausdrücklicher Freigabe eines Menschen**. Test-Runs sind frei.
+
+Details: `docs/01-challenge.md` §Fair Play.
+
+## 3. Repo-Layout (Ist-Stand MVP, Commit auf `main`)
+
+```
+agent/                      # == eingereichtes Package (agent.json liegt HIER). Nur generischer Code!
+  agent.json                # setup "uv sync --no-dev", run "uv run --no-sync python main.py", browsers 4, models ["qwen"]
+  main.py                   # Einstieg: Run laden, 1 Browser je Site (Sandbox: CDP), Orchestrator, --dry-run/--out/--evidence
+  rfq/contract.py           # Run-Contract (API / CHALLENGE_SCOUTING lokal), Uhr
+  rfq/llm.py                # Qwen-Client: Retry, Timeouts, Semaphore, Thinking an/aus, JSON-Modus, Usage-Log
+  rfq/log.py                # JSON-Zeilen auf stdout
+  rfq/browser/observe.js    # DOM→Text-Serializer (Köder raus, Tooltips/details/Canvas rein, Refs)
+  rfq/browser/guards.js     # Login-/Cookie-/Overlay-/Gate-/Fehlerseiten-Erkennung (generisch)
+  rfq/browser/site.py       # Site = Website in einem Tab: Guards um jede Aktion, Popups, Relogin, Helper-Tabs, fill_fields
+  rfq/agent/explorer.py     # LLM-Tool-Loop (1 Tool/Schritt), Fortschritts-Checkliste, Loop-Schutz
+  rfq/agent/orchestrator.py # Brief → Missionen parallel (Tender, Spezifikation, Mail, ERP je Kataloggruppe) → Regeln → Abgabe
+  rfq/agent/prompts.py      # System-Prompts + Extraktions-Schemata (site-agnostisch)
+  rfq/agent/submit.py       # Abgabe-Agent: Formular, TAN aus Mail, Summary-Check, confirm()-Dialog
+  rfq/rules/parse.py        # Zahlen (Locale), Daten, IDs
+  rfq/rules/resolve.py      # Regeln + Pricing (Decimal, HALF_UP) mit Entscheidungs-Trace
+  tests/                    # NUR synthetische Testdaten
+dev/                        # NICHT eingereicht: Fixtures, Oracle, score.py, check_no_leaks.py, runs/
+docs/                       # Wissensbasis (siehe Index)
+(Root: agent.py/research.py/evidence.py/smoke/ = Tizians Starter-Kit-Prototyp, nicht Teil des Packages)
+```
+
+Einreichen/Testen immer aus `agent/`: `atira test-run ./agent`.
+Alles mit Public-Werten (Fixtures, Oracle, Golden Answers) liegt ausschließlich in `dev/`.
+
+## 4. Architektur (Kurzfassung — Details `docs/02-architecture.md`, Ist-Stand `docs/11-mvp-status.md`)
+
+```
+Brief ──► LLM-Extraktion (Referenz, Stichtag, Firma, USt-Id, Site-Rollen, autorisierte Absender je Thema)
+   │
+   ▼
+Orchestrator (asyncio, Blackboard = append-only Extraktionen mit URL)
+  ├─ Mission tender         (Browser 1)  → positions, clarifications
+  ├─ Mission specification  (Browser 2)  → spec_revisions, requirements     ──┐
+  ├─ Mission mail           (Browser 4)  → mail_list, mail_message           │
+  └─ Missionen erp:<Gruppe> (Browser 3, je Kataloggruppe ein Tab) ◄─────────┘ (starten, sobald Spezifikation fertig)
+       Explorer-Tools: click · type · select(+then_click) · fill_fields · check · set_slider · open_url · back
+                       · read_all_pages(next_ref) · extract(kind) · extract_urls(urls, kind) · finish
+       Fortschritts-Checkliste je Mission (vom Code aus dem Blackboard) → Auto-Finish, kein Wiederholen
+   ▼
+rules/resolve.py (deterministisch) → Answer + Trace → submit.py (Formular, TAN, confirm) 
+```
+
+Kernprinzipien:
+- **LLM navigiert und interpretiert, Python rechnet.** Keine Arithmetik im LLM.
+- **Observation = eigener DOM-Serializer** (a11y-basiert, alle Frames, Tooltips + geschlossene `<details>` sichtbar,
+  `aria-hidden`/`display:none`-Köder raus, Canvas/`role=img` über `aria-label`, Zero-Width-Zeichen entfernt).
+  Screenshots nur als Fallback für Vision (Qwen ist multimodal).
+- **Jede Zahl hat Provenienz** (Quelle + Rohtext + Locale). Resolver wendet „neuester datierter Eintrag ≤ Stichtag,
+  exakte Referenz, autorisierter Absender“ deterministisch an.
+- **Immer eine Antwort abgeben.** Deadline-Wächter: spätestens bei `expires_at − 4 min` mit bestem Stand signieren.
+  Leere Felder = 0 Punkte, falsche Felder = 0 Punkte → immer beste Schätzung eintragen, Positionen nie auslassen,
+  außer sie lassen sich technisch nicht konfigurieren.
+
+## 5. Workstreams & Branches (Details + Schnittstellen: `docs/07-workstreams.md`)
+
+| Branch | Owner-Rolle | Liefert |
+| --- | --- | --- |
+| `feat/agent-orchestrator` | Orchestrierung & LLM | `contract.py`, `llm/`, `agents/orchestrator.py`, `explorer.py`, Deadline, Logging, Package-Layout `agent/` |
+| `feat/browser-tools` | Browser-Robustheit | `browser/*` (Serializer, Actions, Guards, Documents), Fixture-Tests gegen `dev/fixtures` |
+| `feat/tender-specification` | Vergabe + Spezifikation | Missionen + Fact-Schemas für Tender, LV, Bieterfragen, Spezifikation/Revisionen, Nachträge |
+| `feat/erp-mail-evidence` | ERP + Mail | Missionen + Fact-Schemas für Material/Bestand/Konditionen, Mail-Freigaben, Keys |
+| `feat/pricing-submission` | Rechnen + Abgabe | `rules/*` (Parser, Resolver, Pricing, Validate), `submit/*` (Konfigurator, TAN) |
+
+Schnittstelle zwischen Explorern und Regeln sind die Extraktions-Schemata `KINDS` in `agent/rfq/agent/prompts.py`
+(Owner: pricing-submission + orchestrator; Änderungen per PR). Alle Branches bitte auf `main` rebasen — das MVP liegt dort.
+
+## 6. Arbeitsweise
+
+- Python 3.12, `uv`, asyncio, Playwright (async), `openai` SDK (für Qwen, OpenAI-kompatibel). Keine pydantic-Abhängigkeit (noch nicht nötig).
+  Keine weiteren schweren Abhängigkeiten ohne Absprache (Setup max. 5 min, Package ≤ 20 MB).
+- Geld & Mengen: **`decimal.Decimal`**, niemals `float`. Rundung `ROUND_HALF_UP` exakt dort, wo die Regeln es sagen.
+- Zahlen/Datum immer über `rules/parse.py` (Locale-Tags `(de-DE)`/`(en-US)`, `(TT/MM)`/`(MM/TT)`, Zeitzonen).
+- Logging: jede LLM-Antwort, jede Aktion, jeder Fact als JSON-Zeile auf stdout (die Plattform zeigt stdout im Run-Log).
+  Keine Secrets loggen. Format: `{"t":…,"agent":…,"event":…,…}`.
+- Prompts liegen in `agent/rfq/agent/prompts.py`, sind **site-agnostisch** und enthalten nur Regeln,
+  Glossar und Vorgehen — nie Public-Werte.
+- Kleine PRs, je Branch eigener Bereich; `facts.py` und Prompts nur per Review ändern.
+- Commits: aussagekräftig, Englisch, Imperativ.
+
+## 7. Testen (Details: `docs/06-testing.md`)
+
+1. `cd agent && uv run pytest -q` — Unit-Tests (Parser, Pricing, Resolver, Serializer) mit synthetischen Daten.
+2. `uv run pytest dev/tests -q` — Fixture-Tests gegen gespeichertes Public-HTML (Fallen-Regression).
+3. Lokal End-to-End: Terminal 1 `atira models proxy`; Terminal 2 `eval "$(atira scout --env)" && cd agent && uv run python main.py`
+   (lokal wird nichts gewertet; Abgabe mit Scouting-Logins wird „acknowledged“, zählt nie).
+4. `uv run python dev/eval/score.py <answer.json>` — Feldweise Bewertung gegen `dev/oracle` (Punkteschema der Challenge).
+5. Sandbox: `atira test-run ./agent` → Punkte je Feld; Debug über `atira mcp` (`diagnose_run`, `run_logs`, `run_screenshot`).
+6. Robustheit: Perturbations-Tests (umbenannte Labels, andere Reihenfolge, andere Locale) — Ziel privater Datensatz.
+
+**Definition of Done** für jedes Feature: Unit-Test grün · keine Public-Werte in `agent/` (`dev/check_no_leaks.py`) ·
+läuft lokal gegen Scouting-Sites · Logs nachvollziehbar.
+
+## 8. Doku-Index
+
+| Datei | Inhalt |
+| --- | --- |
+| `docs/01-challenge.md` | Plattform, Run-Contract, Env-Variablen, Scoring, Fair Play, Answer-Schema, Abgabe-Ablauf |
+| `docs/02-architecture.md` | Zielarchitektur, Datenfluss, Phasen, Zeitbudget, Modellstrategie |
+| `docs/03-site-recon.md` | Was wir auf den 4 Public-Sites gefunden haben: jede Falle, generalisiert |
+| `docs/04-business-rules.md` | Exakte Rechenregeln (alle 29), Formeln, Rundung, Reihenfolge, Edge Cases |
+| `docs/05-browser-playbook.md` | Playwright-Regeln, Serializer-Spezifikation, Guards, Dialoge, Popups, Sessions |
+| `docs/06-testing.md` | Teststrategie, Eval-Harness, Test-Runs, Debugging über MCP |
+| `docs/07-workstreams.md` | Aufgaben je Person/Branch, Schnittstellen, Meilensteine |
+| `docs/08-pitfalls.md` | Häufige Fehler (eigene Funde + Literatur) und Features, die wir übernehmen |
+| `docs/09-glossary-de.md` | Deutsch-Glossar (für Runtime-Prompts geeignet, keine Szenario-Werte) |
+| `docs/11-mvp-status.md` | Was funktioniert, Messwerte, offene Punkte, nächste Aufgaben je Person |
+| `docs/10-risks-error-handling.md` | Fehlerbehandlung in Schichten, Deadline, LLM-/Browser-Edge-Cases, Review-Sicherheit |
+| `docs/prompts/*.md` | Kickoff-Prompts je Workstream zum Einfügen in Codex/Claude |
+| `docs/reference/` | Brief, Answer-Schema, Plattform-Docs (Snapshot) |
+
+</INSTRUCTIONS>
+
+---
+
+<environment_context>
+  <cwd>/home/varialbe/isar-labs-ehl</cwd>
+  <shell>bash</shell>
+  <current_date>2026-10-11</current_date>
+  <timezone>Europe/Berlin</timezone>
+  <filesystem><workspace_roots><root>/home/varialbe/isar-labs-ehl</root><root>/home/varialbe/.codex/visualizations/2026/10/11/01a128c8-ca7d-7603-abc9-f4c66b744348</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
+</environment_context>
+
+---
+
+<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+
+---
+
+# Files pasted by the user:
+
+## "Best submission so far is 3:20/$0.092 from Korbinian's feat/agent-improvements,…": /home/varialbe/.codex/attachments/15feaf7b-d7b3-4076-bac5-6d09ef450e10/Pasted text.txt
+
+## My request:
+Our test run is currently at 100/100, 6-9 minutes and min 1 mio tokens. We 100 % NEED less than 1 minute and max 100k tokens for the win. reserach intensively online and take major research inspiration to cut down everything so we make it. Is it even possible with our current architecture?
+What claude is doing rn:
+
+---
+
+PLEASE IMPLEMENT THIS PLAN:
+# Reach a sub-minute fast path without sacrificing 100/100
+
+## Assessment
+
+**The high-level architecture can be retained. The current execution loop needs substantial changes.** Under one minute is a plausible engineering target, but neither the existing measurements nor the research justify promising it—particularly on unfamiliar private websites.
+
+I verified the best submission through the platform:
+
+| Metric | Verified result |
+|---|---:|
+| Quality | 100/100 |
+| Official duration | 200.226 seconds |
+| Model calls | 203 |
+| Uncached input | 470,578 tokens |
+| Output | 35,622 tokens |
+| Cached input, counted separately | 277,536 tokens |
+| Evidence complete | Approximately 126 seconds |
+| Remaining submission/signing | Approximately 75 seconds |
+
+Your chosen budget therefore requires **about 80% fewer uncached-input-plus-output tokens**, alongside **about 70% less elapsed time**.
+
+The main dependency chain is specification → ERP → submission. In this run, requirements became available around 49 seconds; the slowest ERP mission then needed approximately 77 seconds. Parallelizing unrelated work cannot eliminate that chain.
+
+Retain the Decimal resolver, provenance, browser tools and model-directed investigation. Replace repeated per-page interpretation and per-position decisions with **mappings learned during the run and executed with validation**.
+
+## Research to apply
+
+| Research | Useful contribution | Application here |
+|---|---|---|
+| [LLMCompiler](https://arxiv.org/abs/2312.04511) | Dependency-aware parallel execution; reports up to 3.7× latency improvement on its benchmarks. | Dispatch work when its actual prerequisites arrive, instead of waiting for entire missions. |
+| [SkillWeaver](https://arxiv.org/abs/2504.07079), [Agent Workflow Memory](https://arxiv.org/abs/2409.07429) | Reusable procedures reduce repeated interaction and interpretation. | Learn small form/table mappings within each run; reuse them across equivalent records. |
+| [AXE](https://arxiv.org/abs/2602.01838), [Prune4Web](https://arxiv.org/abs/2511.21398) | Structured DOM extraction and grounded element selection. | Let Qwen identify relevant columns, fields and source nodes; let code copy their values. |
+| [Observation-reduction evaluation](https://arxiv.org/abs/2605.29397) | Compression can improve speed while also reducing success. | Test preservation of decisive evidence; avoid arbitrary observation/history truncation. |
+| [Budget-matched memory evaluation](https://arxiv.org/abs/2606.15017) | Extra memory/skill modules can lose their advantage once their token overhead is included. | Use compact mappings that replace calls, without adding separate reflection and workflow-induction loops. |
+| [Speculative Actions](https://arxiv.org/html/2510.04371v1) | Reports 20% end-to-end lossless speedup in evaluated settings. | Overlap already-selected reads and review work; keep speculative branching out of the first implementation. |
+
+These results support the mechanisms, **not a transferable speedup guarantee**. Do not multiply paper speedups together.
+
+Claude is already implementing several useful pieces: submission replay, shorter extraction, TAN specialization, runtime URL reuse and vision. Extend and validate those pieces rather than building duplicate tools.
+
+## Implementation changes
+
+1. **Freeze the control and instrument the critical path.** Preserve the successful package with hash `f542b219…` as the benchmark control. Develop separately from the shared working copy. Record model request/response times, local slot waits, browser action times, extraction dependencies, cache usage and signing acceptance. Count failed and duplicated requests using platform totals; the current successful-response usage counter is insufficient.
+
+2. **Make orchestration respond to facts immediately.** Start brief analysis alongside site initialization. Publish requirements individually as they are extracted and start each corresponding ERP investigation immediately. Replace model-driven `wait_for` polling of background extractions with awaiting completion events. Prepare bidder registration while evidence gathering continues, using a separate owned tab. Later amendments invalidate affected computations and checks, without restarting completed unrelated research.
+
+3. **Learn extraction mappings instead of regenerating complete records.** Add an internal `ExtractionMap` describing the model-selected table/container, field or column mappings, locale and validation conditions. Code copies rows and values into the existing fact schemas, retaining source URL and raw text. Reuse mappings only on structurally compatible pages within the same run. Unstructured commercial prose continues through Qwen interpretation. Missing or ambiguous mappings return to the model.
+
+4. **Reduce generated extraction output aggressively.** Store source text directly rather than asking the model to reproduce message bodies, descriptions and other verbatim passages. Return source references and semantic fields; an adapter reconstructs the existing resolver inputs. Preserve draft/preview evidence in the model’s input and validate that removing copied-body output does not repeat Claude’s observed draft-classification regression. Use separate schemas for material attributes, stock, conditions and TAN. Avoid serializing many long documents into one giant completion: fewer requests can still mean slower generation.
+
+5. **Extend action batching and runtime form mapping.** Reuse the existing `steps` and `fill_fields` tools. Add explicit answer-field bindings to the learned submission mapping, replacing inference based only on coincidentally equal values. Execute dependent selects sequentially with fresh element resolution and readback. Stop at an unknown page, missing option, changed field identity or unexpected validation result. ERP searches and document targets remain model-selected from runtime observations; helpers execute only those selected operations.
+
+6. **Shrink navigation context without forgetting progress.** Introduce a structured mission ledger containing selected routes, read sources, pending jobs, failed actions and remaining evidence. Supply that ledger plus recent actions and the relevant observation region. Keep full observations available on demand. Place stable instructions and schemas before changing content, but measure actual cache hits. Alibaba documents prefix caching, while its thresholds and guarantees must not be assumed for Atira’s hosted deployment. [Cache documentation](https://help.aliyun.com/en/model-studio/context-cache).
+
+7. **Finish the browser and submission fast path.** Replace fixed settling delays with relevant URL, field, option or DOM-change conditions; Playwright already provides actionability waiting. [Playwright documentation](https://playwright.dev/python/docs/actionability). Reuse Claude’s form replay and TAN schema, and run review extraction while the requested TAN arrives. Map review tables once and compare copied values deterministically. Checkpoint the answer version, learned mappings, verified saved positions and submission stage. Following timeout or relogin, inspect server state and resume from the first unverified step; local checkpoints cannot restore unsaved server state.
+
+8. **Handle visual content once, accurately.** Send an element crop to Qwen when canvas/image semantics do not expose the required content; associate the transcription with that page state. A canvas’s pixels are not generally available as DOM text. Clef is appropriate for choosing among observed options, rather than arbitrary transcription: its documented interface scores predefined choices without autoregressive text generation. [Cloudflare documentation](https://blog.cloudflare.com/clef-decision-models/). The existing slider guard is generic label matching, not a fixed public selector, but its broad matching should be narrowed to verified unlock gates so it cannot alter an ordinary business slider.
+
+Public answer and fact interfaces stay compatible. New internal interfaces are `ExtractionMap`, explicitly bound form actions, a mission ledger and a resumable submission checkpoint.
+
+## Performance targets and validation
+
+The following are **design budgets, not measured predictions**:
+
+| Critical-path milestone | Target |
+|---|---:|
+| Sites and core brief ready | By 3 seconds |
+| Governing requirements available | By 15 seconds |
+| Required evidence complete | By 35 seconds |
+| Form complete; review/TAN underway | By 52 seconds |
+| Signed acceptance | Before 60 seconds |
+
+Target approximately **40–50 model calls**, **≤80k uncached input** and **≤8k output**, leaving margin below 100k for repairs. Measure cached-token cost separately.
+
+Implement in this order: instrumentation and event scheduling → compact extraction/mappings → submission bindings and checkpointing → observation reduction. Keep each behavioral change independently switchable.
+
+Validation must include:
+
+- Existing unit, fixture and leak checks; unchanged resolver answers from replayed evidence.
+- Synthetic portals with reordered columns, changed labels, mixed locales, misleading revisions, future or unauthorized approvals, and information moved between websites.
+- Forms with cascading selects, equal-valued fields, changed position order, partial saves and timeout after a successful save.
+- Canvas transcription, real unlock gates and unrelated sliders.
+- Cancellation, failed extraction, stale mappings and uncertain final acceptance.
+- Sequential alternating control/candidate sandbox runs, avoiding contention from concurrent team benchmarks.
+
+Before claiming the fast path achieved, require **three consecutive candidate runs with 100/100, eligible, signed acceptance under 60 seconds, and ≤100k uncached-input-plus-output tokens each**. Report all attempted runs and failures. Those public results still cannot establish the same timing on the private dataset.
+
+## Defaults and limits
+
+- Use hosted Qwen/Clef; retain non-thinking mode for routine calls.
+- Preserve 100/100: exceptional recovery may exceed both targets, as you selected.
+- Keep learned site mappings scoped to the current run; package no public values or fixed public routes.
+- Model-directed navigation remains mandatory under the [challenge’s fair-play rules](https://ehl-challenge.atira.ai/docs/fair-play.md).
+- Test runs are permitted. Scored submission and cancellation still require explicit human authorization.
+- No code was changed during this investigation.
+
+**The decisive feasibility test is whether runtime mapping can bring evidence below roughly 35 seconds and submission below roughly 25 seconds.** If either remains above its budget, prompt caching alone will not close the gap.
+
+---
+
+<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+
+---
+
+temporary claude output:pened via extract_urls never had their images read—explaining the missing stock numbers. I'm fixing this so picture/canvas transcription now happens during page reads for extraction too.
+
+  Ran 4 shell commands
+
+My scripted insert landed inside a method. Correcting it now, before anything runs.
+
+  Ran 6 shell commands
+
+All 121 tests pass. Committing the chart reading plus the handoff document, then the next three sandbox runs.
+
+  Ran 1 shell command
+
+Two of the three runs started; the third upload was refused. Meanwhile, the prompts for the next session and for Codex and Gemini:
+
+  Made 1 scratchpad edit +41, ran 1 shell command
+
+❯ You are doing something brutally brutally wrong. Replan fully. Codex is working in background on the same thing. We have to get SUB ONE MINUTE at the same quality and on the fake-tests, so genralization. Its soo important. And token usage correlates with the time. So minimizing that to like 50-100k while having crazy generalization will automatically give us the short time. But otherwise you are having like 4x timeout 20s. It has to be sth we are doing very wrong with the navigation perhaps. Continue where you where at, I didn't mean to interrupt you. A test longer than 3 min or with more than 500k tokens doesnt even need to finish running, jhust a waste of time.
+
+Logs show the real waste is hanging page loads (10 timeouts in run_1d8a... matching the slow 18–35s ERP batches), not the model itself. I'm shifting the plan to add early cancellation of runaway test runs, racing parallel loads against hangs, parallelizing/batching page fetches to cut token use, and gating all of this through the fake-portal matrix and sandbox—starting by measuring the hangs.
+
+  Ran 1 shell command
+
+Correcting myself: run_790f had only 2 hangs, both on mail, so that's not the main time sink—it's really 120 sequential navigation calls at ~5k tokens each, fixable by executing multiple tool calls per reply and batching page extraction. I'll start building the run watcher you asked for, then check on the two running tests.
+
+  Ran 1 shell command
+
+That run has been going for 5:07, way past your 3-minute limit. Cancelling both of my running test runs and fixing the watcher's parsing.
+
+● Cancel over-limit runs and finalize watcher
+  ⎿  $ S=/tmp/claude-1000/-home-varialbe-isar-labs-ehl/487b6f88-e751-4f13-a1b7-e0350cf91f82/scratchpad; for r in run_876394ee32c66881 run_d85bc4a00d2d9377; do timeout 120 atira cancel $r 2>&1 | tail -1; done; cat > $S/tools/watch_runs.py <<'EOF'
+     """Cancel OUR OWN test runs (ids given) once they run long…
+
+* Crystallizing… (55m 40s · ↓ 144.5k tokens · thinking with high effort)
+Tip: Use /clear to start fresh when switching topics and free up context
+
+---
+
+<send_user_message_question_reply>
+[{"questionItemId":"[\"request_user_input_async\",\"call_a2d55cee5dd648fba7c2eb9beaeb09d9\",0]","question":"Claude is still launching sandbox runs. Can you give us an exclusive benchmark window by asking Claude to hold new launches? Your plan requires alternating control/candidate runs without team contention.","answer":"Hold Claude’s new launches; benchmark this candidate"}]
+</send_user_message_question_reply>
+
+---
+
+<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+
+---
+
+# Files pasted by the user:
+
+## "Aus der Analyse der führenden Arbeiten zu Web- und GUI-Agenten (u. a. SPACE [EM…": /home/varialbe/.codex/attachments/6270f73f-6a3f-4b25-a887-dc5df08292bd/Pasted text.txt
+
+## My request:
+So I just cancelled Claude since its took 3-4x the time of yours.
+And Gemini said the following. Your best run took 2:29. You can do way better and way less tokens without losing quality and fake-tests, I believe in you, dont be an idiot.
+
+---
+
+<send_user_message_question_reply>
+[{"questionItemId":"[\"request_user_input_async\",\"call_a3b712aa59e747ac84e268b835e6cf53\",0]","question":"Run run_aa1b30e9a52f6af1 has exceeded 3 minutes and 500k tokens and is repeating a certification-binding error I’ve now fixed. AGENTS.md §2.6 requires explicit human approval to cancel. May I cancel this run and any of our subsequent test runs that exceed either limit?","answer":"Cancel our over-limit test runs"}]
+</send_user_message_question_reply>
+
+---
+
+<send_user_message_question_reply>
+[{"questionItemId":"[\"request_user_input_async\",\"call_4d8d00bd5e094723ba8e21d042789b3a\",0]","question":"A different team package, “evidence-budget-and-retry” (run_ec3b1421e51fdf48), started during the exclusive window. Who owns that runner? I’m holding our candidate launch until the team is idle.","answer":"Its my teammate, his other codebase/own branch. Ignore"}]
+</send_user_message_question_reply>
+
+---
+
+<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>
+
+---
+
+Can you finish up for claude? You wont get it. DO you have game changing shit?

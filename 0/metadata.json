@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M4N03JC0H04M7SVKNG3R80H9",
+  "session_id": "01a128c8-ca7d-7603-abc9-f4c66b744348",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-11T08:08:46.373617337Z",
+  "branch": "codex/token-reuse",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "dev/benchmark_reuse.py",
+    "dev/measure_reuse_requests.py",
+    "dev/runs/token-reuse/README.md",
+    "dev/runs/token-reuse/requests-after.json",
+    "dev/runs/token-reuse/requests-before.json",
+    "dev/runs/token-reuse/search.json",
+    "dev/runs/token-reuse/structured-sources.json",
+    "dev/search_reuse_candidates.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6.1-sol",
+  "turn_id": "b3a9092853d3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 905310,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 37548672,
+    "output_tokens": 207836,
+    "api_call_count": 306
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-11T08:08:45.964203274Z",
+    "agent_lines": 3940,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3940,
+    "total_lines_changed": 3940,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
