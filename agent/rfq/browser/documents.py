@@ -7,6 +7,7 @@ import asyncio
 import io
 import re
 import zipfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 
@@ -100,7 +101,11 @@ def _limit(data: bytes) -> bytes:
 def _guess_mime(name: str) -> str:
     ext = name.lower().rsplit(".", 1)[-1] if "." in name else ""
     return {"zip": "application/zip", "pdf": "application/pdf", "csv": "text/csv", "txt": "text/plain",
-            "html": "text/html", "htm": "text/html", "json": "application/json", "xml": "text/xml"}.get(ext, "")
+            "html": "text/html", "htm": "text/html", "json": "application/json", "xml": "text/xml",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "ods": "application/vnd.oasis.opendocument.spreadsheet",
+            "odt": "application/vnd.oasis.opendocument.text"}.get(ext, "")
 
 
 def parse(data: bytes, name: str, mime: str, source: str, member: str | None = None) -> Document:
@@ -110,6 +115,9 @@ def parse(data: bytes, name: str, mime: str, source: str, member: str | None = N
             archive = zipfile.ZipFile(io.BytesIO(data))
         except zipfile.BadZipFile:
             return Document(source, name, mime, error="the file is not a readable ZIP archive")
+        office = _office_text(archive)            # .xlsx/.docx/.ods/.odt are ZIP archives of XML: read them as text
+        if office is not None:
+            return Document(source, name, mime or "application/office", text=office)
         infos = [i for i in archive.infolist() if not i.is_dir()][:MAX_MEMBERS]
         if not member:
             return Document(source, name, mime, members=[(_member_name(i), i.file_size) for i in infos])
@@ -131,6 +139,101 @@ def parse(data: bytes, name: str, mime: str, source: str, member: str | None = N
             return Document(source, name, mime, error="got a login page instead of the file (session expired?)")
         text = _html_text(text)
     return Document(source, name, mime or "text/plain", text=text)
+
+
+def _office_text(archive: zipfile.ZipFile) -> str | None:
+    """Text of an office document (tables as tab-separated rows), or None if the archive is not one or unreadable."""
+    names = set(archive.namelist())
+    try:
+        if "xl/workbook.xml" in names:
+            return _xlsx_text(archive, names)
+        if "word/document.xml" in names:
+            return _docx_text(archive)
+        if "content.xml" in names and "mimetype" in names:
+            return _odf_text(archive, archive.read("mimetype").decode("ascii", "replace"))
+    except Exception:          # malformed office file: fall back to listing the archive
+        return None
+    return None
+
+
+def _xml(archive: zipfile.ZipFile, name: str):
+    info = archive.getinfo(name)
+    if info.file_size > MAX_MEMBER_BYTES:
+        raise ValueError(f"{name} too large")
+    return ET.fromstring(archive.read(name))
+
+
+def _xlsx_text(archive: zipfile.ZipFile, names: set[str]) -> str:
+    m = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    shared = ["".join(t.text or "" for t in si.iter(f"{m}t")) for si in _xml(archive, "xl/sharedStrings.xml").iter(f"{m}si")] \
+        if "xl/sharedStrings.xml" in names else []
+    targets = {}
+    if "xl/_rels/workbook.xml.rels" in names:
+        for r in _xml(archive, "xl/_rels/workbook.xml.rels"):
+            targets[r.get("Id")] = "xl/" + r.get("Target", "").lstrip("/").removeprefix("xl/")
+    out = []
+    for number, sheet in enumerate(_xml(archive, "xl/workbook.xml").iter(f"{m}sheet"), 1):
+        path = targets.get(sheet.get(f"{rel}id")) or f"xl/worksheets/sheet{number}.xml"
+        if path not in names:
+            continue
+        out.append(f"=== sheet {sheet.get('name')} ===")
+        for row in list(_xml(archive, path).iter(f"{m}row"))[:5000]:
+            cells: dict[int, str] = {}
+            for c in row.iter(f"{m}c"):
+                kind, value = c.get("t"), c.find(f"{m}v")
+                if kind == "s" and value is not None and value.text and value.text.isdigit():
+                    text = shared[int(value.text)] if int(value.text) < len(shared) else ""
+                elif kind == "inlineStr":
+                    text = "".join(t.text or "" for t in c.iter(f"{m}t"))
+                else:
+                    text = value.text if value is not None and value.text else ""
+                cells[_column(c.get("r")) if c.get("r") else len(cells)] = text.strip()
+            if any(cells.values()):
+                out.append("\t".join(cells.get(i, "") for i in range(max(cells) + 1)))
+    return "\n".join(out)
+
+
+def _column(reference: str) -> int:
+    index = 0
+    for char in re.match(r"[A-Z]+", reference.upper()).group(0):
+        index = index * 26 + ord(char) - 64
+    return index - 1
+
+
+def _docx_text(archive: zipfile.ZipFile) -> str:
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    body = _xml(archive, "word/document.xml").find(f"{w}body")
+    out = []
+    for block in body if body is not None else []:
+        if block.tag == f"{w}p":
+            out.append("".join(t.text or "" for t in block.iter(f"{w}t")))
+        elif block.tag == f"{w}tbl":
+            for tr in block.iter(f"{w}tr"):
+                out.append("\t".join("".join(t.text or "" for t in tc.iter(f"{w}t")).strip() for tc in tr.findall(f"{w}tc")))
+    return "\n".join(line for line in out if line.strip())
+
+
+def _odf_text(archive: zipfile.ZipFile, mimetype: str) -> str:
+    table, text = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}", "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+    root = _xml(archive, "content.xml")
+    cell_text = lambda cell: " ".join("".join(p.itertext()).strip() for p in cell.iter(f"{text}p"))
+    out = []
+    if "spreadsheet" in mimetype:
+        for sheet in root.iter(f"{table}table"):
+            out.append(f"=== sheet {sheet.get(f'{table}name')} ===")
+            for row in list(sheet.iter(f"{table}table-row"))[:5000]:
+                cells = []
+                for cell in row.findall(f"{table}table-cell"):
+                    repeat = min(int(cell.get(f"{table}number-columns-repeated", "1")), 50)
+                    cells += [cell_text(cell)] * repeat
+                if any(cells):
+                    out.append("\t".join(cells).rstrip("\t"))
+    else:
+        for element in root.iter():
+            if element.tag in (f"{text}p", f"{text}h"):
+                out.append("".join(element.itertext()))
+    return "\n".join(line for line in out if line.strip())
 
 
 def _member_name(info: zipfile.ZipInfo) -> str:
