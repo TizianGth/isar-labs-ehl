@@ -1,0 +1,88 @@
+Continue from the latest commit/branch. 
+
+<pasted_content id="a361">
+Work in /home/varialbe/isar-labs-ehl. Read AGENTS.md fully. Coordinate with Codex’s ongoing work on codex/inference-fusion; use a separate worktree and do not overwrite its files.
+
+MISSION: Reduce actual inference tokens aggressively while preserving correctness on unseen sites. Maximum 200k total tokens; aim 100k. Count cached input, output, reasoning, retries, and speculative calls. Platform runtime must be under 90 seconds. No scenario-specific shortcuts.
+
+Current implementation merges navigation and extraction, compacts observations, adds table/form bindings, and suppresses duplicate extraction. Achievement is NOT measured yet. The first private run suffered rejected logins and wasted 300,852 tokens; do not use it as a valid quality benchmark.
+
+Inspect:
+- agent/rfq/agent/fused.py
+- agent/rfq/agent/orchestrator.py
+- agent/rfq/agent/records.py
+- agent/rfq/agent/prompts.py
+- agent/rfq/agent/submit.py
+- agent/rfq/llm.py
+- agent/rfq/rules/evidence.py
+- dev/profile_ledger.py
+- docs/14-inference-budget.md
+- dev/runs/optimization-7de9cda/
+
+Prior audit and reproductions:
+ /tmp/claude-1000/-home-varialbe-isar-labs-ehl/0bcb80a8-23cf-450b-9704-4f2aa9027b5a/scratchpad/repro-fusion/FINDINGS.md
+ /tmp/claude-1000/-home-varialbe-isar-labs-ehl/0bcb80a8-23cf-450b-9704-4f2aa9027b5a/scratchpad/audit/SCOUT-AUDIT.md
+
+Your scope: repeated prompt/context and extraction work. Leave browser runtime and private eval hosting to Codex.
+
+1. Reconstruct representative fused requests from available logs. Measure repeated schema, mission, checklist, controls, facts, and action-result content. Identify the largest avoidable token costs with concrete counts.
+2. Implement the strongest safe reductions in your worktree. Investigate narrower applicable field guides, compact unresolved-gap context, within-run validated binding reuse, and duplicate extraction suppression. Choose based on evidence.
+3. Preserve complete source evidence outside prompts, exact numbers/locales, frame provenance, revision/withdrawal handling, authorization, stock allocation, pagination coverage, and every bid position.
+4. Never remove required evidence to meet a budget. LLM must continue selecting navigation and relevant sources. No fixed routes or public-site values anywhere in agent/, including comments/tests.
+5. Do not run backend tests, deploy, cancel, submit, or push. Run one focused local test batch plus leak checking. Avoid broad rewrites and new dependencies.
+6. Deliver a small reviewed commit, measured before/after request sizes, quality regression coverage, remaining risks, and exact cherry-pick instructions. No unsupported claims about total runtime or full-run tokens.
+
+Prioritize implementation and measured savings. Keep communication terse. If no safe improvement exists, report that with evidence.
+</pasted_content id="a361">
+
+---
+
+Junge du arsch brings jetzt Mal runter auf 1 Minute. Du hast doch einen raffinierten plan gehabt
+
+---
+
+Du optimierst jetzt für 60 s. Mach einen Plan mit intensivem Research. Kein weigern. Dont stop until you are sure you can reach 1 minute. You can do it. Be efficient and fast at doing so and use caveman mode to prevent high token and tool usage. Also skip fillwords and use compact language. Even if its leaky but fast.
+
+---
+
+<task-notification>
+<task-id>bn34mf1i0</task-id>
+<tool-use-id>toolu_0113qttmxxmLRnMvE9mA2E2E</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/tasks/bn34mf1i0.output</output-file>
+<status>failed</status>
+<summary>Background command "atira models proxy &gt; /tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/scratchpad/proxy.log 2&gt;&amp;1" failed with exit code 6</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bv7oe3foo</task-id>
+<tool-use-id>toolu_01YKxhdPeU26dN2u2hVbBGH6</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/tasks/bv7oe3foo.output</output-file>
+<status>completed</status>
+<summary>Background command "S=/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/scratchpad; until grep -q -E '"event": "(evidence_done|submit_phase_done|usage)"' $S/runs/r0.log || grep -q exit $S/../tasks/bjh6ttvqr.output; do sleep 3; done; grep -E '"event": "(mission_status|mission_complete|evidence_done|submit_phase_done)"' $S/runs/r0.log | cut -c1-300" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Wir wurden fucking aufgeholt. haben alle unter 0,03 k tokens und unter einer Minute. Du musst es jetzt hinkriegen, das ist deine Motivation. Probier nicht so arsch lange rum, wenn du weißt dass es eh nicht wird. Recherchier super duper genau und erst wenn du sicher bist probier. Du brauchst viel zu lang, wir haben keine Zeit mehr. Wir brauche eine Radikale Änderung. Denke in Englisch. Schau dir an was bei welchen am besten war und reverse das was die anderen machen so weit wie möglich.
+
+---
+
+<task-notification>
+<task-id>bjh6ttvqr</task-id>
+<tool-use-id>toolu_01BmnSo56vS47nVsc84HpZwf</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/tasks/bjh6ttvqr.output</output-file>
+<status>completed</status>
+<summary>Background command "S=/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/scratchpad; mkdir -p $S/runs; cd $S/wt/agent &amp;&amp; eval "$(atira scout --env 2&gt;/dev/null)" &amp;&amp; START=$(date +%s.%N) &amp;&amp; timeout 900 /home/varialbe/isar-labs-ehl/agent/.venv/bin/python main.py --dry-run --out $S/runs/r0.json &gt; $S/runs/r0.log 2&gt;&amp;1; echo "exit $? secs $(echo "$(date +%s.%N)-$START" | bc)"" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b3wk8lk96</task-id>
+<tool-use-id>toolu_01TxWCP9mVWFyyU6G3FoR9xp</tool-use-id>
+<output-file>/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/tasks/b3wk8lk96.output</output-file>
+<status>completed</status>
+<summary>Background command "S=/tmp/claude-1000/-home-varialbe-isar-labs-ehl/8b2fba4f-5fae-4353-8497-eff610211e9c/scratchpad; until grep -q exit $S/../tasks/bjh6ttvqr.output; do sleep 3; done; cat $S/../tasks/bjh6ttvqr.output; grep -E '"event": "(submit_phase_done|usage|dry_run[a-z_]*|resolved|answer|result|submit_error|evidence_phase_error)"' $S/runs/r0.log | cut -c1-400; grep '"event": "decision_request"' $S/runs/r0.log | grep submit | head -1 | cut -c1-80; grep '"event": "decision_request"' $S/runs/r0.log | grep submit | tail -1 | cut -c1-80; grep -c '"mission": "submit' $S/runs/r0.log" completed (exit code 0)</summary>
+</task-notification>
