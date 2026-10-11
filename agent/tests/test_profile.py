@@ -55,6 +55,20 @@ def test_disabled_spans_do_not_read_clocks_or_emit(monkeypatch, events):
     assert events == []
 
 
+def test_timed_operation_preserves_errors_and_excludes_arguments(events):
+    @profile.timed("browser_action", agent="browser", category="action")
+    async def operation(secret):
+        assert secret == "private-value"
+        raise RuntimeError("private-value")
+
+    with pytest.raises(RuntimeError, match="private-value"):
+        asyncio.run(operation("private-value"))
+    assert len(events) == 1
+    assert events[0]["status"] == "error"
+    assert "private-value" not in str(events)
+    assert operation.__name__ == "operation"
+
+
 def test_metadata_rejects_source_values_and_prompt_counts_do_not_copy(events):
     with pytest.raises(ValueError):
         profile.span("form", secret="hidden")

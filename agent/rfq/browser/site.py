@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlparse
 from playwright.async_api import BrowserContext, Error as PlaywrightError, Frame, Page
 
 from ..log import log, register_secret
+from ..profile import timed
 
 OBSERVE_JS = (Path(__file__).with_name("observe.js")).read_text()
 GUARDS_JS = (Path(__file__).with_name("guards.js")).read_text()
@@ -87,6 +88,7 @@ class Site:
     async def start(self) -> str:
         return await self.wait_started()
 
+    @timed("site_start", agent="browser", category="startup")
     async def _start(self) -> str:
         self.page = self.page or (self.context.pages[0] if self.context.pages else await self.context.new_page())
         self._wire(self.page)
@@ -188,6 +190,7 @@ class Site:
                 return True
         return False
 
+    @timed("navigation", agent="browser", category="navigation")
     async def goto(self, url: str, frame: Frame | None = None) -> bool:
         """A bounded read-only attempt with one recovery; quality session repair is logged separately."""
         started = time.monotonic()
@@ -262,6 +265,7 @@ class Site:
         log("functional_readiness_timeout", site=self.site_id, url=_short(target.url))
         return False
 
+    @timed("guards", agent="browser", category="guards")
     async def settle(self, rounds: int = 6, recover: bool = True, retry_errors: bool = True) -> None:
         """Run the guards until the page is usable: error retry, login, cookie consent, overlays, gates."""
         if not await self.responsive():
@@ -358,6 +362,7 @@ class Site:
             return False
 
     # ---------------------------------------------------------------- observation
+    @timed("dom_observation", agent="browser", category="observation")
     async def observe(self, limit: int = MAX_OBSERVATION) -> str:
         await self._ensure_page()
         if not await self.responsive():
@@ -423,6 +428,7 @@ class Site:
         return frame, frame.locator(f'[data-agent-ref="{ref}"]')
 
     # ---------------------------------------------------------------- actions (never raise)
+    @timed("browser_action", agent="browser", category="action")
     async def act(self, name: str, args: dict) -> str:
         async with self.lock:
             self.write_outcome_unknown = False
@@ -801,6 +807,7 @@ class Site:
         key = url.split("#")[0].rstrip("/")
         return key == self.url or any(seen.split("#")[0].rstrip("/") == key for seen in self.seen_urls)
 
+    @timed("selected_source_read", agent="browser", category="source_read")
     async def read_url(self, url: str, follow_iframes: bool = True) -> str:
         """Open a model-selected URL of this site in a helper tab and return its full serialized text."""
         await self.wait_started()

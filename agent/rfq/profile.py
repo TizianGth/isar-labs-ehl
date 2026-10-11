@@ -4,6 +4,7 @@ One line is emitted per completed span or metered request. No polling, backgroun
 tasks, prompt contents, URLs, answer values, credentials, or per-row events.
 """
 from contextvars import ContextVar
+from functools import wraps
 from itertools import count
 import os
 import time
@@ -73,6 +74,17 @@ class Span:
 
 def span(name: str, *, agent: str = "", category: str = "", **fields) -> Span:
     return Span(name, agent=agent, category=category, **fields)
+
+
+def timed(name: str, *, agent: str = "", category: str = ""):
+    """Time an async operation without recording its arguments or return value."""
+    def decorate(operation):
+        @wraps(operation)
+        async def measured(*args, **kwargs):
+            with span(name, agent=agent, category=category):
+                return await operation(*args, **kwargs)
+        return measured
+    return decorate
 
 
 def model_usage(*, attempt_id: int, model: str, input_tokens: int | None = None,

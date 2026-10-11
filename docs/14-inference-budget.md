@@ -19,6 +19,12 @@ identical-package public confirmations. Run one backend candidate at a time.
 The cancelled baseline consumes run 1; it does not justify an extra run. Ranked
 submission and cancellation remain separate human-authorized actions.
 
+The first private development run also consumes a slot despite its authentication
+failure. Replace the second-development-world confirmation slot with a valid
+Qwen development retry after hosted login succeeds. Keep the paired routing
+comparison, six frozen holdouts and two public confirmations within the 12-run
+limit. Do not start another agent run while authentication is unverified.
+
 ## Captured starting point
 
 The baseline export under `dev/runs/optimization-7de9cda/agent/` was created with
@@ -120,6 +126,10 @@ The full development call capture contains 149 calls, 106,557 uncached input,
 The incomplete SDK log tail contains only 42 metered responses, so its smaller
 sum cannot establish the run's total. The run failed without an answer at
 101.316 seconds and $0.025589; it passes neither quality nor the resource gates.
+All four sites rejected their supplied credentials. This prevents interpreting
+the result as a valid task-quality or normal-runtime benchmark. It still counts
+toward the run allocation and resource report. The approved cancellation was
+attempted after completion and returned an already-finished response.
 
 ### Runtime and offline instrumentation
 
