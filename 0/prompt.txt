@@ -1,0 +1,17 @@
+resume
+
+---
+
+starte die tests
+
+---
+
+clear
+
+---
+
+Prüfe unser projekt auf overfitting. Werden die agents auch im unbekannten privaten environment, dass zur bewertung benutzt wird, gut performen?
+
+---
+
+ja implementiere das
