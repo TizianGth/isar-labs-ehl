@@ -334,6 +334,31 @@ def test_partial_table_binding_cannot_suppress_full_source_extraction(monkeypatc
     asyncio.run(scenario())
 
 
+def test_complete_column_mapping_without_source_completeness_preserves_prose(monkeypatch):
+    async def scenario():
+        s = site()
+        s.absolute, s.was_seen = lambda url: url, lambda url: True
+        original = observation().text + '\nMaterial status: blocked. Latest condition: 3,50 EUR (de-DE).'
+        raw = original.replace('1.234,50 (de-DE)', '2 (de-DE)')
+        selected = Observation.capture(original, 'https://synthetic.test/data')
+        async def read(url):
+            return raw
+        s.read_url = read
+        o = Orchestrator({'expires_at': (time.time()+1000)*1000}, {'synthetic': s})
+        o.table_bindings.remember(selected, {**binding(), 'source_complete': False}, o.binding_scope('erp', selected))
+        calls = []
+        async def ask(system, user, **kwargs):
+            calls.append(user)
+            return {'materials': [{'material_number': 'MAT-S', 'status_meaning': 'blocked', 'unrestricted_stock': '2 (de-DE)'}]}
+        monkeypatch.setattr(llm, 'ask_json', ask)
+        ex = FusedExplorer(s, Mission('erp', 'collect', {'materials': ''}), o.extract)
+        await ex._extract_urls({'kind': 'materials', 'urls': [selected.url]})
+        assert len(calls) == 1 and 'Material status: blocked' in calls[0]
+        assert o.bb.get('materials')[0]['data']['materials'][0]['status_meaning'] == 'blocked'
+        await o.source_reads.close()
+    asyncio.run(scenario())
+
+
 def test_mail_body_copy_preserves_exact_numbers_and_rejects_other_frames():
     o = Orchestrator({'expires_at': (time.time()+1000)*1000}, {})
     text = 'Subject source\nBegin approval\nExact −1.234,50 EUR (de-DE).\nEnd approval'

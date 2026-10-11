@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 
 REF = re.compile(r'\[(?:f\d+)?e\d+\]')
+BOOLEAN_FIELDS = frozenset({'is_current', 'usable_stroke', 'status_verified',
+                           'is_approval', 'is_draft_or_preview', 'participation_registered'})
 
 
 def digest(value) -> str:
@@ -171,6 +173,14 @@ def table_data(observation: Observation, binding: dict):
         if len(row) != len(headers):
             raise ValueError('irregular table must be read by the model')
         record = {key: row[index] for key, index in columns.items()}
+        for key in BOOLEAN_FIELDS.intersection(record):
+            flag = record[key].strip().casefold()
+            if flag in ('true', 'yes', 'ja', '1'):
+                record[key] = True
+            elif flag in ('false', 'no', 'nein', '0'):
+                record[key] = False
+            else:
+                raise ValueError('ambiguous boolean table value; interpret with the model')
         records.append(record)
     data = dict(binding.get('context') or {})
     data[str(binding['list_field'])] = records

@@ -22,6 +22,17 @@ def test_exact_table_binding_preserves_locale_and_rejects_changed_headers():
         Decision.parse({'snapshot_id': changed.id}, obs.id, {'click'})
 
 
+@pytest.mark.parametrize('raw,expected', [('false', False), ('Nein', False), ('0', False), ('true', True), ('Ja', True)])
+def test_table_boolean_flags_keep_their_resolver_meaning(raw, expected):
+    obs = Observation.capture('| Requirement | Usable stroke |\n| SYN-A | ' + raw + ' |', 'https://synthetic.test/table')
+    mapping = {'table': 't1', 'headers': ['Requirement', 'Usable stroke'],
+               'columns': {'ref': 0, 'usable_stroke': 1}, 'list_field': 'requirements'}
+    assert table_data(obs, mapping)['requirements'][0]['usable_stroke'] is expected
+    ambiguous = Observation.capture(obs.text.replace(raw + ' |', 'pending |'), obs.url)
+    with pytest.raises(ValueError, match='ambiguous boolean'):
+        table_data(ambiguous, mapping)
+
+
 def test_observation_omits_without_losing_exact_regions():
     text = '[e1] link "records" -> /records\n' + '\n'.join(f'record {i}: 12.4% −9 EUR' for i in range(900))
     obs = Observation.capture(text, 'https://synthetic.test')

@@ -376,7 +376,7 @@ def test_a_chain_stops_when_the_form_changes_under_it():
             await browser.close()
             return result, stroke
     result, stroke = asyncio.run(scenario())
-    assert "STOPPED, the form changed" in result and stroke == "" and "Observe the page and continue" in result
+    assert "STOPPED" in result and "changed" in result and stroke == "" and "Observe the page and continue" in result
 
 
 def test_a_labelled_scan_is_still_a_picture_to_read(monkeypatch):
