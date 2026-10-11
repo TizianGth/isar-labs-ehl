@@ -42,6 +42,8 @@ python3 dev/eval/profile_jsonl.py ./dev/runs/speed-final/01/run_logs.json --out 
 `atira_series.py` copies one immutable package and runs it serially. It saves every failure, score breakdown,
 platform acceptance, duration, cost, cost×time and model/browser logs. A separate read-only CLI follower saves original log chunks during the run because retrospective logs can be partial. Capture failures are recorded explicitly. An ambiguous upload is never retried
 automatically: recover the run by its persisted label. `--resume RUN_ID` attaches an already started first run.
+Before continuing a series it checks that the platform still identifies the previous run as a rehearsal without
+a scored submission. An unexpected scored or unknown identity stops uploads; its measurements remain saved.
 
 Release gate: ten consecutive tests of the same package, each quality 100, eligible and confirmed by the platform
 or a receipt, with mean ≤ 300 seconds. No failures are removed. Five minutes is a measurement target, never a shorter
@@ -54,3 +56,17 @@ Exploratory results (one run each, not a release series): candidate A scored 100
 candidate B with asynchronous extraction scored 100 in 392.521 seconds, with 309 rather than 213 model calls.
 Their evidence milestones were essentially unchanged at 274 seconds; the main observed difference was
 submission latency (187 vs 118 seconds). These runs alone do not establish a causal speed improvement.
+
+Candidate D (frozen at `8c5379a`, async enabled, Clef disabled) scored 100, eligible and accepted in
+277.825 seconds, with 230 calls and $0.105345 measured cost. Evidence finished at 164.93 seconds. This is one
+sample of an earlier package, not ten-run reliability or validation of the latest candidate.
+
+Platform anomaly: D was started using `test_run` through `/rehearsals`; its original response identified a
+rehearsal. A later read reports `kind=scored` and a counted submission. The first five tests still report
+`kind=rehearsal`. No submit/cancel call was made by this series tool. Further uploads are paused until the
+team clarifies whether someone promoted the run or the platform changed its classification.
+
+The current recorded-evidence audit contains 42 synthetic runs: all 31 previously perfect calculations remain
+perfect. An incomplete historical legacy run drops from 77.125 to 51 because unknown certification is no longer
+treated as explicitly absent. The replay gate reports that regression and remains red. A new model/browser
+legacy/locale test is required; restoring the missing fact from its golden answer would defeat the audit.
